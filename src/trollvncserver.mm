@@ -77,7 +77,7 @@ static uint64_t *gCurrHash = NULL;
 static uint8_t *gPendingDirty = NULL; // per-tile pending dirty mask
 static CFAbsoluteTime gDeferStartTime = 0;
 static BOOL gHasPending = NO;
-static std::atomic<int> gInflight{0};
+static std::atomic<int> gInflight(0);
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -445,7 +445,7 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 // MARK: - CLI
 
 static void printUsageAndExit(const char *prog) {
-    fprintf(stderr, "Usage: %s [-p port] [-n name] [-v] [-h]\n", prog);
+    fprintf(stderr, "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-h]\n", prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
@@ -688,18 +688,16 @@ int main(int argc, const char *argv[]) {
                 copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
             } else {
                 // vImage scaling path: scale source into tightly-packed back buffer (BGRA/ARGB8888)
-                vImage_Buffer srcBuf{
-                    .data = base,
-                    .height = (vImagePixelCount)height,
-                    .width = (vImagePixelCount)width,
-                    .rowBytes = srcBPR,
-                };
-                vImage_Buffer dstBuf{
-                    .data = gBackBuffer,
-                    .height = (vImagePixelCount)gHeight,
-                    .width = (vImagePixelCount)gWidth,
-                    .rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel,
-                };
+                vImage_Buffer srcBuf;
+                srcBuf.data = base;
+                srcBuf.height = (vImagePixelCount)height;
+                srcBuf.width = (vImagePixelCount)width;
+                srcBuf.rowBytes = srcBPR;
+                vImage_Buffer dstBuf;
+                dstBuf.data = gBackBuffer;
+                dstBuf.height = (vImagePixelCount)gHeight;
+                dstBuf.width = (vImagePixelCount)gWidth;
+                dstBuf.rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel;
                 vImage_Error err = vImageScale_ARGB8888(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
                 if (err != kvImageNoError) {
                     static BOOL sLoggedVImageErrOnce = NO;

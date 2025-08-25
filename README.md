@@ -20,7 +20,7 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 
 Options:
 
-- -p port   TCP port for VNC (default: 5900)
+- -p port   TCP port for VNC (default: 5901)
 - -n name   Desktop name shown to clients (default: TrollVNC)
 - -v        View-only (ignore input)
 - -a        Enable non-blocking swap (may cause tearing). Default off.
@@ -28,7 +28,8 @@ Options:
 - -P pct    Fullscreen fallback threshold percent (1..100, default: 30)
 - -R max    Max dirty rects before collapsing to a bounding box (default: 256)
 - -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
-- -Q n      Max in-flight updates before dropping new frames (0..8, default: 1)
+- -Q n      Max in-flight updates before dropping new frames (0..8, default: 1; 0 disables dropping)
+- -s scale  Output scale factor 0<s<=1 (default: 1.0; 1 means no scaling)
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:
@@ -36,3 +37,4 @@ Notes:
 - Capture starts only when at least one client is connected, and stops when the last disconnects.
 - When -a is enabled, we try a non-blocking swap to reduce contention; if it fails, we copy only dirty rectangles to the front buffer to minimize tearing and bandwidth.
 - Dirty rectangles are detected via per-tile FNV-1a hashing. If too many tiles change (>= threshold), we fallback to full-screen updates for efficiency.
+- Scaling uses Accelerate/vImage for high-quality resampling. Tiling/hash/dirty detection runs on the scaled output to reduce bandwidth and CPU.
