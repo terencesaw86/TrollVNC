@@ -56,6 +56,15 @@ static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
 static BOOL gViewOnly = NO;
 static NSString *gDesktopName = @"TrollVNC";
 static BOOL gAsyncSwapEnabled = NO; // Enable non-blocking swap (may cause tearing)
+static int gTileSize = 32;          // Tile size for dirty detection (pixels)
+static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, update full screen
+
+// Tiling/Hashing state
+static int gTilesX = 0;
+static int gTilesY = 0;
+static size_t gTileCount = 0;
+static uint64_t *gPrevHash = NULL;
+static uint64_t *gCurrHash = NULL;
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -123,6 +132,171 @@ static void unlockAllClientsBlocking(void) {
     rfbReleaseClientIterator(it);
 }
 
+// MARK: - Dirty tiles and rects
+
+static inline uint64_t fnv1a_update(uint64_t h, const uint8_t *data, size_t len) {
+    const uint64_t FNV_PRIME = 1099511628211ULL;
+    for (size_t i = 0; i < len; ++i) {
+        h ^= (uint64_t)data[i];
+        h *= FNV_PRIME;
+    }
+    return h;
+}
+
+static inline uint64_t fnv1a_basis(void) { return 1469598103934665603ULL; }
+
+static void initTilingOrReset(void) {
+    int tilesX = (gWidth + gTileSize - 1) / gTileSize;
+    int tilesY = (gHeight + gTileSize - 1) / gTileSize;
+    size_t tileCount = (size_t)tilesX * (size_t)tilesY;
+    if (tilesX != gTilesX || tilesY != gTilesY || tileCount != gTileCount || !gPrevHash || !gCurrHash) {
+        free(gPrevHash);
+        free(gCurrHash);
+        gPrevHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
+        gCurrHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
+        if (!gPrevHash || !gCurrHash) {
+            fprintf(stderr, "Out of memory for tile hashes.\n");
+            exit(EXIT_FAILURE);
+        }
+        for (size_t i = 0; i < tileCount; ++i) {
+            gPrevHash[i] = 0; // force full update first frame
+            gCurrHash[i] = fnv1a_basis();
+        }
+        gTilesX = tilesX;
+        gTilesY = tilesY;
+        gTileCount = tileCount;
+    } else {
+        for (size_t i = 0; i < gTileCount; ++i) {
+            gCurrHash[i] = fnv1a_basis();
+        }
+    }
+}
+
+// Copy with stride while updating per-tile hashes for curr frame
+static void copyAndHashTiled(uint8_t *dstTight, const uint8_t *src, int copyW, int copyH, size_t srcBPR) {
+    size_t dstBPR = (size_t)copyW * (size_t)gBytesPerPixel;
+    for (int y = 0; y < copyH; ++y) {
+        // Copy the whole line into tight buffer
+        memcpy(dstTight + (size_t)y * dstBPR, src + (size_t)y * srcBPR, dstBPR);
+
+        // Update tile hashes for this line
+        int ty = y / gTileSize;
+        int tileRowStartY = ty * gTileSize;
+        (void)tileRowStartY; // not used further, but kept for clarity
+        for (int tx = 0; tx < gTilesX; ++tx) {
+            int startX = tx * gTileSize;
+            if (startX >= copyW) break;
+            int endX = startX + gTileSize;
+            if (endX > copyW) endX = copyW;
+            size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
+            size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
+            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+            gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], src + (size_t)y * srcBPR + offset, length);
+        }
+    }
+}
+
+typedef struct {
+    int x, y, w, h;
+} DirtyRect;
+
+// Build dirty rectangles from tile hash diffs. Returns number of rects written, up to maxRects.
+static int buildDirtyRects(DirtyRect *rects, int maxRects, int *outChangedTiles) {
+    int rectCount = 0;
+    int changedTiles = 0;
+    // First pass: horizontal merge per tile row
+    for (int ty = 0; ty < gTilesY; ++ty) {
+        int tx = 0;
+        while (tx < gTilesX) {
+            size_t idx = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+            int changed = (gCurrHash[idx] != gPrevHash[idx]);
+            if (!changed) { tx++; continue; }
+            // Start of a run
+            int runStart = tx;
+            changedTiles++;
+            tx++;
+            while (tx < gTilesX) {
+                size_t idx2 = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+                if (gCurrHash[idx2] != gPrevHash[idx2]) { changedTiles++; tx++; }
+                else break;
+            }
+            // Emit rect for this horizontal run
+            if (rectCount < maxRects) {
+                int x = runStart * gTileSize;
+                int w = (tx - runStart) * gTileSize;
+                int y = ty * gTileSize;
+                int h = gTileSize;
+                // Clip to screen bounds
+                if (x + w > gWidth) w = gWidth - x;
+                if (y + h > gHeight) h = gHeight - y;
+                rects[rectCount++] = (DirtyRect){x, y, w, h};
+            } else {
+                // Too many rects; caller may fallback to fullscreen
+                if (outChangedTiles) *outChangedTiles = changedTiles;
+                return rectCount;
+            }
+        }
+    }
+
+    // Optional vertical merge: merge rects with same x,w and contiguous vertically
+    // Simple O(n^2) merge for small rect counts
+    for (int i = 0; i < rectCount; ++i) {
+        for (int j = i + 1; j < rectCount; ++j) {
+            if (rects[j].w == 0 || rects[j].h == 0) continue;
+            if (rects[i].x == rects[j].x && rects[i].w == rects[j].w) {
+                if (rects[i].y + rects[i].h == rects[j].y) {
+                    rects[i].h += rects[j].h;
+                    rects[j].w = rects[j].h = 0; // mark removed
+                } else if (rects[j].y + rects[j].h == rects[i].y) {
+                    rects[j].h += rects[i].h;
+                    rects[i].w = rects[i].h = 0;
+                }
+            }
+        }
+    }
+
+    // Compact removed entries
+    int k = 0;
+    for (int i = 0; i < rectCount; ++i) {
+        if (rects[i].w > 0 && rects[i].h > 0) rects[k++] = rects[i];
+    }
+    rectCount = k;
+
+    if (outChangedTiles) *outChangedTiles = changedTiles;
+    return rectCount;
+}
+
+static inline void swapTileHashes(void) {
+    uint64_t *tmp = gPrevHash; gPrevHash = gCurrHash; gCurrHash = tmp;
+}
+
+static inline void resetCurrTileHashes(void) {
+    if (!gCurrHash || gTileCount == 0) return;
+    uint64_t basis = fnv1a_basis();
+    for (size_t i = 0; i < gTileCount; ++i) {
+        gCurrHash[i] = basis;
+    }
+}
+
+static void markRectsModified(DirtyRect *rects, int rectCount) {
+    for (int i = 0; i < rectCount; ++i) {
+        rfbMarkRectAsModified(gScreen, rects[i].x, rects[i].y, rects[i].x + rects[i].w, rects[i].y + rects[i].h);
+    }
+}
+
+static void copyRectsFromBackToFront(DirtyRect *rects, int rectCount) {
+    size_t fbBPR = (size_t)gWidth * (size_t)gBytesPerPixel;
+    for (int i = 0; i < rectCount; ++i) {
+        int x = rects[i].x, y = rects[i].y, w = rects[i].w, h = rects[i].h;
+        size_t rowBytes = (size_t)w * (size_t)gBytesPerPixel;
+        for (int r = 0; r < h; ++r) {
+            uint8_t *dst = (uint8_t *)gFrontBuffer + (size_t)(y + r) * fbBPR + (size_t)x * gBytesPerPixel;
+            uint8_t *src = (uint8_t *)gBackBuffer + (size_t)(y + r) * fbBPR + (size_t)x * gBytesPerPixel;
+            memcpy(dst, src, rowBytes);
+        }
+    }
+}
+
 // Row-by-row copy to convert a possibly-strided captured buffer into a tightly packed VNC buffer.
 static void copyWithStrideTight(uint8_t *dstTight, const uint8_t *src, int width, int height, size_t srcBytesPerRow) {
     size_t dstBPR = (size_t)width * gBytesPerPixel;
@@ -170,6 +344,9 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
     fprintf(stderr, "  -a        Enable non-blocking swap (may cause tearing)\n");
+    fprintf(stderr, "  -t size   Tile size for dirty-detection (8..128, default: %d)\n", gTileSize);
+    fprintf(stderr, "  -P pct    Fullscreen fallback threshold percent (1..100, default: %d)\n",
+        gFullscreenThresholdPercent);
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -177,7 +354,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vha")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -197,6 +374,24 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'a':
             gAsyncSwapEnabled = YES;
             break;
+        case 't': {
+            long ts = strtol(optarg, NULL, 10);
+            if (ts < 8 || ts > 128) {
+                fprintf(stderr, "Invalid tile size: %s (expected 8..128)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gTileSize = (int)ts;
+            break;
+        }
+        case 'P': {
+            long p = strtol(optarg, NULL, 10);
+            if (p < 1 || p > 100) {
+                fprintf(stderr, "Invalid threshold percent: %s (expected 1..100)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gFullscreenThresholdPercent = (int)p;
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -265,7 +460,8 @@ int main(int argc, const char *argv[]) {
         // 5) Install signal handlers for graceful shutdown
         installSignalHandlers();
 
-        // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
+    // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
+    initTilingOrReset();
         gCapturer = [ScreenCapturer sharedCapturer];
         gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
@@ -288,11 +484,20 @@ int main(int argc, const char *argv[]) {
                 }
             }
 
-            // Copy the frame into back buffer first (tight packed), we may swap or fall back to in-place copy.
+            // Copy + hash per tile in one pass
             int copyW = MIN((int)width, gWidth);
             int copyH = MIN((int)height, gHeight);
-            copyWithStrideTight((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
+            resetCurrTileHashes();
+            copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+
+            // Build dirty rectangles
+            enum { kMaxRects = 512 };
+            DirtyRect rects[kMaxRects];
+            int changedTiles = 0;
+            int rectCount = buildDirtyRects(rects, kMaxRects, &changedTiles);
+            int changedPct = (gTileCount > 0) ? (changedTiles * 100 / (int)gTileCount) : 100;
+            BOOL fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
 
             if (gAsyncSwapEnabled) {
                 // Try non-blocking swap with fallback to single-buffer copy.
@@ -300,21 +505,38 @@ int main(int argc, const char *argv[]) {
                 size_t lockedCount = 0;
                 if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
                     swapBuffers();
-                    for (size_t i = 0; i < lockedCount; ++i)
-                        pthread_mutex_unlock(locked[i]);
-                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    for (size_t i = 0; i < lockedCount; ++i) pthread_mutex_unlock(locked[i]);
+                    if (fullScreen) {
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    } else {
+                        markRectsModified(rects, rectCount);
+                    }
                 } else {
-                    copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, copyW, copyH,
-                                        (size_t)copyW * gBytesPerPixel);
-                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    if (fullScreen) {
+                        // Whole screen copy fallback
+                        copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, copyW, copyH,
+                                            (size_t)copyW * gBytesPerPixel);
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    } else {
+                        // Only copy dirty regions from back to front to reduce tearing and bandwidth
+                        copyRectsFromBackToFront(rects, rectCount);
+                        markRectsModified(rects, rectCount);
+                    }
                 }
             } else {
                 // Original blocking behavior to avoid tearing.
                 lockAllClientsBlocking();
                 swapBuffers();
-                rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                if (fullScreen) {
+                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                } else {
+                    markRectsModified(rects, rectCount);
+                }
                 unlockAllClientsBlocking();
             }
+
+            // Prepare for next frame: current hashes become previous
+            swapTileHashes();
         };
 
         TVLog(@"Screen capture is armed and will start when the first client connects.");
@@ -354,6 +576,14 @@ __attribute__((unused)) static void cleanupAndExit(int code) {
     if (gBackBuffer) {
         free(gBackBuffer);
         gBackBuffer = NULL;
+    }
+    if (gPrevHash) {
+        free(gPrevHash);
+        gPrevHash = NULL;
+    }
+    if (gCurrHash) {
+        free(gCurrHash);
+        gCurrHash = NULL;
     }
     exit(code);
 }
