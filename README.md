@@ -4,4 +4,8 @@ TrollVNC is a VNC server for iOS devices, allowing remote access and control of 
 
 ## Build Dependencies
 
-See: <https://github.com/Lessica/BuildVNCServer>
+OpenSSL is not necessary for building VNC server because it does not use any SSL/TLS features. See: <https://github.com/Lessica/BuildVNCServer>
+
+## License
+
+TrollVNC is licensed under the GPLv2 License. See the COPYING file for more information.
