@@ -81,6 +81,15 @@ static CFAbsoluteTime gDeferStartTime = 0;
 static BOOL gHasPending = NO;
 static std::atomic<int> gInflight(0);
 
+// Wheel scroll coalescing state (async, non-blocking)
+static dispatch_queue_t gWheelQueue = nil;   // serial queue for wheel gestures
+static double gWheelAccumPx = 0.0;           // accumulated scroll in pixels (+down, -up)
+static BOOL gWheelFlushScheduled = NO;       // whether a flush is pending
+static double gWheelStepPx = 48.0;           // base pixels per wheel tick (lower = slower)
+static double gWheelCoalesceSec = 0.03;      // coalescing window
+static double gWheelMaxStepPx = 192.0;       // max pixels per flush
+static void wheel_schedule_flush(CGPoint anchor, double delaySec);
+
 // Forward declarations
 static void installSignalHandlers(void);
 static void handleSignal(int signum);
@@ -185,21 +194,57 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
         [gen menuUp];
     }
 
-    // Wheel emulation via short drag at current pointer position
+    // Wheel emulation: coalesce ticks and perform async flicks off the VNC thread.
     bool wheelUpNow = (buttonMask & 8) != 0;   // button 4
     bool wheelDnNow = (buttonMask & 16) != 0;  // button 5
     bool wheelUpPrev = (gLastButtonMask & 8) != 0;
     bool wheelDnPrev = (gLastButtonMask & 16) != 0;
-    if (wheelUpNow && !wheelUpPrev) {
-        CGPoint end = CGPointMake(pt.x, MAX(0, pt.y - 90));
-        [gen dragLinearWithStartPoint:pt endPoint:end duration:0.06];
+    if (!gWheelQueue) {
+        gWheelQueue = dispatch_queue_create("com.82flex.trollvnc.wheel", DISPATCH_QUEUE_SERIAL);
     }
-    if (wheelDnNow && !wheelDnPrev) {
-        CGPoint end = CGPointMake(pt.x, MIN((CGFloat)gSrcHeight - 1, pt.y + 90));
-        [gen dragLinearWithStartPoint:pt endPoint:end duration:0.06];
+    if ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev)) {
+        double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
+        dispatch_async(gWheelQueue, ^{
+            gWheelAccumPx += delta;
+            if (!gWheelFlushScheduled) {
+                gWheelFlushScheduled = YES;
+                wheel_schedule_flush(pt, gWheelCoalesceSec);
+            }
+        });
     }
 
     gLastButtonMask = buttonMask;
+}
+
+static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySec * NSEC_PER_SEC)), gWheelQueue, ^{
+    // Consume the entire accumulation in one gesture to avoid many small drags.
+    double takeRaw = gWheelAccumPx;
+    gWheelAccumPx = 0.0; // zero out
+    gWheelFlushScheduled = NO;
+    double mag = fabs(takeRaw);
+    if (mag < 1.0) return;
+
+    // Velocity-like amplification: for larger accumulations (faster wheel),
+    // slightly increase distance instead of emitting many short drags.
+    double amp = 1.0 + fmin(0.75, 0.18 * log1p(mag / fmax(gWheelStepPx, 1.0)));
+    double take = copysign(mag * amp, takeRaw);
+    // Absolute clamp for safety
+    double absClamp = gWheelMaxStepPx * 2.5;
+    if (take > absClamp) take = absClamp;
+    if (take < -absClamp) take = -absClamp;
+
+    CGFloat endY = anchorPoint.y + (CGFloat)take;
+        if (endY < 0) endY = 0;
+        CGFloat maxY = (CGFloat)gSrcHeight - 1;
+        if (endY > maxY) endY = maxY;
+        CGPoint endPt = CGPointMake(anchorPoint.x, endY);
+    // Duration scales sub-linearly with distance to emulate quicker long flicks.
+    double dur = 0.028 + 0.00012 * sqrt(fabs(take));
+    if (dur > 0.10) dur = 0.10;
+    if (dur < 0.02) dur = 0.02;
+        [[STHIDEventGenerator sharedGenerator] dragLinearWithStartPoint:anchorPoint endPoint:endPt duration:dur];
+    });
 }
 
 static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
@@ -586,7 +631,7 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-M scheme] [-K] [-h]\n",
+            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-W px] [-M scheme] [-K] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -600,6 +645,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
             gMaxInflightUpdates);
     fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (default: %.2f, 1 means no scaling)\n", gScale);
+    fprintf(stderr, "  -W px     Wheel step in pixels per tick (default: %.0f)\n", gWheelStepPx);
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
@@ -609,7 +655,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:M:K")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:M:K")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -681,6 +727,17 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gScale = sc;
+            break;
+        }
+        case 'W': {
+            double px = strtod(optarg, NULL);
+            if (!(px > 4.0 && px <= 1000.0)) {
+                fprintf(stderr, "Invalid wheel step px: %s (expected >4..<=1000)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gWheelStepPx = px;
+            // Scale max step roughly 4x and adjust duration slope mildly
+            gWheelMaxStepPx = fmax(2.0 * gWheelStepPx, 96.0) * 1.0;
             break;
         }
         case 'M': {
