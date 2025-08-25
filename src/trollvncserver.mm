@@ -16,6 +16,8 @@
 
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
+#import <Accelerate/Accelerate.h>
+#import <Accelerate/Accelerate.h>
 
 #import <atomic>
 #import <errno.h>
@@ -43,6 +45,8 @@ static void *gBackBuffer = NULL;  // We render into this and then swap
 static size_t gFBSize = 0;        // bytes
 static int gWidth = 0;
 static int gHeight = 0;
+static int gSrcWidth = 0;  // capture source width
+static int gSrcHeight = 0; // capture source height
 static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
 static volatile sig_atomic_t gShouldTerminate = 0;
 static int gClientCount = 0;        // Number of connected clients
@@ -62,6 +66,7 @@ static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, 
 static int gMaxRectsLimit = 256;             // Max rects before falling back to bbox/fullscreen
 static double gDeferWindowSec = 0.015;       // Coalescing window; 0 disables deferral
 static int gMaxInflightUpdates = 1;          // Max concurrent client encodes; drop frames if >= this
+static double gScale = 1.0;                  // 0 < scale <= 1.0, 1.0 = no scaling
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -78,6 +83,7 @@ static std::atomic<int> gInflight{0};
 static void installSignalHandlers(void);
 static void handleSignal(int signum);
 static void cleanupAndExit(int code);
+static inline void resetCurrTileHashes(void);
 
 // MARK: - Helpers
 
@@ -152,6 +158,22 @@ static inline uint64_t fnv1a_update(uint64_t h, const uint8_t *data, size_t len)
 }
 
 static inline uint64_t fnv1a_basis(void) { return 1469598103934665603ULL; }
+
+// Hash tiles from an existing buffer (no copy)
+static void hashTiledFromBuffer(const uint8_t *buf, int width, int height, size_t bpr) {
+    resetCurrTileHashes();
+    for (int y = 0; y < height; ++y) {
+        int ty = y / gTileSize;
+        for (int tx = 0; tx < gTilesX; ++tx) {
+            int startX = tx * gTileSize; if (startX >= width) break;
+            int endX = startX + gTileSize; if (endX > width) endX = width;
+            size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
+            size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
+            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+            gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], buf + (size_t)y * bpr + offset, length);
+        }
+    }
+}
 
 static void initTilingOrReset(void) {
     int tilesX = (gWidth + gTileSize - 1) / gTileSize;
@@ -435,6 +457,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
     fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
             gMaxInflightUpdates);
+    fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (default: %.2f, 1 means no scaling)\n", gScale);
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -442,7 +465,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -507,6 +530,15 @@ static void parseCLI(int argc, const char *argv[]) {
             gMaxInflightUpdates = (int)q;
             break;
         }
+        case 's': {
+            double sc = strtod(optarg, NULL);
+            if (!(sc > 0.0 && sc <= 1.0)) {
+                fprintf(stderr, "Invalid scale: %s (expected 0 < s <= 1)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gScale = sc;
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -524,11 +556,19 @@ int main(int argc, const char *argv[]) {
 
         // 2) Determine framebuffer geometry from ScreenCapturer
         NSDictionary *props = [ScreenCapturer sharedRenderProperties];
-        gWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
-        gHeight = [props[(__bridge NSString *)kIOSurfaceHeight] intValue];
-        if (gWidth <= 0 || gHeight <= 0) {
+        gSrcWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
+        gSrcHeight = [props[(__bridge NSString *)kIOSurfaceHeight] intValue];
+        if (gSrcWidth <= 0 || gSrcHeight <= 0) {
             fprintf(stderr, "Failed to resolve screen size from ScreenCapturer properties.\n");
             return EXIT_FAILURE;
+        }
+        // Apply output scaling if requested
+        if (gScale > 0.0 && gScale < 1.0) {
+            gWidth = MAX(1, (int)floor((double)gSrcWidth * gScale));
+            gHeight = MAX(1, (int)floor((double)gSrcHeight * gScale));
+        } else {
+            gWidth = gSrcWidth;
+            gHeight = gSrcHeight;
         }
         gFBSize = (size_t)gWidth * (size_t)gHeight * (size_t)gBytesPerPixel;
 
@@ -587,34 +627,35 @@ int main(int argc, const char *argv[]) {
 
             // Busy-drop: if encoders are busy and limit reached, skip this frame (disabled when -Q 0)
             if (gMaxInflightUpdates > 0 && gInflight.load(std::memory_order_relaxed) >= gMaxInflightUpdates) {
-                // Still need to advance hash basis to keep pending detection sane
-                // But we can avoid costly copies; just update hashes over source directly
-                CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-                const uint8_t *baseRO = (const uint8_t *)CVPixelBufferGetBaseAddress(pb);
-                const size_t srcBPRRO = (size_t)CVPixelBufferGetBytesPerRow(pb);
-                const int copyWRO = MIN((int)CVPixelBufferGetWidth(pb), gWidth);
-                const int copyHRO = MIN((int)CVPixelBufferGetHeight(pb), gHeight);
-                resetCurrTileHashes();
-                // Lightweight hash pass without copying
-                for (int y = 0; y < copyHRO; ++y) {
-                    int ty = y / gTileSize;
-                    for (int tx = 0; tx < gTilesX; ++tx) {
-                        int startX = tx * gTileSize;
-                        if (startX >= copyWRO)
-                            break;
-                        int endX = startX + gTileSize;
-                        if (endX > copyWRO)
-                            endX = copyWRO;
-                        size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
-                        size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
-                        size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-                        gCurrHash[tileIndex] =
-                            fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
+                if (gScale == 1.0) {
+                    // Advance hash basis without copying to keep pending detection sane
+                    CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                    const uint8_t *baseRO = (const uint8_t *)CVPixelBufferGetBaseAddress(pb);
+                    const size_t srcBPRRO = (size_t)CVPixelBufferGetBytesPerRow(pb);
+                    const int copyWRO = MIN((int)CVPixelBufferGetWidth(pb), gWidth);
+                    const int copyHRO = MIN((int)CVPixelBufferGetHeight(pb), gHeight);
+                    resetCurrTileHashes();
+                    for (int y = 0; y < copyHRO; ++y) {
+                        int ty = y / gTileSize;
+                        for (int tx = 0; tx < gTilesX; ++tx) {
+                            int startX = tx * gTileSize;
+                            if (startX >= copyWRO)
+                                break;
+                            int endX = startX + gTileSize;
+                            if (endX > copyWRO)
+                                endX = copyWRO;
+                            size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
+                            size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
+                            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+                            gCurrHash[tileIndex] =
+                                fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
+                        }
                     }
+                    accumulatePendingDirty();
+                    swapTileHashes();
+                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
                 }
-                accumulatePendingDirty();
-                swapTileHashes();
-                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                // When scaled, skip advancing hashes to avoid expensive work; we'll catch up on next frame.
                 return;
             }
 
@@ -625,20 +666,53 @@ int main(int argc, const char *argv[]) {
             const size_t height = (size_t)CVPixelBufferGetHeight(pb);
 
             if ((int)width != gWidth || (int)height != gHeight) {
-                // Dimension mismatch should not happen; avoid per-frame logging to prevent stutter.
-                static BOOL sLoggedSizeMismatchOnce = NO;
-                if (!sLoggedSizeMismatchOnce) {
-                    TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
-                          width, height, gWidth, gHeight);
-                    sLoggedSizeMismatchOnce = YES;
+                // With scaling enabled, this is expected; log once for info. Without scaling, warn once.
+                static BOOL sLoggedSizeInfoOnce = NO;
+                if (!sLoggedSizeInfoOnce) {
+                    if (gScale != 1.0) {
+                        TVLog(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight, gScale);
+                    } else {
+                        TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
+                              width, height, gWidth, gHeight);
+                    }
+                    sLoggedSizeInfoOnce = YES;
                 }
             }
 
-            // Copy + hash per tile in one pass
-            int copyW = MIN((int)width, gWidth);
-            int copyH = MIN((int)height, gHeight);
+            // Copy/Scale into back buffer, then hash per tile
             resetCurrTileHashes();
-            copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
+            if (gScale == 1.0) {
+                // Fast path: 1:1 copy + hash
+                int copyW = MIN((int)width, gWidth);
+                int copyH = MIN((int)height, gHeight);
+                copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
+            } else {
+                // vImage scaling path: scale source into tightly-packed back buffer (BGRA/ARGB8888)
+                vImage_Buffer srcBuf{
+                    .data = base,
+                    .height = (vImagePixelCount)height,
+                    .width = (vImagePixelCount)width,
+                    .rowBytes = srcBPR,
+                };
+                vImage_Buffer dstBuf{
+                    .data = gBackBuffer,
+                    .height = (vImagePixelCount)gHeight,
+                    .width = (vImagePixelCount)gWidth,
+                    .rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel,
+                };
+                vImage_Error err = vImageScale_ARGB8888(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
+                if (err != kvImageNoError) {
+                    static BOOL sLoggedVImageErrOnce = NO;
+                    if (!sLoggedVImageErrOnce) {
+                        TVLog(@"vImageScale_ARGB8888 failed: %ld", (long)err);
+                        sLoggedVImageErrOnce = YES;
+                    }
+                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                    return;
+                }
+                // Hash over the scaled back buffer
+                hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
+            }
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
             // Build dirty rectangles with deferred coalescing window
@@ -731,9 +805,9 @@ int main(int argc, const char *argv[]) {
                     }
                 } else {
                     if (fullScreen) {
-                        // Whole screen copy fallback
-                        copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, copyW, copyH,
-                                            (size_t)copyW * gBytesPerPixel);
+                        // Whole screen copy fallback (tight -> tight)
+                        copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
+                                            (size_t)gWidth * (size_t)gBytesPerPixel);
                         rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
                     } else {
                         // Only copy dirty regions from back to front to reduce tearing and bandwidth
