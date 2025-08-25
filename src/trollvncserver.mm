@@ -18,7 +18,9 @@
 #import <rfb/rfb.h>
 
 #import <errno.h>
+#import <pthread.h>
 #import <signal.h>
+#import <stdbool.h>
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
@@ -53,6 +55,7 @@ static void (^gFrameHandler)(CMSampleBufferRef) = nil;
 static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
 static BOOL gViewOnly = NO;
 static NSString *gDesktopName = @"TrollVNC";
+static BOOL gAsyncSwapEnabled = NO; // Enable non-blocking swap (may cause tearing)
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -61,29 +64,63 @@ static void cleanupAndExit(int code);
 
 // MARK: - Helpers
 
-static void lockAllClients(void) {
-    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
-    rfbClientPtr cl;
-    while ((cl = rfbClientIteratorNext(it))) {
-        LOCK(cl->sendMutex);
-    }
-    rfbReleaseClientIterator(it);
-}
-
-static void unlockAllClients(void) {
-    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
-    rfbClientPtr cl;
-    while ((cl = rfbClientIteratorNext(it))) {
-        UNLOCK(cl->sendMutex);
-    }
-    rfbReleaseClientIterator(it);
-}
-
 static void swapBuffers(void) {
     void *tmp = gFrontBuffer;
     gFrontBuffer = gBackBuffer;
     gBackBuffer = tmp;
     gScreen->frameBuffer = (char *)gFrontBuffer;
+}
+
+// Try to acquire all clients' sendMutex without blocking.
+// Returns 1 on success and fills locked[] with acquired mutexes (count in *lockedCount),
+// otherwise returns 0 and releases any partial locks.
+static int tryLockAllClients(pthread_mutex_t **locked, size_t *lockedCount, size_t capacity) {
+    *lockedCount = 0;
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    rfbClientPtr cl;
+    int ok = 1;
+    while ((cl = rfbClientIteratorNext(it))) {
+        if (*lockedCount >= capacity) {
+            ok = 0;
+            break;
+        }
+        pthread_mutex_t *m = &cl->sendMutex;
+        if (pthread_mutex_trylock(m) == 0) {
+            locked[(*lockedCount)++] = m;
+        } else {
+            ok = 0;
+            break;
+        }
+    }
+    rfbReleaseClientIterator(it);
+    if (!ok) {
+        // release any that were acquired
+        for (size_t i = 0; i < *lockedCount; ++i) {
+            pthread_mutex_unlock(locked[i]);
+        }
+        *lockedCount = 0;
+        return 0;
+    }
+    return 1;
+}
+
+// Blocking lock helpers (original behavior): lock all clients, then unlock all.
+static void lockAllClientsBlocking(void) {
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    rfbClientPtr cl;
+    while ((cl = rfbClientIteratorNext(it))) {
+        pthread_mutex_lock(&cl->sendMutex);
+    }
+    rfbReleaseClientIterator(it);
+}
+
+static void unlockAllClientsBlocking(void) {
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    rfbClientPtr cl;
+    while ((cl = rfbClientIteratorNext(it))) {
+        pthread_mutex_unlock(&cl->sendMutex);
+    }
+    rfbReleaseClientIterator(it);
 }
 
 // Row-by-row copy to convert a possibly-strided captured buffer into a tightly packed VNC buffer.
@@ -132,6 +169,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
+    fprintf(stderr, "  -a        Enable non-blocking swap (may cause tearing)\n");
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -139,7 +177,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vh")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vha")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -155,6 +193,9 @@ static void parseCLI(int argc, const char *argv[]) {
             break;
         case 'v':
             gViewOnly = YES;
+            break;
+        case 'a':
+            gAsyncSwapEnabled = YES;
             break;
         case 'h':
         default:
@@ -238,23 +279,42 @@ int main(int argc, const char *argv[]) {
             const size_t height = (size_t)CVPixelBufferGetHeight(pb);
 
             if ((int)width != gWidth || (int)height != gHeight) {
-                // Dimension mismatch should not happen; log once per occurrence.
-                TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.", width,
-                      height, gWidth, gHeight);
+                // Dimension mismatch should not happen; avoid per-frame logging to prevent stutter.
+                static BOOL sLoggedSizeMismatchOnce = NO;
+                if (!sLoggedSizeMismatchOnce) {
+                    TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
+                          width, height, gWidth, gHeight);
+                    sLoggedSizeMismatchOnce = YES;
+                }
             }
 
-            // Copy into our tight back buffer, respecting capture stride.
-            copyWithStrideTight((uint8_t *)gBackBuffer, base, MIN((int)width, gWidth), MIN((int)height, gHeight),
-                                srcBPR);
+            // Copy the frame into back buffer first (tight packed), we may swap or fall back to in-place copy.
+            int copyW = MIN((int)width, gWidth);
+            int copyH = MIN((int)height, gHeight);
+            copyWithStrideTight((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-            // Swap buffers under client sendMutex to avoid tearing.
-            lockAllClients();
-            swapBuffers();
-
-            // Mark whole screen modified; later we can optimize to dirty rects.
-            rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
-            unlockAllClients();
+            if (gAsyncSwapEnabled) {
+                // Try non-blocking swap with fallback to single-buffer copy.
+                pthread_mutex_t *locked[64];
+                size_t lockedCount = 0;
+                if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
+                    swapBuffers();
+                    for (size_t i = 0; i < lockedCount; ++i)
+                        pthread_mutex_unlock(locked[i]);
+                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                } else {
+                    copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, copyW, copyH,
+                                        (size_t)copyW * gBytesPerPixel);
+                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                }
+            } else {
+                // Original blocking behavior to avoid tearing.
+                lockAllClientsBlocking();
+                swapBuffers();
+                rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                unlockAllClientsBlocking();
+            }
         };
 
         TVLog(@"Screen capture is armed and will start when the first client connects.");

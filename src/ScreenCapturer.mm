@@ -207,8 +207,13 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+    static double s_lastLogAtMs = 0.0;
+    double nowMs = (double)endAt / NSEC_PER_MSEC;
+    if (nowMs - s_lastLogAtMs >= 2000.0) { // log at most once every 2 seconds
+        double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
+        SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+        s_lastLogAtMs = nowMs;
+    }
 #endif
 }
 
