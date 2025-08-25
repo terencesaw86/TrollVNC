@@ -3,15 +3,13 @@
 #endif
 
 #import "ScreenCapture.h"
+#import "IOSurfaceSPI.h"
+
 #import <UIKit/UIDevice.h>
 #import <UIKit/UIGeometry.h>
 #import <UIKit/UIImage.h>
 #import <UIKit/UIScreen.h>
 #import <mach/mach.h>
-
-#import "JSTPixel/JSTPixelColor.h"
-#import "JSTPixel/JSTPixelImage+Private.h"
-#import "JSTPixel/JSTPixelImage.h"
 
 #pragma mark -
 
@@ -23,9 +21,8 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 
 @implementation ScreenCapture {
     IOSurfaceRef mScreenSurface;
+    uint32_t mSeed;
 }
-
-@synthesize underlyingPixelImage = _underlyingPixelImage;
 
 + (instancetype)sharedCapture {
     static ScreenCapture *_inst = nil;
@@ -100,20 +97,6 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
         NSDictionary *properties = [ScreenCapture sharedRenderProperties];
         mScreenSurface = IOSurfaceCreate((__bridge CFDictionaryRef)properties);
     }
-}
-
-- (JSTPixelImage *)underlyingPixelImage {
-    if (!_underlyingPixelImage) {
-        [self createScreenSurfaceIfNeeded];
-
-        NSDictionary *properties = [ScreenCapture sharedRenderProperties];
-        CGColorSpaceRef colorSpace =
-            CGColorSpaceCreateWithName((__bridge CFStringRef)properties[(__bridge NSString *)kIOSurfaceColorSpace]);
-        _underlyingPixelImage = [[JSTPixelImage alloc] initWithCompatibleScreenSurface:mScreenSurface
-                                                                            colorSpace:colorSpace];
-        CGColorSpaceRelease(colorSpace);
-    }
-    return _underlyingPixelImage;
 }
 
 + (NSDictionary *)renderPropertiesInRect:(CGRect)rect {
@@ -195,7 +178,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     IOSurfaceAcceleratorTransformSurface(_sharedAccelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL, NULL);
 }
 
-- (void)renderDisplayToSharedScreenSurface {
+- (void)updateDisplay {
 #if DEBUG
     __uint64_t beginAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
@@ -203,12 +186,12 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     [self createScreenSurfaceIfNeeded];
 
     // Lock the surface
-    IOSurfaceLock(mScreenSurface, 0, &_seed);
+    IOSurfaceLock(mScreenSurface, 0, &mSeed);
 
     [self renderDisplayToScreenSurface:mScreenSurface];
 
     // Unlock the surface
-    IOSurfaceUnlock(mScreenSurface, 0, &_seed);
+    IOSurfaceUnlock(mScreenSurface, 0, &mSeed);
 
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
@@ -225,12 +208,12 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)[ScreenCapture sharedRenderProperties]);
 
     // Lock the surface
-    IOSurfaceLock(surface, 0, &_seed);
+    IOSurfaceLock(surface, 0, &mSeed);
 
     [self renderDisplayToScreenSurface:surface];
 
     // Unlock the surface
-    IOSurfaceUnlock(surface, 0, &_seed);
+    IOSurfaceUnlock(surface, 0, &mSeed);
 
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
@@ -251,7 +234,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)screenProperties);
 
     // Lock the surface
-    IOSurfaceLock(surface, 0, &_seed);
+    IOSurfaceLock(surface, 0, &mSeed);
 
     [self renderDisplayToScreenSurface:surface];
 
@@ -281,7 +264,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     CFRelease(rawData);
 
     // Unlock and release the surface
-    IOSurfaceUnlock(surface, 0, &_seed);
+    IOSurfaceUnlock(surface, 0, &mSeed);
     CFRelease(surface);
 
 #if DEBUG
@@ -330,7 +313,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 #endif
 
     [self createScreenSurfaceIfNeeded];
-    [self renderDisplayToSharedScreenSurface];
+    [self updateDisplay];
 
     void *baseAddr = IOSurfaceGetBaseAddress(mScreenSurface);
     size_t allocSize = IOSurfaceGetAllocSize(mScreenSurface);
@@ -364,7 +347,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 #endif
 
     // Lock the surface
-    IOSurfaceLock(surface, 0, &_seed);
+    IOSurfaceLock(surface, 0, &mSeed);
 
     NSData *replyData = [self getScreenUIImageRAWDataNoCopy];
     void *baseAddr = IOSurfaceGetBaseAddress(surface);
@@ -377,7 +360,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     }
 
     // Unlock the surface
-    IOSurfaceUnlock(surface, 0, &_seed);
+    IOSurfaceUnlock(surface, 0, &mSeed);
 
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);

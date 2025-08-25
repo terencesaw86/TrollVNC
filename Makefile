@@ -8,8 +8,6 @@ TOOL_NAME := trollvncserver
 trollvncserver_USE_MODULES := 0
 
 trollvncserver_FILES += src/trollvncserver.mm
-trollvncserver_FILES += src/JSTPixel/JSTPixelColor.mm
-trollvncserver_FILES += src/JSTPixel/JSTPixelImage.mm
 trollvncserver_FILES += src/ScreenCapture.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
 
