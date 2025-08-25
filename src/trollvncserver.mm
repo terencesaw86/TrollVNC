@@ -176,6 +176,15 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
         [gen _updateTouchPoints:&p count:1];
     }
 
+    // Right button (bit 2 -> mask 4): map to Home/Menu key
+    bool rightNow = (buttonMask & 4) != 0;
+    bool rightPrev = (gLastButtonMask & 4) != 0;
+    if (rightNow && !rightPrev) {
+        [gen menuDown];
+    } else if (!rightNow && rightPrev) {
+        [gen menuUp];
+    }
+
     // Wheel emulation via short drag at current pointer position
     bool wheelUpNow = (buttonMask & 8) != 0;   // button 4
     bool wheelDnNow = (buttonMask & 16) != 0;  // button 5
