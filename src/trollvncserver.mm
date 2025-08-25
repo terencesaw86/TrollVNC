@@ -82,13 +82,77 @@ static BOOL gHasPending = NO;
 static std::atomic<int> gInflight(0);
 
 // Wheel scroll coalescing state (async, non-blocking)
-static dispatch_queue_t gWheelQueue = nil;   // serial queue for wheel gestures
-static double gWheelAccumPx = 0.0;           // accumulated scroll in pixels (+down, -up)
-static BOOL gWheelFlushScheduled = NO;       // whether a flush is pending
-static double gWheelStepPx = 48.0;           // base pixels per wheel tick (lower = slower)
-static double gWheelCoalesceSec = 0.03;      // coalescing window
-static double gWheelMaxStepPx = 192.0;       // max pixels per flush
+static dispatch_queue_t gWheelQueue = nil; // serial queue for wheel gestures
+static double gWheelAccumPx = 0.0;         // accumulated scroll in pixels (+down, -up)
+static BOOL gWheelFlushScheduled = NO;     // whether a flush is pending
+static double gWheelStepPx = 48.0;         // base pixels per wheel tick (lower = slower)
+static double gWheelCoalesceSec = 0.03;    // coalescing window
+static double gWheelMaxStepPx = 192.0;     // base max distance per flush (pre-clamp)
+static double gWheelAbsClampFactor = 2.5;  // absolute clamp = factor * gWheelMaxStepPx
+static double gWheelAmpCoeff = 0.18;       // velocity amplification coefficient
+static double gWheelAmpCap = 0.75;         // max extra amplification (0..1)
+static double gWheelMinTakeRatio = 0.35;   // minimum take distance vs step size
+static double gWheelDurBase = 0.05;        // duration base seconds
+static double gWheelDurK = 0.00016;        // duration factor applied to sqrt(distance)
+static double gWheelDurMin = 0.05;         // duration clamp min
+static double gWheelDurMax = 0.14;         // duration clamp max
+static BOOL gWheelNaturalDir = NO;         // natural scroll direction (invert delta)
 static void wheel_schedule_flush(CGPoint anchor, double delaySec);
+
+static void parseWheelOptions(const char *spec) {
+    if (!spec)
+        return;
+    char *dup = strdup(spec);
+    if (!dup)
+        return;
+    char *saveptr = NULL;
+    for (char *tok = strtok_r(dup, ",", &saveptr); tok; tok = strtok_r(NULL, ",", &saveptr)) {
+        char *eq = strchr(tok, '=');
+        if (!eq)
+            continue;
+        *eq = '\0';
+        const char *key = tok;
+        const char *val = eq + 1;
+        double d = strtod(val, NULL);
+        if (strcmp(key, "step") == 0) {
+            if (d > 0)
+                gWheelStepPx = d;
+        } else if (strcmp(key, "coalesce") == 0) {
+            if (d >= 0 && d <= 0.5)
+                gWheelCoalesceSec = d;
+        } else if (strcmp(key, "max") == 0) {
+            if (d > 0)
+                gWheelMaxStepPx = d;
+        } else if (strcmp(key, "clamp") == 0) {
+            if (d >= 1.0 && d <= 10.0)
+                gWheelAbsClampFactor = d;
+        } else if (strcmp(key, "amp") == 0) {
+            if (d >= 0.0 && d <= 5.0)
+                gWheelAmpCoeff = d;
+        } else if (strcmp(key, "cap") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelAmpCap = d;
+        } else if (strcmp(key, "minratio") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelMinTakeRatio = d;
+        } else if (strcmp(key, "durbase") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurBase = d;
+        } else if (strcmp(key, "durk") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurK = d;
+        } else if (strcmp(key, "durmin") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurMin = d;
+        } else if (strcmp(key, "durmax") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelDurMax = d;
+        } else if (strcmp(key, "natural") == 0) {
+            gWheelNaturalDir = (d != 0.0);
+        }
+    }
+    free(dup);
+}
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -111,9 +175,14 @@ static inline CGPoint vncPointToDevicePoint(int vx, int vy) {
     double sy = (gHeight > 0) ? ((double)gSrcHeight / (double)gHeight) : 1.0;
     double dx = sx * (double)vx;
     double dy = sy * (double)vy;
-    if (dx < 0) dx = 0; if (dy < 0) dy = 0;
-    if (dx > (double)(gSrcWidth - 1)) dx = (double)(gSrcWidth - 1);
-    if (dy > (double)(gSrcHeight - 1)) dy = (double)(gSrcHeight - 1);
+    if (dx < 0)
+        dx = 0;
+    if (dy < 0)
+        dy = 0;
+    if (dx > (double)(gSrcWidth - 1))
+        dx = (double)(gSrcWidth - 1);
+    if (dy > (double)(gSrcHeight - 1))
+        dy = (double)(gSrcHeight - 1);
     return CGPointMake((CGFloat)dx, (CGFloat)dy);
 }
 
@@ -124,34 +193,62 @@ static NSString *keysymToString(rfbKeySym ks) {
         return [NSString stringWithCharacters:&ch length:1];
     }
     switch (ks) {
-    case XK_Return: case XK_KP_Enter: return @"RETURN";
-    case XK_Tab: return @"TAB";
-    case XK_Escape: return @"ESCAPE";
-    case XK_BackSpace: return @"BACKSPACE";
-    case XK_Delete: return @"FORWARDDELETE";
-    case XK_Insert: return @"INSERT";
-    case XK_Home: return @"HOME";
-    case XK_End: return @"END";
-    case XK_Page_Up: return @"PAGEUP";
-    case XK_Page_Down: return @"PAGEDOWN";
-    case XK_Left: return @"LEFTARROW";
-    case XK_Right: return @"RIGHTARROW";
-    case XK_Up: return @"UPARROW";
-    case XK_Down: return @"DOWNARROW";
-    case XK_space: return @" ";
-    case XK_Shift_L: return @"LEFTSHIFT";
-    case XK_Shift_R: return @"RIGHTSHIFT";
-    case XK_Control_L: return @"LEFTCONTROL";
-    case XK_Control_R: return @"RIGHTCONTROL";
+    case XK_Return:
+    case XK_KP_Enter:
+        return @"RETURN";
+    case XK_Tab:
+        return @"TAB";
+    case XK_Escape:
+        return @"ESCAPE";
+    case XK_BackSpace:
+        return @"BACKSPACE";
+    case XK_Delete:
+        return @"FORWARDDELETE";
+    case XK_Insert:
+        return @"INSERT";
+    case XK_Home:
+        return @"HOME";
+    case XK_End:
+        return @"END";
+    case XK_Page_Up:
+        return @"PAGEUP";
+    case XK_Page_Down:
+        return @"PAGEDOWN";
+    case XK_Left:
+        return @"LEFTARROW";
+    case XK_Right:
+        return @"RIGHTARROW";
+    case XK_Up:
+        return @"UPARROW";
+    case XK_Down:
+        return @"DOWNARROW";
+    case XK_space:
+        return @" ";
+    case XK_Shift_L:
+        return @"LEFTSHIFT";
+    case XK_Shift_R:
+        return @"RIGHTSHIFT";
+    case XK_Control_L:
+        return @"LEFTCONTROL";
+    case XK_Control_R:
+        return @"RIGHTCONTROL";
     // Modifier mapping depending on scheme
-    case XK_Alt_L: return (gModMapScheme == 1) ? @"LEFTCOMMAND" : @"LEFTALT";      // Option or Command
-    case XK_Alt_R: return (gModMapScheme == 1) ? @"RIGHTCOMMAND" : @"RIGHTALT";    // Option or Command
-    case XK_ISO_Level3_Shift: return @"LEFTALT";  // macOS left Option often sent as ISO_Level3_Shift
-    case XK_Mode_switch: return @"RIGHTALT";      // Mode switch often behaves like AltGr
-    case XK_Meta_L: return (gModMapScheme == 1) ? @"LEFTALT" : @"LEFTCOMMAND";     // Option or Command
-    case XK_Meta_R: return (gModMapScheme == 1) ? @"RIGHTALT" : @"RIGHTCOMMAND";   // Option or Command
-    case XK_Super_L: return @"LEFTCOMMAND";   // Treat Super as Command in both schemes
-    case XK_Super_R: return @"RIGHTCOMMAND";
+    case XK_Alt_L:
+        return (gModMapScheme == 1) ? @"LEFTCOMMAND" : @"LEFTALT"; // Option or Command
+    case XK_Alt_R:
+        return (gModMapScheme == 1) ? @"RIGHTCOMMAND" : @"RIGHTALT"; // Option or Command
+    case XK_ISO_Level3_Shift:
+        return @"LEFTALT"; // macOS left Option often sent as ISO_Level3_Shift
+    case XK_Mode_switch:
+        return @"RIGHTALT"; // Mode switch often behaves like AltGr
+    case XK_Meta_L:
+        return (gModMapScheme == 1) ? @"LEFTALT" : @"LEFTCOMMAND"; // Option or Command
+    case XK_Meta_R:
+        return (gModMapScheme == 1) ? @"RIGHTALT" : @"RIGHTCOMMAND"; // Option or Command
+    case XK_Super_L:
+        return @"LEFTCOMMAND"; // Treat Super as Command in both schemes
+    case XK_Super_R:
+        return @"RIGHTCOMMAND";
     default:
         break;
     }
@@ -195,8 +292,8 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     }
 
     // Wheel emulation: coalesce ticks and perform async flicks off the VNC thread.
-    bool wheelUpNow = (buttonMask & 8) != 0;   // button 4
-    bool wheelDnNow = (buttonMask & 16) != 0;  // button 5
+    bool wheelUpNow = (buttonMask & 8) != 0;  // button 4
+    bool wheelDnNow = (buttonMask & 16) != 0; // button 5
     bool wheelUpPrev = (gLastButtonMask & 8) != 0;
     bool wheelDnPrev = (gLastButtonMask & 16) != 0;
     if (!gWheelQueue) {
@@ -204,6 +301,8 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     }
     if ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev)) {
         double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
+        if (gWheelNaturalDir)
+            delta = -delta;
         dispatch_async(gWheelQueue, ^{
             gWheelAccumPx += delta;
             if (!gWheelFlushScheduled) {
@@ -218,31 +317,42 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 
 static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySec * NSEC_PER_SEC)), gWheelQueue, ^{
-    // Consume the entire accumulation in one gesture to avoid many small drags.
-    double takeRaw = gWheelAccumPx;
-    gWheelAccumPx = 0.0; // zero out
-    gWheelFlushScheduled = NO;
-    double mag = fabs(takeRaw);
-    if (mag < 1.0) return;
+        // Consume the entire accumulation in one gesture to avoid many small drags.
+        double takeRaw = gWheelAccumPx;
+        gWheelAccumPx = 0.0; // zero out
+        gWheelFlushScheduled = NO;
+        double mag = fabs(takeRaw);
+        if (mag < 1.0)
+            return;
 
-    // Velocity-like amplification: for larger accumulations (faster wheel),
-    // slightly increase distance instead of emitting many short drags.
-    double amp = 1.0 + fmin(0.75, 0.18 * log1p(mag / fmax(gWheelStepPx, 1.0)));
-    double take = copysign(mag * amp, takeRaw);
-    // Absolute clamp for safety
-    double absClamp = gWheelMaxStepPx * 2.5;
-    if (take > absClamp) take = absClamp;
-    if (take < -absClamp) take = -absClamp;
+        // Velocity-like amplification: for larger accumulations (faster wheel),
+        // slightly increase distance instead of emitting many short drags.
+        double amp = 1.0 + fmin(gWheelAmpCap, gWheelAmpCoeff * log1p(mag / fmax(gWheelStepPx, 1.0)));
+        double take = copysign(mag * amp, takeRaw);
+        // Guarantee a small-but-meaningful movement for tiny scrolls
+        if (fabs(take) < (gWheelMinTakeRatio * gWheelStepPx)) {
+            take = copysign(gWheelMinTakeRatio * gWheelStepPx, take);
+        }
+        // Absolute clamp for safety
+        double absClamp = gWheelMaxStepPx * gWheelAbsClampFactor;
+        if (take > absClamp)
+            take = absClamp;
+        if (take < -absClamp)
+            take = -absClamp;
 
-    CGFloat endY = anchorPoint.y + (CGFloat)take;
-        if (endY < 0) endY = 0;
+        CGFloat endY = anchorPoint.y + (CGFloat)take;
+        if (endY < 0)
+            endY = 0;
         CGFloat maxY = (CGFloat)gSrcHeight - 1;
-        if (endY > maxY) endY = maxY;
+        if (endY > maxY)
+            endY = maxY;
         CGPoint endPt = CGPointMake(anchorPoint.x, endY);
-    // Duration scales sub-linearly with distance to emulate quicker long flicks.
-    double dur = 0.028 + 0.00012 * sqrt(fabs(take));
-    if (dur > 0.10) dur = 0.10;
-    if (dur < 0.02) dur = 0.02;
+        // Duration scales sub-linearly with distance; parameters configurable
+        double dur = gWheelDurBase + gWheelDurK * sqrt(fabs(take));
+        if (dur > gWheelDurMax)
+            dur = gWheelDurMax;
+        if (dur < gWheelDurMin)
+            dur = gWheelDurMin;
         [[STHIDEventGenerator sharedGenerator] dragLinearWithStartPoint:anchorPoint endPoint:endPt duration:dur];
     });
 }
@@ -255,8 +365,8 @@ static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
     NSString *keyStr = keysymToString(keySym);
     if (gKeyEventLogging) {
         const char *mapped = keyStr ? [keyStr UTF8String] : "(nil)";
-        fprintf(stderr, "[key] %s keysym=0x%lx (%lu) mapped=%s\n",
-                down ? "down" : " up ", (unsigned long)keySym, (unsigned long)keySym, mapped);
+        fprintf(stderr, "[key] %s keysym=0x%lx (%lu) mapped=%s\n", down ? "down" : " up ", (unsigned long)keySym,
+                (unsigned long)keySym, mapped);
     }
     if (!keyStr)
         return;
@@ -631,7 +741,8 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-W px] [-M scheme] [-K] [-h]\n",
+            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-W px] "
+            "[-w k=v,...] [-N] [-M scheme] [-K] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -646,6 +757,8 @@ static void printUsageAndExit(const char *prog) {
             gMaxInflightUpdates);
     fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (default: %.2f, 1 means no scaling)\n", gScale);
     fprintf(stderr, "  -W px     Wheel step in pixels per tick (default: %.0f)\n", gWheelStepPx);
+    fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
+    fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
@@ -655,8 +768,12 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:M:K")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:K")) != -1) {
         switch (opt) {
+        case 'N': {
+            gWheelNaturalDir = YES;
+            break;
+        }
         case 'p': {
             long port = strtol(optarg, NULL, 10);
             if (port <= 0 || port > 65535) {
@@ -740,10 +857,16 @@ static void parseCLI(int argc, const char *argv[]) {
             gWheelMaxStepPx = fmax(2.0 * gWheelStepPx, 96.0) * 1.0;
             break;
         }
+        case 'w': {
+            parseWheelOptions(optarg);
+            break;
+        }
         case 'M': {
             const char *val = optarg ? optarg : "std";
-            if (strcmp(val, "std") == 0) gModMapScheme = 0;
-            else if (strcmp(val, "altcmd") == 0) gModMapScheme = 1;
+            if (strcmp(val, "std") == 0)
+                gModMapScheme = 0;
+            else if (strcmp(val, "altcmd") == 0)
+                gModMapScheme = 1;
             else {
                 fprintf(stderr, "Invalid -M scheme: %s (expected std|altcmd)\n", val);
                 exit(EXIT_FAILURE);
@@ -816,9 +939,9 @@ int main(int argc, const char *argv[]) {
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
 
-    // Input handlers: route VNC events to STHIDEventGenerator
-    gScreen->ptrAddEvent = ptrAddEvent;
-    gScreen->kbdAddEvent = kbdAddEvent;
+        // Input handlers: route VNC events to STHIDEventGenerator
+        gScreen->ptrAddEvent = ptrAddEvent;
+        gScreen->kbdAddEvent = kbdAddEvent;
 
         // Cursor: we capture the cursor in the framebuffer already.
         gScreen->cursor = NULL;

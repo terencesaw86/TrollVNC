@@ -22,6 +22,9 @@ Options:
 - -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
 - -Q n      Max in-flight updates before dropping new frames (0..8, default: 1; 0 disables dropping)
 - -s scale  Output scale factor 0<s<=1 (default: 1.0; 1 means no scaling)
+- -W px     Wheel step in pixels per tick (default: 48)
+- -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax
+- -N        Natural scroll direction (invert wheel delta)
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:
@@ -42,6 +45,45 @@ Tuning knobs and how they trade off latency, bandwidth, and CPU usage:
 - -P pct: Threshold to switch to full-screen updates. 25–40 is a practical range; higher values favor rect updates longer.
 - -R max: Rect cap before collapsing to a bounding box. Too high increases RFB overhead; 128–512 is often sufficient.
 - -a: Non-blocking swap. Can reduce contention and stutter under load but may occasionally increase tearing; leave off for maximal visual stability.
+
+### Wheel/Scroll Tuning
+
+The scroll wheel is emulated with short drags. Fast wheel motion becomes one longer flick; slow motion becomes short drags. You can tune its feel at runtime:
+
+- -W px: Base pixels per wheel tick (default 48). Larger = faster scrolls.
+- -w k=v,... keys:
+  - step: same as -W (pixels)
+  - coalesce: coalescing window in seconds (default 0.03, 0..0.5)
+  - max: base max distance per gesture before clamp (default 192)
+  - clamp: absolute clamp factor, final max distance = clamp × max (default 2.5)
+  - amp: velocity amplification coefficient for fast scrolls (default 0.18)
+  - cap: max extra amplification (default 0.75)
+  - minratio: minimum effective distance vs step for tiny scrolls (default 0.35)
+  - durbase: gesture duration base in seconds (default 0.05)
+  - durk: gesture duration factor applied to sqrt(distance) (default 0.00016)
+  - durmin: min gesture duration (default 0.05)
+  - durmax: max gesture duration (default 0.14)
+  - natural: 1 to enable natural direction, 0 to disable
+
+Examples:
+
+Smooth and slow:
+
+```sh
+trollvncserver ... -W 32 -w minratio=0.3,durbase=0.06,durmax=0.16
+```
+
+Fast long scrolls:
+
+```sh
+trollvncserver ... -W 64 -w amp=0.25,cap=1.0,max=256,clamp=3.0
+```
+
+More sensitive small scrolls:
+
+```sh
+trollvncserver ... -w minratio=0.5,durbase=0.055
+```
 
 Notes:
 
