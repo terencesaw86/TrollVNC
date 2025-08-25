@@ -14,10 +14,9 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
+#import <Accelerate/Accelerate.h>
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
-#import <Accelerate/Accelerate.h>
-#import <Accelerate/Accelerate.h>
 
 #import <atomic>
 #import <errno.h>
@@ -45,8 +44,8 @@ static void *gBackBuffer = NULL;  // We render into this and then swap
 static size_t gFBSize = 0;        // bytes
 static int gWidth = 0;
 static int gHeight = 0;
-static int gSrcWidth = 0;  // capture source width
-static int gSrcHeight = 0; // capture source height
+static int gSrcWidth = 0;      // capture source width
+static int gSrcHeight = 0;     // capture source height
 static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
 static volatile sig_atomic_t gShouldTerminate = 0;
 static int gClientCount = 0;        // Number of connected clients
@@ -165,8 +164,12 @@ static void hashTiledFromBuffer(const uint8_t *buf, int width, int height, size_
     for (int y = 0; y < height; ++y) {
         int ty = y / gTileSize;
         for (int tx = 0; tx < gTilesX; ++tx) {
-            int startX = tx * gTileSize; if (startX >= width) break;
-            int endX = startX + gTileSize; if (endX > width) endX = width;
+            int startX = tx * gTileSize;
+            if (startX >= width)
+                break;
+            int endX = startX + gTileSize;
+            if (endX > width)
+                endX = width;
             size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
             size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
             size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
@@ -445,7 +448,9 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 // MARK: - CLI
 
 static void printUsageAndExit(const char *prog) {
-    fprintf(stderr, "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-h]\n", prog);
+    fprintf(stderr,
+            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-h]\n",
+            prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
@@ -670,10 +675,12 @@ int main(int argc, const char *argv[]) {
                 static BOOL sLoggedSizeInfoOnce = NO;
                 if (!sLoggedSizeInfoOnce) {
                     if (gScale != 1.0) {
-                        TVLog(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight, gScale);
+                        TVLog(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight,
+                              gScale);
                     } else {
-                        TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
-                              width, height, gWidth, gHeight);
+                        TVLog(
+                            @"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
+                            width, height, gWidth, gHeight);
                     }
                     sLoggedSizeInfoOnce = YES;
                 }
@@ -709,7 +716,8 @@ int main(int argc, const char *argv[]) {
                     return;
                 }
                 // Hash over the scaled back buffer
-                hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
+                hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight,
+                                    (size_t)gWidth * (size_t)gBytesPerPixel);
             }
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
