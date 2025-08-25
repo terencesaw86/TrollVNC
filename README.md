@@ -28,6 +28,7 @@ Options:
 - -P pct    Fullscreen fallback threshold percent (1..100, default: 30)
 - -R max    Max dirty rects before collapsing to a bounding box (default: 256)
 - -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
+- -Q n      Max in-flight updates before dropping new frames (0..8, default: 1)
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:

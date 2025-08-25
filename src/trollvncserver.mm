@@ -24,6 +24,7 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
+#import <atomic>
 
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
@@ -60,6 +61,7 @@ static int gTileSize = 32;          // Tile size for dirty detection (pixels)
 static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, update full screen
 static int gMaxRectsLimit = 256;     // Max rects before falling back to bbox/fullscreen
 static double gDeferWindowSec = 0.015; // Coalescing window; 0 disables deferral
+static int gMaxInflightUpdates = 1;   // Max concurrent client encodes; drop frames if >= this
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -70,6 +72,7 @@ static uint64_t *gCurrHash = NULL;
 static uint8_t *gPendingDirty = NULL; // per-tile pending dirty mask
 static CFAbsoluteTime gDeferStartTime = 0;
 static BOOL gHasPending = NO;
+static std::atomic<int> gInflight{0};
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -375,6 +378,17 @@ static enum rfbNewClientAction newClient(rfbClientPtr cl) {
     return RFB_CLIENT_ACCEPT;
 }
 
+// Track encode life-cycle to provide backpressure via inflight counter
+static void displayHook(rfbClientPtr cl) {
+    (void)cl;
+    gInflight.fetch_add(1, std::memory_order_relaxed);
+}
+
+static void displayFinishedHook(rfbClientPtr cl, int result) {
+    (void)cl; (void)result;
+    gInflight.fetch_sub(1, std::memory_order_relaxed);
+}
+
 // MARK: - CLI
 
 static void printUsageAndExit(const char *prog) {
@@ -388,6 +402,7 @@ static void printUsageAndExit(const char *prog) {
         gFullscreenThresholdPercent);
     fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
     fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
+    fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n", gMaxInflightUpdates);
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -395,7 +410,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -451,6 +466,15 @@ static void parseCLI(int argc, const char *argv[]) {
             gDeferWindowSec = s;
             break;
         }
+        case 'Q': {
+            long q = strtol(optarg, NULL, 10);
+            if (q < 0 || q > 8) {
+                fprintf(stderr, "Invalid max in-flight: %s (expected 0..8)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gMaxInflightUpdates = (int)q;
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -502,6 +526,8 @@ int main(int argc, const char *argv[]) {
         gScreen->frameBuffer = (char *)gFrontBuffer;
         gScreen->port = gPort;
         gScreen->newClientHook = newClient;
+    gScreen->displayHook = displayHook;
+    gScreen->displayFinishedHook = displayFinishedHook;
 
         // In this step we don’t expose input handlers; honor viewOnly at the client level.
         gScreen->ptrAddEvent = NULL;
@@ -526,6 +552,34 @@ int main(int argc, const char *argv[]) {
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
             if (!pb)
                 return;
+
+            // Busy-drop: if encoders are busy and limit reached, skip this frame (disabled when -Q 0)
+            if (gMaxInflightUpdates > 0 && gInflight.load(std::memory_order_relaxed) >= gMaxInflightUpdates) {
+                // Still need to advance hash basis to keep pending detection sane
+                // But we can avoid costly copies; just update hashes over source directly
+                CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                const uint8_t *baseRO = (const uint8_t *)CVPixelBufferGetBaseAddress(pb);
+                const size_t srcBPRRO = (size_t)CVPixelBufferGetBytesPerRow(pb);
+                const int copyWRO = MIN((int)CVPixelBufferGetWidth(pb), gWidth);
+                const int copyHRO = MIN((int)CVPixelBufferGetHeight(pb), gHeight);
+                resetCurrTileHashes();
+                // Lightweight hash pass without copying
+                for (int y = 0; y < copyHRO; ++y) {
+                    int ty = y / gTileSize;
+                    for (int tx = 0; tx < gTilesX; ++tx) {
+                        int startX = tx * gTileSize; if (startX >= copyWRO) break;
+                        int endX = startX + gTileSize; if (endX > copyWRO) endX = copyWRO;
+                        size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
+                        size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
+                        size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+                        gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
+                    }
+                }
+                accumulatePendingDirty();
+                swapTileHashes();
+                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                return;
+            }
 
             CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
             uint8_t *base = (uint8_t *)CVPixelBufferGetBaseAddress(pb);
