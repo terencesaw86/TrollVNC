@@ -17,6 +17,7 @@
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
 
+#import <atomic>
 #import <errno.h>
 #import <pthread.h>
 #import <signal.h>
@@ -24,7 +25,6 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
-#import <atomic>
 
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
@@ -56,12 +56,12 @@ static void (^gFrameHandler)(CMSampleBufferRef) = nil;
 static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
 static BOOL gViewOnly = NO;
 static NSString *gDesktopName = @"TrollVNC";
-static BOOL gAsyncSwapEnabled = NO; // Enable non-blocking swap (may cause tearing)
-static int gTileSize = 32;          // Tile size for dirty detection (pixels)
+static BOOL gAsyncSwapEnabled = NO;          // Enable non-blocking swap (may cause tearing)
+static int gTileSize = 32;                   // Tile size for dirty detection (pixels)
 static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, update full screen
-static int gMaxRectsLimit = 256;     // Max rects before falling back to bbox/fullscreen
-static double gDeferWindowSec = 0.015; // Coalescing window; 0 disables deferral
-static int gMaxInflightUpdates = 1;   // Max concurrent client encodes; drop frames if >= this
+static int gMaxRectsLimit = 256;             // Max rects before falling back to bbox/fullscreen
+static double gDeferWindowSec = 0.015;       // Coalescing window; 0 disables deferral
+static int gMaxInflightUpdates = 1;          // Max concurrent client encodes; drop frames if >= this
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -160,7 +160,10 @@ static void initTilingOrReset(void) {
     if (tilesX != gTilesX || tilesY != gTilesY || tileCount != gTileCount || !gPrevHash || !gCurrHash) {
         free(gPrevHash);
         free(gCurrHash);
-        if (gPendingDirty) { free(gPendingDirty); gPendingDirty = NULL; }
+        if (gPendingDirty) {
+            free(gPendingDirty);
+            gPendingDirty = NULL;
+        }
         gPrevHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
         gCurrHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
         gPendingDirty = (uint8_t *)malloc(tileCount);
@@ -175,7 +178,8 @@ static void initTilingOrReset(void) {
         gTilesX = tilesX;
         gTilesY = tilesY;
         gTileCount = tileCount;
-        if (gPendingDirty) memset(gPendingDirty, 0, gTileCount);
+        if (gPendingDirty)
+            memset(gPendingDirty, 0, gTileCount);
     } else {
         for (size_t i = 0; i < gTileCount; ++i) {
             gCurrHash[i] = fnv1a_basis();
@@ -196,9 +200,11 @@ static void copyAndHashTiled(uint8_t *dstTight, const uint8_t *src, int copyW, i
         (void)tileRowStartY; // not used further, but kept for clarity
         for (int tx = 0; tx < gTilesX; ++tx) {
             int startX = tx * gTileSize;
-            if (startX >= copyW) break;
+            if (startX >= copyW)
+                break;
             int endX = startX + gTileSize;
-            if (endX > copyW) endX = copyW;
+            if (endX > copyW)
+                endX = copyW;
             size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
             size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
             size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
@@ -221,15 +227,21 @@ static int buildDirtyRects(DirtyRect *rects, int maxRects, int *outChangedTiles)
         while (tx < gTilesX) {
             size_t idx = (size_t)ty * (size_t)gTilesX + (size_t)tx;
             int changed = (gCurrHash[idx] != gPrevHash[idx]);
-            if (!changed) { tx++; continue; }
+            if (!changed) {
+                tx++;
+                continue;
+            }
             // Start of a run
             int runStart = tx;
             changedTiles++;
             tx++;
             while (tx < gTilesX) {
                 size_t idx2 = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-                if (gCurrHash[idx2] != gPrevHash[idx2]) { changedTiles++; tx++; }
-                else break;
+                if (gCurrHash[idx2] != gPrevHash[idx2]) {
+                    changedTiles++;
+                    tx++;
+                } else
+                    break;
             }
             // Emit rect for this horizontal run
             if (rectCount < maxRects) {
@@ -238,12 +250,15 @@ static int buildDirtyRects(DirtyRect *rects, int maxRects, int *outChangedTiles)
                 int y = ty * gTileSize;
                 int h = gTileSize;
                 // Clip to screen bounds
-                if (x + w > gWidth) w = gWidth - x;
-                if (y + h > gHeight) h = gHeight - y;
+                if (x + w > gWidth)
+                    w = gWidth - x;
+                if (y + h > gHeight)
+                    h = gHeight - y;
                 rects[rectCount++] = (DirtyRect){x, y, w, h};
             } else {
                 // Too many rects; caller may fallback to fullscreen
-                if (outChangedTiles) *outChangedTiles = changedTiles;
+                if (outChangedTiles)
+                    *outChangedTiles = changedTiles;
                 return rectCount;
             }
         }
@@ -253,7 +268,8 @@ static int buildDirtyRects(DirtyRect *rects, int maxRects, int *outChangedTiles)
     // Simple O(n^2) merge for small rect counts
     for (int i = 0; i < rectCount; ++i) {
         for (int j = i + 1; j < rectCount; ++j) {
-            if (rects[j].w == 0 || rects[j].h == 0) continue;
+            if (rects[j].w == 0 || rects[j].h == 0)
+                continue;
             if (rects[i].x == rects[j].x && rects[i].w == rects[j].w) {
                 if (rects[i].y + rects[i].h == rects[j].y) {
                     rects[i].h += rects[j].h;
@@ -269,20 +285,25 @@ static int buildDirtyRects(DirtyRect *rects, int maxRects, int *outChangedTiles)
     // Compact removed entries
     int k = 0;
     for (int i = 0; i < rectCount; ++i) {
-        if (rects[i].w > 0 && rects[i].h > 0) rects[k++] = rects[i];
+        if (rects[i].w > 0 && rects[i].h > 0)
+            rects[k++] = rects[i];
     }
     rectCount = k;
 
-    if (outChangedTiles) *outChangedTiles = changedTiles;
+    if (outChangedTiles)
+        *outChangedTiles = changedTiles;
     return rectCount;
 }
 
 static inline void swapTileHashes(void) {
-    uint64_t *tmp = gPrevHash; gPrevHash = gCurrHash; gCurrHash = tmp;
+    uint64_t *tmp = gPrevHash;
+    gPrevHash = gCurrHash;
+    gCurrHash = tmp;
 }
 
 static inline void resetCurrTileHashes(void) {
-    if (!gCurrHash || gTileCount == 0) return;
+    if (!gCurrHash || gTileCount == 0)
+        return;
     uint64_t basis = fnv1a_basis();
     for (size_t i = 0; i < gTileCount; ++i) {
         gCurrHash[i] = basis;
@@ -291,29 +312,38 @@ static inline void resetCurrTileHashes(void) {
 
 // Accumulate pending dirty tiles for time-based coalescing
 static void accumulatePendingDirty(void) {
-    if (!gPendingDirty) return;
+    if (!gPendingDirty)
+        return;
     for (size_t i = 0; i < gTileCount; ++i) {
-        if (gCurrHash[i] != gPrevHash[i]) gPendingDirty[i] = 1;
+        if (gCurrHash[i] != gPrevHash[i])
+            gPendingDirty[i] = 1;
     }
 }
 
 // Build rects from pending mask by temporarily mapping to hashes
 static int buildRectsFromPending(DirtyRect *rects, int maxRects) {
-    if (!gPendingDirty) return 0;
+    if (!gPendingDirty)
+        return 0;
     // Temporarily mark curr!=prev for pending tiles
     // Save originals
     // For efficiency, we only synthesize gCurrHash markers without touching buffers
     size_t changed = 0;
     for (size_t i = 0; i < gTileCount; ++i) {
-        if (gPendingDirty[i]) { if (gCurrHash[i] == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL; changed++; }
+        if (gPendingDirty[i]) {
+            if (gCurrHash[i] == gPrevHash[i])
+                gCurrHash[i] ^= 0x1ULL;
+            changed++;
+        }
     }
     int dummyTiles = 0;
     int cnt = buildDirtyRects(rects, maxRects, &dummyTiles);
     // Restore hashes for tiles we toggled
     for (size_t i = 0; i < gTileCount; ++i) {
         if (gPendingDirty[i]) {
-            if (gCurrHash[i] == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL; // unlikely path
-            else if ((gCurrHash[i] ^ 0x1ULL) == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL;
+            if (gCurrHash[i] == gPrevHash[i])
+                gCurrHash[i] ^= 0x1ULL; // unlikely path
+            else if ((gCurrHash[i] ^ 0x1ULL) == gPrevHash[i])
+                gCurrHash[i] ^= 0x1ULL;
         }
     }
     (void)changed;
@@ -385,7 +415,8 @@ static void displayHook(rfbClientPtr cl) {
 }
 
 static void displayFinishedHook(rfbClientPtr cl, int result) {
-    (void)cl; (void)result;
+    (void)cl;
+    (void)result;
     gInflight.fetch_sub(1, std::memory_order_relaxed);
 }
 
@@ -399,10 +430,11 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -a        Enable non-blocking swap (may cause tearing)\n");
     fprintf(stderr, "  -t size   Tile size for dirty-detection (8..128, default: %d)\n", gTileSize);
     fprintf(stderr, "  -P pct    Fullscreen fallback threshold percent (1..100, default: %d)\n",
-        gFullscreenThresholdPercent);
+            gFullscreenThresholdPercent);
     fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
     fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
-    fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n", gMaxInflightUpdates);
+    fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
+            gMaxInflightUpdates);
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -526,8 +558,8 @@ int main(int argc, const char *argv[]) {
         gScreen->frameBuffer = (char *)gFrontBuffer;
         gScreen->port = gPort;
         gScreen->newClientHook = newClient;
-    gScreen->displayHook = displayHook;
-    gScreen->displayFinishedHook = displayFinishedHook;
+        gScreen->displayHook = displayHook;
+        gScreen->displayFinishedHook = displayFinishedHook;
 
         // In this step we don’t expose input handlers; honor viewOnly at the client level.
         gScreen->ptrAddEvent = NULL;
@@ -545,8 +577,8 @@ int main(int argc, const char *argv[]) {
         // 5) Install signal handlers for graceful shutdown
         installSignalHandlers();
 
-    // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
-    initTilingOrReset();
+        // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
+        initTilingOrReset();
         gCapturer = [ScreenCapturer sharedCapturer];
         gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
@@ -567,12 +599,17 @@ int main(int argc, const char *argv[]) {
                 for (int y = 0; y < copyHRO; ++y) {
                     int ty = y / gTileSize;
                     for (int tx = 0; tx < gTilesX; ++tx) {
-                        int startX = tx * gTileSize; if (startX >= copyWRO) break;
-                        int endX = startX + gTileSize; if (endX > copyWRO) endX = copyWRO;
+                        int startX = tx * gTileSize;
+                        if (startX >= copyWRO)
+                            break;
+                        int endX = startX + gTileSize;
+                        if (endX > copyWRO)
+                            endX = copyWRO;
                         size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
                         size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
                         size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-                        gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
+                        gCurrHash[tileIndex] =
+                            fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
                     }
                 }
                 accumulatePendingDirty();
@@ -642,7 +679,8 @@ int main(int argc, const char *argv[]) {
                     // Simple append then vertical merge will compact later in pipeline
                     int space = kRectBuf - rectCount;
                     int take = nowCount < space ? nowCount : space;
-                    if (take > 0) memcpy(&rects[rectCount], rectsNow, (size_t)take * sizeof(DirtyRect));
+                    if (take > 0)
+                        memcpy(&rects[rectCount], rectsNow, (size_t)take * sizeof(DirtyRect));
                     rectCount += take;
                 }
                 int totalTiles = (int)gTileCount;
@@ -652,18 +690,24 @@ int main(int argc, const char *argv[]) {
                     // Collapse to bounding box
                     int minX = gWidth, minY = gHeight, maxX = 0, maxY = 0;
                     for (int i = 0; i < rectCount; ++i) {
-                        if (rects[i].w <= 0 || rects[i].h <= 0) continue;
-                        if (rects[i].x < minX) minX = rects[i].x;
-                        if (rects[i].y < minY) minY = rects[i].y;
-                        if (rects[i].x + rects[i].w > maxX) maxX = rects[i].x + rects[i].w;
-                        if (rects[i].y + rects[i].h > maxY) maxY = rects[i].y + rects[i].h;
+                        if (rects[i].w <= 0 || rects[i].h <= 0)
+                            continue;
+                        if (rects[i].x < minX)
+                            minX = rects[i].x;
+                        if (rects[i].y < minY)
+                            minY = rects[i].y;
+                        if (rects[i].x + rects[i].w > maxX)
+                            maxX = rects[i].x + rects[i].w;
+                        if (rects[i].y + rects[i].h > maxY)
+                            maxY = rects[i].y + rects[i].h;
                     }
                     rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
                     rectCount = 1;
                 }
                 fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
                 // Clear pending
-                if (gPendingDirty) memset(gPendingDirty, 0, gTileCount);
+                if (gPendingDirty)
+                    memset(gPendingDirty, 0, gTileCount);
                 gHasPending = NO;
             } else {
                 // Still deferring: do not notify clients yet
@@ -678,7 +722,8 @@ int main(int argc, const char *argv[]) {
                 size_t lockedCount = 0;
                 if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
                     swapBuffers();
-                    for (size_t i = 0; i < lockedCount; ++i) pthread_mutex_unlock(locked[i]);
+                    for (size_t i = 0; i < lockedCount; ++i)
+                        pthread_mutex_unlock(locked[i]);
                     if (fullScreen) {
                         rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
                     } else {
