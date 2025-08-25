@@ -58,6 +58,8 @@ static NSString *gDesktopName = @"TrollVNC";
 static BOOL gAsyncSwapEnabled = NO; // Enable non-blocking swap (may cause tearing)
 static int gTileSize = 32;          // Tile size for dirty detection (pixels)
 static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, update full screen
+static int gMaxRectsLimit = 256;     // Max rects before falling back to bbox/fullscreen
+static double gDeferWindowSec = 0.015; // Coalescing window; 0 disables deferral
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -65,6 +67,9 @@ static int gTilesY = 0;
 static size_t gTileCount = 0;
 static uint64_t *gPrevHash = NULL;
 static uint64_t *gCurrHash = NULL;
+static uint8_t *gPendingDirty = NULL; // per-tile pending dirty mask
+static CFAbsoluteTime gDeferStartTime = 0;
+static BOOL gHasPending = NO;
 
 // Forward declarations
 static void installSignalHandlers(void);
@@ -152,8 +157,10 @@ static void initTilingOrReset(void) {
     if (tilesX != gTilesX || tilesY != gTilesY || tileCount != gTileCount || !gPrevHash || !gCurrHash) {
         free(gPrevHash);
         free(gCurrHash);
+        if (gPendingDirty) { free(gPendingDirty); gPendingDirty = NULL; }
         gPrevHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
         gCurrHash = (uint64_t *)malloc(tileCount * sizeof(uint64_t));
+        gPendingDirty = (uint8_t *)malloc(tileCount);
         if (!gPrevHash || !gCurrHash) {
             fprintf(stderr, "Out of memory for tile hashes.\n");
             exit(EXIT_FAILURE);
@@ -165,6 +172,7 @@ static void initTilingOrReset(void) {
         gTilesX = tilesX;
         gTilesY = tilesY;
         gTileCount = tileCount;
+        if (gPendingDirty) memset(gPendingDirty, 0, gTileCount);
     } else {
         for (size_t i = 0; i < gTileCount; ++i) {
             gCurrHash[i] = fnv1a_basis();
@@ -278,6 +286,37 @@ static inline void resetCurrTileHashes(void) {
     }
 }
 
+// Accumulate pending dirty tiles for time-based coalescing
+static void accumulatePendingDirty(void) {
+    if (!gPendingDirty) return;
+    for (size_t i = 0; i < gTileCount; ++i) {
+        if (gCurrHash[i] != gPrevHash[i]) gPendingDirty[i] = 1;
+    }
+}
+
+// Build rects from pending mask by temporarily mapping to hashes
+static int buildRectsFromPending(DirtyRect *rects, int maxRects) {
+    if (!gPendingDirty) return 0;
+    // Temporarily mark curr!=prev for pending tiles
+    // Save originals
+    // For efficiency, we only synthesize gCurrHash markers without touching buffers
+    size_t changed = 0;
+    for (size_t i = 0; i < gTileCount; ++i) {
+        if (gPendingDirty[i]) { if (gCurrHash[i] == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL; changed++; }
+    }
+    int dummyTiles = 0;
+    int cnt = buildDirtyRects(rects, maxRects, &dummyTiles);
+    // Restore hashes for tiles we toggled
+    for (size_t i = 0; i < gTileCount; ++i) {
+        if (gPendingDirty[i]) {
+            if (gCurrHash[i] == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL; // unlikely path
+            else if ((gCurrHash[i] ^ 0x1ULL) == gPrevHash[i]) gCurrHash[i] ^= 0x1ULL;
+        }
+    }
+    (void)changed;
+    return cnt;
+}
+
 static void markRectsModified(DirtyRect *rects, int rectCount) {
     for (int i = 0; i < rectCount; ++i) {
         rfbMarkRectAsModified(gScreen, rects[i].x, rects[i].y, rects[i].x + rects[i].w, rects[i].y + rects[i].h);
@@ -347,6 +386,8 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -t size   Tile size for dirty-detection (8..128, default: %d)\n", gTileSize);
     fprintf(stderr, "  -P pct    Fullscreen fallback threshold percent (1..100, default: %d)\n",
         gFullscreenThresholdPercent);
+    fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
+    fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -354,7 +395,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -390,6 +431,24 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gFullscreenThresholdPercent = (int)p;
+            break;
+        }
+        case 'R': {
+            long m = strtol(optarg, NULL, 10);
+            if (m < 1 || m > 4096) {
+                fprintf(stderr, "Invalid max rects: %s (expected 1..4096)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gMaxRectsLimit = (int)m;
+            break;
+        }
+        case 'd': {
+            double s = strtod(optarg, NULL);
+            if (s < 0.0 || s > 0.5) {
+                fprintf(stderr, "Invalid defer window seconds: %s (expected 0..0.5)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gDeferWindowSec = s;
             break;
         }
         case 'h':
@@ -491,13 +550,73 @@ int main(int argc, const char *argv[]) {
             copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-            // Build dirty rectangles
-            enum { kMaxRects = 512 };
-            DirtyRect rects[kMaxRects];
+            // Build dirty rectangles with deferred coalescing window
+            enum { kRectBuf = 1024 };
+            DirtyRect rects[kRectBuf];
             int changedTiles = 0;
-            int rectCount = buildDirtyRects(rects, kMaxRects, &changedTiles);
-            int changedPct = (gTileCount > 0) ? (changedTiles * 100 / (int)gTileCount) : 100;
-            BOOL fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
+
+            // Accumulate pending dirty tiles
+            accumulatePendingDirty();
+
+            // Decide whether to flush now
+            BOOL shouldFlush = YES;
+            if (gDeferWindowSec > 0) {
+                if (!gHasPending) {
+                    gHasPending = YES;
+                    gDeferStartTime = CFAbsoluteTimeGetCurrent();
+                    shouldFlush = NO; // start window, wait for more
+                } else {
+                    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+                    shouldFlush = ((now - gDeferStartTime) >= gDeferWindowSec);
+                }
+            }
+
+            int rectCount = 0;
+            int changedPct = 0;
+            BOOL fullScreen = NO;
+            if (shouldFlush) {
+                // Promote pending tiles into rects
+                rectCount = buildRectsFromPending(rects, MIN(gMaxRectsLimit, kRectBuf));
+                // If anything from this frame is also new dirty not in pending, ensure included
+                int extraTiles = 0;
+                if (rectCount == 0) {
+                    rectCount = buildDirtyRects(rects, MIN(gMaxRectsLimit, kRectBuf), &changedTiles);
+                } else {
+                    // Merge current frame dirties by re-running with hashes, bounded
+                    DirtyRect rectsNow[kRectBuf];
+                    int nowCount = buildDirtyRects(rectsNow, MIN(gMaxRectsLimit, kRectBuf), &extraTiles);
+                    // Simple append then vertical merge will compact later in pipeline
+                    int space = kRectBuf - rectCount;
+                    int take = nowCount < space ? nowCount : space;
+                    if (take > 0) memcpy(&rects[rectCount], rectsNow, (size_t)take * sizeof(DirtyRect));
+                    rectCount += take;
+                }
+                int totalTiles = (int)gTileCount;
+                int totalChanged = changedTiles + extraTiles;
+                changedPct = (totalTiles > 0) ? (totalChanged * 100 / totalTiles) : 100;
+                if (rectCount >= gMaxRectsLimit) {
+                    // Collapse to bounding box
+                    int minX = gWidth, minY = gHeight, maxX = 0, maxY = 0;
+                    for (int i = 0; i < rectCount; ++i) {
+                        if (rects[i].w <= 0 || rects[i].h <= 0) continue;
+                        if (rects[i].x < minX) minX = rects[i].x;
+                        if (rects[i].y < minY) minY = rects[i].y;
+                        if (rects[i].x + rects[i].w > maxX) maxX = rects[i].x + rects[i].w;
+                        if (rects[i].y + rects[i].h > maxY) maxY = rects[i].y + rects[i].h;
+                    }
+                    rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
+                    rectCount = 1;
+                }
+                fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
+                // Clear pending
+                if (gPendingDirty) memset(gPendingDirty, 0, gTileCount);
+                gHasPending = NO;
+            } else {
+                // Still deferring: do not notify clients yet
+                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                swapTileHashes();
+                return;
+            }
 
             if (gAsyncSwapEnabled) {
                 // Try non-blocking swap with fallback to single-buffer copy.

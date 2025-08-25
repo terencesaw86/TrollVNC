@@ -26,6 +26,8 @@ Options:
 - -a        Enable non-blocking swap (may cause tearing). Default off.
 - -t size   Tile size for dirty-detection in pixels (8..128, default: 32)
 - -P pct    Fullscreen fallback threshold percent (1..100, default: 30)
+- -R max    Max dirty rects before collapsing to a bounding box (default: 256)
+- -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:
