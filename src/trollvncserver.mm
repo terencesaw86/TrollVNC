@@ -282,6 +282,15 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
         [gen _updateTouchPoints:&p count:1];
     }
 
+    // Middle button (bit 1 -> mask 2): map to Power key
+    bool midNow = (buttonMask & 2) != 0;
+    bool midPrev = (gLastButtonMask & 2) != 0;
+    if (midNow && !midPrev) {
+        [gen powerDown];
+    } else if (!midNow && midPrev) {
+        [gen powerUp];
+    }
+
     // Right button (bit 2 -> mask 4): map to Home/Menu key
     bool rightNow = (buttonMask & 4) != 0;
     bool rightPrev = (gLastButtonMask & 4) != 0;
