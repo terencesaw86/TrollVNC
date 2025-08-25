@@ -11,6 +11,12 @@
 #import <UIKit/UIScreen.h>
 #import <mach/mach.h>
 
+#if DEBUG
+#define SCLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#define SCLog(...)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -90,7 +96,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
                                              CFBridgingRelease(colorSpacePropertyList), kIOSurfaceColorSpace, nil];
 
 #if DEBUG
-            NSLog(@"render properties %@", _renderProperties);
+            SCLog(@"render properties %@", _renderProperties);
 #endif
         }
     });
@@ -138,7 +144,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
                                      kIOSurfaceColorSpace, nil];
 
 #if DEBUG
-    NSLog(@"render properties %@", properties);
+    SCLog(@"render properties %@", properties);
 #endif
 
     return properties;
@@ -202,7 +208,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+    SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
 }
 
@@ -224,7 +230,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms", used);
+    SCLog(@"time elapsed %.2fms", used);
 #endif
 
     return surface;
@@ -276,7 +282,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms", used);
+    SCLog(@"time elapsed %.2fms", used);
 #endif
     return cgImage;
 }
@@ -291,7 +297,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms", used);
+    SCLog(@"time elapsed %.2fms", used);
 #endif
 
     return uiImage;
@@ -306,7 +312,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms", used);
+    SCLog(@"time elapsed %.2fms", used);
 #endif
     return data;
 }
@@ -334,7 +340,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+    SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
 
     return data;
@@ -371,7 +377,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+    SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
 }
 
