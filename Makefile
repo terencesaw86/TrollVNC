@@ -8,7 +8,7 @@ TOOL_NAME := trollvncserver
 trollvncserver_USE_MODULES := 0
 
 trollvncserver_FILES += src/trollvncserver.mm
-trollvncserver_FILES += src/ScreenCapture.mm
+trollvncserver_FILES += src/ScreenCapturer.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
 
 trollvncserver_CFLAGS += -fobjc-arc
@@ -24,6 +24,8 @@ trollvncserver_LIBRARIES += z
 
 trollvncserver_FRAMEWORKS += Accelerate
 trollvncserver_FRAMEWORKS += CoreGraphics
+trollvncserver_FRAMEWORKS += CoreMedia
+trollvncserver_FRAMEWORKS += CoreVideo
 trollvncserver_FRAMEWORKS += Foundation
 trollvncserver_FRAMEWORKS += IOKit
 trollvncserver_FRAMEWORKS += QuartzCore

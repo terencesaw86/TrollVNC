@@ -2,7 +2,7 @@
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
 
-#import "ScreenCapture.h"
+#import "ScreenCapturer.h"
 #import "IOSurfaceSPI.h"
 
 #import <UIKit/UIDevice.h>
@@ -11,21 +11,27 @@
 #import <UIKit/UIScreen.h>
 #import <mach/mach.h>
 
-#pragma mark -
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-OBJC_EXTERN UIImage *_UICreateScreenUIImage(void);
-OBJC_EXTERN CGImageRef UICreateCGImageFromIOSurface(IOSurfaceRef ioSurface);
-OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef surface, int x, int y);
+UIImage *_UICreateScreenUIImage(void);
+CGImageRef UICreateCGImageFromIOSurface(IOSurfaceRef ioSurface);
+void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef surface, int x, int y);
 
-#pragma mark -
+#ifdef __cplusplus
+}
+#endif
 
-@implementation ScreenCapture {
+@implementation ScreenCapturer {
+    CADisplayLink *mDisplayLink;
     IOSurfaceRef mScreenSurface;
     uint32_t mSeed;
+    void (^mFrameHandler)(CMSampleBufferRef sampleBuffer);
 }
 
-+ (instancetype)sharedCapture {
-    static ScreenCapture *_inst = nil;
++ (instancetype)sharedCapturer {
+    static ScreenCapturer *_inst = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         _inst = [[self alloc] init];
@@ -94,7 +100,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 
 - (void)createScreenSurfaceIfNeeded {
     if (!mScreenSurface) {
-        NSDictionary *properties = [ScreenCapture sharedRenderProperties];
+        NSDictionary *properties = [ScreenCapturer sharedRenderProperties];
         mScreenSurface = IOSurfaceCreate((__bridge CFDictionaryRef)properties);
     }
 }
@@ -161,21 +167,21 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     CFRunLoopRef runLoop = CFRunLoopGetMain();
 
     static IOSurfaceRef srcSurface;
-    static IOSurfaceAcceleratorRef _sharedAccelerator;
+    static IOSurfaceAcceleratorRef accelerator;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         @autoreleasepool {
-            srcSurface = IOSurfaceCreate((__bridge CFDictionaryRef)[ScreenCapture sharedRenderProperties]);
-            IOSurfaceAcceleratorCreate(kCFAllocatorDefault, nil, &_sharedAccelerator);
+            srcSurface = IOSurfaceCreate((__bridge CFDictionaryRef)[ScreenCapturer sharedRenderProperties]);
+            IOSurfaceAcceleratorCreate(kCFAllocatorDefault, nil, &accelerator);
 
-            CFRunLoopSourceRef runLoopSource = IOSurfaceAcceleratorGetRunLoopSource(_sharedAccelerator);
+            CFRunLoopSourceRef runLoopSource = IOSurfaceAcceleratorGetRunLoopSource(accelerator);
             CFRunLoopAddSource(runLoop, runLoopSource, kCFRunLoopDefaultMode);
         }
     });
 
     /// Fast ~20ms, sRGB, while the image is GOOD. Recommended.
     CARenderServerRenderDisplay(0, CFSTR("LCD"), srcSurface, 0, 0);
-    IOSurfaceAcceleratorTransformSurface(_sharedAccelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL, NULL);
+    IOSurfaceAcceleratorTransformSurface(accelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL, NULL);
 }
 
 - (void)updateDisplay {
@@ -196,7 +202,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapture __getMemoryUsedInBytes]);
+    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
 }
 
@@ -205,7 +211,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     __uint64_t beginAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
 
-    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)[ScreenCapture sharedRenderProperties]);
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)[ScreenCapturer sharedRenderProperties]);
 
     // Lock the surface
     IOSurfaceLock(surface, 0, &mSeed);
@@ -229,7 +235,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
     __uint64_t beginAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
 
-    NSDictionary *screenProperties = [ScreenCapture sharedRenderProperties];
+    NSDictionary *screenProperties = [ScreenCapturer sharedRenderProperties];
 
     IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef)screenProperties);
 
@@ -328,7 +334,7 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapture __getMemoryUsedInBytes]);
+    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
 
     return data;
@@ -365,8 +371,109 @@ OBJC_EXTERN void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOS
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapture __getMemoryUsedInBytes]);
+    NSLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
 #endif
+}
+
+#pragma mark - Public Methods
+
+- (void)startCaptureWithFrameHandler:(void (^)(CMSampleBufferRef _Nonnull))frameHandler {
+    // Store/replace handler
+    mFrameHandler = [frameHandler copy];
+
+    if (mDisplayLink) {
+        // Already running; nothing else to do
+        return;
+    }
+
+    // Ensure surface exists before first tick
+    [self createScreenSurfaceIfNeeded];
+
+    // Create display link on main run loop
+    void (^startBlock)(void) = ^{
+        mDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onDisplayLink:)];
+#if defined(__IPHONE_10_3) && (__IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_10_3)
+        if ([mDisplayLink respondsToSelector:@selector(preferredFramesPerSecond)]) {
+            mDisplayLink.preferredFramesPerSecond = 0; // Use native
+        }
+#endif
+        [mDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    };
+
+    if ([NSThread isMainThread]) {
+        startBlock();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), startBlock);
+    }
+}
+
+- (void)endCapture {
+    void (^stopBlock)(void) = ^{
+        if (mDisplayLink) {
+            [mDisplayLink invalidate];
+            mDisplayLink = nil;
+        }
+        mFrameHandler = nil;
+
+        if (mScreenSurface) {
+            CFRelease(mScreenSurface);
+            mScreenSurface = nil;
+        }
+    };
+
+    if ([NSThread isMainThread]) {
+        stopBlock();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), stopBlock);
+    }
+}
+
+// MARK: - Private
+
+- (void)onDisplayLink:(CADisplayLink *)link {
+    if (!mFrameHandler)
+        return;
+
+    // Update the screen contents into our IOSurface
+    [self updateDisplay];
+
+    // Wrap IOSurface in a CVPixelBuffer (zero-copy)
+    CVPixelBufferRef pixelBuffer = NULL;
+    NSDictionary *attrs = @{(NSString *)kCVPixelBufferIOSurfacePropertiesKey : @{}};
+    CVReturn cvret = CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, mScreenSurface,
+                                                      (__bridge CFDictionaryRef)attrs, &pixelBuffer);
+    if (cvret != kCVReturnSuccess || !pixelBuffer) {
+        return;
+    }
+
+    // Create format description from the pixel buffer
+    CMVideoFormatDescriptionRef formatDesc = NULL;
+    OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDesc);
+    if (status != noErr || !formatDesc) {
+        CVPixelBufferRelease(pixelBuffer);
+        return;
+    }
+
+    // Build timing from CADisplayLink
+    int32_t timescale = 1000000000; // 1 ns
+    CMSampleTimingInfo timing;
+    timing.duration = CMTimeMakeWithSeconds(link.duration, timescale);
+    timing.presentationTimeStamp = CMTimeMakeWithSeconds(link.timestamp, timescale);
+    timing.decodeTimeStamp = kCMTimeInvalid;
+
+    CMSampleBufferRef sampleBuffer = NULL;
+    status = CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, true, NULL, NULL, formatDesc, &timing,
+                                                &sampleBuffer);
+
+    if (status == noErr && sampleBuffer) {
+        mFrameHandler(sampleBuffer);
+        CFRelease(sampleBuffer);
+    }
+
+    if (formatDesc)
+        CFRelease(formatDesc);
+    if (pixelBuffer)
+        CVPixelBufferRelease(pixelBuffer);
 }
 
 @end
