@@ -66,6 +66,9 @@ static int gMaxRectsLimit = 256;             // Max rects before falling back to
 static double gDeferWindowSec = 0.015;       // Coalescing window; 0 disables deferral
 static int gMaxInflightUpdates = 1;          // Max concurrent client encodes; drop frames if >= this
 static double gScale = 1.0;                  // 0 < scale <= 1.0, 1.0 = no scaling
+static BOOL gKeyEventLogging = NO;           // Log keyboard events (keysym, mapping)
+// Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
+static int gModMapScheme = 0;
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -83,6 +86,131 @@ static void installSignalHandlers(void);
 static void handleSignal(int signum);
 static void cleanupAndExit(int code);
 static inline void resetCurrTileHashes(void);
+
+// Expose private methods we use from STHIDEventGenerator
+@interface STHIDEventGenerator (Private)
+- (void)touchDownAtPoints:(CGPoint *)locations touchCount:(NSUInteger)touchCount;
+- (void)liftUpAtPoints:(CGPoint *)locations touchCount:(NSUInteger)touchCount;
+- (void)_updateTouchPoints:(CGPoint *)points count:(NSUInteger)count;
+@end
+
+// MARK: - Input helpers
+
+static inline CGPoint vncPointToDevicePoint(int vx, int vy) {
+    // Map from VNC framebuffer space (gWidth x gHeight) to device capture space (gSrcWidth x gSrcHeight)
+    double sx = (gWidth > 0) ? ((double)gSrcWidth / (double)gWidth) : 1.0;
+    double sy = (gHeight > 0) ? ((double)gSrcHeight / (double)gHeight) : 1.0;
+    double dx = sx * (double)vx;
+    double dy = sy * (double)vy;
+    if (dx < 0) dx = 0; if (dy < 0) dy = 0;
+    if (dx > (double)(gSrcWidth - 1)) dx = (double)(gSrcWidth - 1);
+    if (dy > (double)(gSrcHeight - 1)) dy = (double)(gSrcHeight - 1);
+    return CGPointMake((CGFloat)dx, (CGFloat)dy);
+}
+
+static NSString *keysymToString(rfbKeySym ks) {
+    // Alphanumeric and basic ASCII
+    if ((ks >= 0x20 && ks <= 0x7E) || ks == ' ') {
+        unichar ch = (unichar)ks;
+        return [NSString stringWithCharacters:&ch length:1];
+    }
+    switch (ks) {
+    case XK_Return: case XK_KP_Enter: return @"RETURN";
+    case XK_Tab: return @"TAB";
+    case XK_Escape: return @"ESCAPE";
+    case XK_BackSpace: return @"BACKSPACE";
+    case XK_Delete: return @"FORWARDDELETE";
+    case XK_Insert: return @"INSERT";
+    case XK_Home: return @"HOME";
+    case XK_End: return @"END";
+    case XK_Page_Up: return @"PAGEUP";
+    case XK_Page_Down: return @"PAGEDOWN";
+    case XK_Left: return @"LEFTARROW";
+    case XK_Right: return @"RIGHTARROW";
+    case XK_Up: return @"UPARROW";
+    case XK_Down: return @"DOWNARROW";
+    case XK_space: return @" ";
+    case XK_Shift_L: return @"LEFTSHIFT";
+    case XK_Shift_R: return @"RIGHTSHIFT";
+    case XK_Control_L: return @"LEFTCONTROL";
+    case XK_Control_R: return @"RIGHTCONTROL";
+    // Modifier mapping depending on scheme
+    case XK_Alt_L: return (gModMapScheme == 1) ? @"LEFTCOMMAND" : @"LEFTALT";      // Option or Command
+    case XK_Alt_R: return (gModMapScheme == 1) ? @"RIGHTCOMMAND" : @"RIGHTALT";    // Option or Command
+    case XK_ISO_Level3_Shift: return @"LEFTALT";  // macOS left Option often sent as ISO_Level3_Shift
+    case XK_Mode_switch: return @"RIGHTALT";      // Mode switch often behaves like AltGr
+    case XK_Meta_L: return (gModMapScheme == 1) ? @"LEFTALT" : @"LEFTCOMMAND";     // Option or Command
+    case XK_Meta_R: return (gModMapScheme == 1) ? @"RIGHTALT" : @"RIGHTCOMMAND";   // Option or Command
+    case XK_Super_L: return @"LEFTCOMMAND";   // Treat Super as Command in both schemes
+    case XK_Super_R: return @"RIGHTCOMMAND";
+    default:
+        break;
+    }
+    // Function keys XK_F1..XK_F24
+    if (ks >= XK_F1 && ks <= XK_F24) {
+        int idx = (int)(ks - XK_F1) + 1;
+        return [NSString stringWithFormat:@"F%d", idx];
+    }
+    return nil;
+}
+
+// Track last button state to detect edges; per-process (typical single client).
+static int gLastButtonMask = 0;
+
+static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
+    (void)cl;
+    if (gViewOnly)
+        return;
+    STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+    CGPoint pt = vncPointToDevicePoint(x, y);
+
+    // Left button (bit 0)
+    bool leftNow = (buttonMask & 1) != 0;
+    bool leftPrev = (gLastButtonMask & 1) != 0;
+    if (leftNow && !leftPrev) {
+        [gen touchDownAtPoints:&pt touchCount:1];
+    } else if (!leftNow && leftPrev) {
+        [gen liftUpAtPoints:&pt touchCount:1];
+    } else if (leftNow) {
+        CGPoint p = pt;
+        [gen _updateTouchPoints:&p count:1];
+    }
+
+    // Wheel emulation via short drag at current pointer position
+    bool wheelUpNow = (buttonMask & 8) != 0;   // button 4
+    bool wheelDnNow = (buttonMask & 16) != 0;  // button 5
+    bool wheelUpPrev = (gLastButtonMask & 8) != 0;
+    bool wheelDnPrev = (gLastButtonMask & 16) != 0;
+    if (wheelUpNow && !wheelUpPrev) {
+        CGPoint end = CGPointMake(pt.x, MAX(0, pt.y - 90));
+        [gen dragLinearWithStartPoint:pt endPoint:end duration:0.06];
+    }
+    if (wheelDnNow && !wheelDnPrev) {
+        CGPoint end = CGPointMake(pt.x, MIN((CGFloat)gSrcHeight - 1, pt.y + 90));
+        [gen dragLinearWithStartPoint:pt endPoint:end duration:0.06];
+    }
+
+    gLastButtonMask = buttonMask;
+}
+
+static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
+    (void)cl;
+    if (gViewOnly)
+        return;
+    STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+    NSString *keyStr = keysymToString(keySym);
+    if (gKeyEventLogging) {
+        const char *mapped = keyStr ? [keyStr UTF8String] : "(nil)";
+        fprintf(stderr, "[key] %s keysym=0x%lx (%lu) mapped=%s\n",
+                down ? "down" : " up ", (unsigned long)keySym, (unsigned long)keySym, mapped);
+    }
+    if (!keyStr)
+        return;
+    if (down)
+        [gen keyDown:keyStr];
+    else
+        [gen keyUp:keyStr];
+}
 
 // MARK: - Helpers
 
@@ -449,7 +577,7 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-h]\n",
+            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-M scheme] [-K] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -463,6 +591,8 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
             gMaxInflightUpdates);
     fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (default: %.2f, 1 means no scaling)\n", gScale);
+    fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
+    fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
@@ -470,7 +600,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:M:K")) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -544,6 +674,20 @@ static void parseCLI(int argc, const char *argv[]) {
             gScale = sc;
             break;
         }
+        case 'M': {
+            const char *val = optarg ? optarg : "std";
+            if (strcmp(val, "std") == 0) gModMapScheme = 0;
+            else if (strcmp(val, "altcmd") == 0) gModMapScheme = 1;
+            else {
+                fprintf(stderr, "Invalid -M scheme: %s (expected std|altcmd)\n", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        case 'K': {
+            gKeyEventLogging = YES;
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -606,9 +750,9 @@ int main(int argc, const char *argv[]) {
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
 
-        // In this step we don’t expose input handlers; honor viewOnly at the client level.
-        gScreen->ptrAddEvent = NULL;
-        gScreen->kbdAddEvent = NULL;
+    // Input handlers: route VNC events to STHIDEventGenerator
+    gScreen->ptrAddEvent = ptrAddEvent;
+    gScreen->kbdAddEvent = kbdAddEvent;
 
         // Cursor: we capture the cursor in the framebuffer already.
         gScreen->cursor = NULL;
