@@ -71,8 +71,8 @@ static BOOL gKeyEventLogging = NO;           // Log keyboard events (keysym, map
 static int gModMapScheme = 0;
 // VNC authentication: if set via env TROLLVNC_PASSWORD, enable classic VNC auth
 // LibVNCServer expects a NULL-terminated list of char* for rfbCheckPasswordByList
-static char **gAuthPasswdVec = NULL; // owns the vector
-static char *gAuthPasswdStr = NULL;  // owns the duplicated password string
+static char **gAuthPasswdVec = NULL;        // owns the vector
+static char *gAuthPasswdStr = NULL;         // owns the duplicated password string
 static char *gAuthViewOnlyPasswdStr = NULL; // optional view-only password string
 
 // Tiling/Hashing state
@@ -777,9 +777,12 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     fprintf(stderr, "Environment:\n");
-    fprintf(stderr, "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; use first 8 chars)\n");
-    fprintf(stderr, "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; when set, passwords are [full..., view-only...] and\n");
-    fprintf(stderr, "                               authPasswdFirstViewOnly is the count of full-access passwords.\n\n");
+    fprintf(stderr,
+            "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; use first 8 chars)\n");
+    fprintf(stderr,
+            "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; when set, passwords are [full..., view-only...] and\n");
+    fprintf(stderr,
+            "                               authPasswdFirstViewOnly is the count of full-access passwords.\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
 }
