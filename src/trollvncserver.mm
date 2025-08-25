@@ -69,6 +69,11 @@ static double gScale = 1.0;                  // 0 < scale <= 1.0, 1.0 = no scali
 static BOOL gKeyEventLogging = NO;           // Log keyboard events (keysym, mapping)
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
+// VNC authentication: if set via env TROLLVNC_PASSWORD, enable classic VNC auth
+// LibVNCServer expects a NULL-terminated list of char* for rfbCheckPasswordByList
+static char **gAuthPasswdVec = NULL; // owns the vector
+static char *gAuthPasswdStr = NULL;  // owns the duplicated password string
+static char *gAuthViewOnlyPasswdStr = NULL; // optional view-only password string
 
 // Tiling/Hashing state
 static int gTilesX = 0;
@@ -771,6 +776,10 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
+    fprintf(stderr, "Environment:\n");
+    fprintf(stderr, "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; use first 8 chars)\n");
+    fprintf(stderr, "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; when set, passwords are [full..., view-only...] and\n");
+    fprintf(stderr, "                               authPasswdFirstViewOnly is the count of full-access passwords.\n\n");
     rfbUsage();
     exit(EXIT_SUCCESS);
 }
@@ -947,6 +956,55 @@ int main(int argc, const char *argv[]) {
         gScreen->newClientHook = newClient;
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
+
+        // Enable classic VNC authentication if environment variables are provided
+        const char *envPwd = getenv("TROLLVNC_PASSWORD");
+        const char *envViewPwd = getenv("TROLLVNC_VIEWONLY_PASSWORD");
+        int fullCount = (envPwd && *envPwd) ? 1 : 0;
+        int viewCount = (envViewPwd && *envViewPwd) ? 1 : 0;
+        if (fullCount + viewCount > 0) {
+            // Vector size = number of passwords + 1 for NULL terminator
+            int vecCount = fullCount + viewCount + 1;
+            gAuthPasswdVec = (char **)calloc((size_t)vecCount, sizeof(char *));
+            if (!gAuthPasswdVec) {
+                fprintf(stderr, "Out of memory allocating password vector.\n");
+                return EXIT_FAILURE;
+            }
+            int idx = 0;
+            if (fullCount) {
+                gAuthPasswdStr = strdup(envPwd);
+                if (!gAuthPasswdStr) {
+                    fprintf(stderr, "Out of memory duplicating full-access password.\n");
+                    free(gAuthPasswdVec);
+                    gAuthPasswdVec = NULL;
+                    return EXIT_FAILURE;
+                }
+                gAuthPasswdVec[idx++] = gAuthPasswdStr;
+            }
+            if (viewCount) {
+                gAuthViewOnlyPasswdStr = strdup(envViewPwd);
+                if (!gAuthViewOnlyPasswdStr) {
+                    fprintf(stderr, "Out of memory duplicating view-only password.\n");
+                    // free what we may have allocated
+                    if (gAuthPasswdStr) {
+                        free(gAuthPasswdStr);
+                        gAuthPasswdStr = NULL;
+                    }
+                    free(gAuthPasswdVec);
+                    gAuthPasswdVec = NULL;
+                    return EXIT_FAILURE;
+                }
+                gAuthPasswdVec[idx++] = gAuthViewOnlyPasswdStr;
+            }
+            gAuthPasswdVec[idx] = NULL; // terminate
+
+            gScreen->authPasswdData = (void *)gAuthPasswdVec;
+            // Index of first view-only password = number of full-access passwords
+            // From that index onward (1-based in description, 0-based in array) are view-only.
+            gScreen->authPasswdFirstViewOnly = fullCount;
+            gScreen->passwordCheck = rfbCheckPasswordByList;
+            TVLog(@"VNC authentication enabled via env: full=%d, view-only=%d", fullCount, viewCount);
+        }
 
         // Input handlers: route VNC events to STHIDEventGenerator
         gScreen->ptrAddEvent = ptrAddEvent;
@@ -1224,6 +1282,27 @@ __attribute__((unused)) static void cleanupAndExit(int code) {
     if (gCurrHash) {
         free(gCurrHash);
         gCurrHash = NULL;
+    }
+    if (gAuthPasswdVec) {
+        // Free all strdup'd password strings stored in the vector, then the vector itself.
+        for (size_t i = 0; gAuthPasswdVec[i] != NULL; ++i) {
+            free(gAuthPasswdVec[i]);
+        }
+        free(gAuthPasswdVec);
+        gAuthPasswdVec = NULL;
+        // Clear individual pointers to avoid dangling references
+        gAuthPasswdStr = NULL;
+        gAuthViewOnlyPasswdStr = NULL;
+    } else {
+        // Fallback if vector wasn't created but strings were
+        if (gAuthPasswdStr) {
+            free(gAuthPasswdStr);
+            gAuthPasswdStr = NULL;
+        }
+        if (gAuthViewOnlyPasswdStr) {
+            free(gAuthViewOnlyPasswdStr);
+            gAuthViewOnlyPasswdStr = NULL;
+        }
     }
     exit(code);
 }

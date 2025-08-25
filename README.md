@@ -25,6 +25,8 @@ Options:
 - -W px     Wheel step in pixels per tick (default: 48)
 - -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax
 - -N        Natural scroll direction (invert wheel delta)
+- -M scheme Modifier mapping: std|altcmd (default: std)
+- -K        Log keyboard events (keysym -> mapping) to stderr
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:
@@ -90,6 +92,31 @@ Notes:
 - Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
 - With -Q 0, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
 - On older devices, prefer lowering -s and increasing -t to reduce CPU and memory bandwidth.
+
+## Authentication
+
+Classic VNC authentication can be enabled via environment variables:
+
+- TROLLVNC_PASSWORD: full-access password. Enables VNC auth when set.
+- TROLLVNC_VIEWONLY_PASSWORD: optional view-only password. When present, clients authenticating with this password can view but cannot send input.
+
+Semantics:
+
+- Passwords are stored in a NULL-terminated list as [full..., view-only...]. The index of the first view-only password equals the number of full-access passwords.
+- Classic VNC only uses the first 8 characters of each password.
+
+Examples (zsh):
+
+```sh
+export TROLLVNC_PASSWORD=editpass
+export TROLLVNC_VIEWONLY_PASSWORD=viewpass   # optional
+trollvncserver -p 5901 -n "My iPhone"
+```
+
+Notes:
+
+- -v forces global view-only regardless of password. View-only password applies per client.
+- Environment variables may be visible to the process environment; consider using a secure launcher if needed.
 
 ## Preset Examples
 
