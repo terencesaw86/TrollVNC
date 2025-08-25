@@ -16,7 +16,7 @@ trollvncserver_CCFLAGS += -std=c++20
 trollvncserver_LDFLAGS += -Llib
 
 trollvncserver_LIBRARIES += jpeg
-trollvncserver_LIBRARIES += png
+trollvncserver_LIBRARIES += png16
 trollvncserver_LIBRARIES += vncserver
 trollvncserver_LIBRARIES += z
 
