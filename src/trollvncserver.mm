@@ -9,19 +9,19 @@
 // - Minimal, production-lean CLI parsing with getopt (-p, -n, -v, -h).
 //
 
-#import <Foundation/Foundation.h>
-#import <CoreVideo/CoreVideo.h>
 #import <CoreMedia/CoreMedia.h>
+#import <CoreVideo/CoreVideo.h>
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#include <rfb/rfb.h>
-#include <rfb/keysym.h>
+#import <rfb/keysym.h>
+#import <rfb/rfb.h>
 
-#include <errno.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#import <errno.h>
+#import <signal.h>
+#import <stdlib.h>
+#import <string.h>
+#import <unistd.h>
 
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
@@ -40,11 +40,17 @@ static void *gBackBuffer = NULL;  // We render into this and then swap
 static size_t gFBSize = 0;        // bytes
 static int gWidth = 0;
 static int gHeight = 0;
-static int gBytesPerPixel = 4;    // ARGB/BGRA 32-bit
+static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
 static volatile sig_atomic_t gShouldTerminate = 0;
+static int gClientCount = 0;        // Number of connected clients
+static BOOL gIsCaptureStarted = NO; // Whether ScreenCapturer has been started
+
+// Capture globals
+static ScreenCapturer *gCapturer = nil;
+static void (^gFrameHandler)(CMSampleBufferRef) = nil;
 
 // CLI options
-static int gPort = 5901;          // Default LibVNCServer port (adjust as needed)
+static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
 static BOOL gViewOnly = NO;
 static NSString *gDesktopName = @"TrollVNC";
 
@@ -91,13 +97,31 @@ static void copyWithStrideTight(uint8_t *dstTight, const uint8_t *src, int width
 // MARK: - LibVNCServer callbacks (input disabled in this step)
 
 static void clientGone(rfbClientPtr cl) {
-    // Intentionally minimal for now; we could log or count clients.
-    TVLog(@"Client disconnected");
+    // Decrement client count and stop capture if this was the last client.
+    if (gClientCount > 0)
+        gClientCount--;
+    TVLog(@"Client disconnected, active clients=%d", gClientCount);
+
+    if (gIsCaptureStarted && gClientCount == 0 && gCapturer) {
+        [gCapturer endCapture];
+        gIsCaptureStarted = NO;
+        TVLog(@"No clients remaining; screen capture stopped.");
+    }
 }
 
 static enum rfbNewClientAction newClient(rfbClientPtr cl) {
     cl->clientGoneHook = clientGone;
     cl->viewOnly = gViewOnly ? TRUE : FALSE;
+
+    gClientCount++;
+    TVLog(@"Client connected, active clients=%d", gClientCount);
+
+    if (!gIsCaptureStarted && gClientCount > 0 && gCapturer && gFrameHandler) {
+        // Start capture when entering non-zero client population.
+        gIsCaptureStarted = YES;
+        [gCapturer startCaptureWithFrameHandler:gFrameHandler];
+        TVLog(@"Screen capture started (clients=%d).", gClientCount);
+    }
     return RFB_CLIENT_ACCEPT;
 }
 
@@ -200,9 +224,9 @@ int main(int argc, const char *argv[]) {
         // 5) Install signal handlers for graceful shutdown
         installSignalHandlers();
 
-        // 6) Start display capture and publish frames to VNC clients
-        ScreenCapturer *capturer = [ScreenCapturer sharedCapturer];
-        [capturer startCaptureWithFrameHandler:^(CMSampleBufferRef _Nonnull sampleBuffer) {
+        // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
+        gCapturer = [ScreenCapturer sharedCapturer];
+        gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
             if (!pb)
                 return;
@@ -215,12 +239,13 @@ int main(int argc, const char *argv[]) {
 
             if ((int)width != gWidth || (int)height != gHeight) {
                 // Dimension mismatch should not happen; log once per occurrence.
-                TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
-                      width, height, gWidth, gHeight);
+                TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.", width,
+                      height, gWidth, gHeight);
             }
 
             // Copy into our tight back buffer, respecting capture stride.
-            copyWithStrideTight((uint8_t *)gBackBuffer, base, MIN((int)width, gWidth), MIN((int)height, gHeight), srcBPR);
+            copyWithStrideTight((uint8_t *)gBackBuffer, base, MIN((int)width, gWidth), MIN((int)height, gHeight),
+                                srcBPR);
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
             // Swap buffers under client sendMutex to avoid tearing.
@@ -230,9 +255,9 @@ int main(int argc, const char *argv[]) {
             // Mark whole screen modified; later we can optimize to dirty rects.
             rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
             unlockAllClients();
-        }];
+        };
 
-        TVLog(@"Screen capture started; serving frames to VNC clients.");
+        TVLog(@"Screen capture is armed and will start when the first client connects.");
     }
 
     // Keep process alive: ScreenCapturer uses CADisplayLink on main run loop.
