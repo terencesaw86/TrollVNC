@@ -1,6 +1,7 @@
 .cache
 .theos
 compile_commands.json
+/packages
 /refs
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,xcode,swift
