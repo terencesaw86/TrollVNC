@@ -26,6 +26,7 @@ Options:
 - -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax
 - -N        Natural scroll direction (invert wheel delta)
 - -M scheme Modifier mapping: std|altcmd (default: std)
+- -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; iOS14 uses the max.
 - -K        Log keyboard events (keysym -> mapping) to stderr
 - -h        Show built-in help and LibVNCServer usage
 
@@ -86,6 +87,19 @@ More sensitive small scrolls:
 ```sh
 trollvncserver ... -w minratio=0.5,durbase=0.055
 ```
+
+### Frame Rate Control
+
+Use -F to set the CADisplayLink frame rate:
+
+- Single value: `-F 60`
+- Range: `-F 30-60`
+- Full range with preferred: `-F 30:60:120`
+
+Notes:
+
+- On iOS 15+, the full range is applied via preferredFrameRateRange.
+- On iOS 14, only preferredFramesPerSecond is available, so the max (or preferred if provided) is used.
 
 Notes:
 

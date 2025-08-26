@@ -34,6 +34,9 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     IOSurfaceRef mScreenSurface;
     uint32_t mSeed;
     void (^mFrameHandler)(CMSampleBufferRef sampleBuffer);
+    NSInteger mMinFps;
+    NSInteger mPreferredFps;
+    NSInteger mMaxFps;
 }
 
 + (instancetype)sharedCapturer {
@@ -103,6 +106,39 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 
     return _renderProperties;
 }
+- (void)setPreferredFrameRateWithMin:(NSInteger)minFps preferred:(NSInteger)preferredFps max:(NSInteger)maxFps {
+    // Normalize: if preferred is 0, but max/min provided, pick a reasonable default
+    mMinFps = MAX(0, minFps);
+    mMaxFps = MAX(0, maxFps);
+    mPreferredFps = MAX(0, preferredFps);
+    if (mPreferredFps == 0) {
+        if (mMaxFps > 0) mPreferredFps = mMaxFps;
+        else if (mMinFps > 0) mPreferredFps = mMinFps;
+        else mPreferredFps = 0;
+    }
+    // If display link is already running, update it on main thread
+    if (mDisplayLink) {
+        void (^applyBlock)(void) = ^{
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
+            if (@available(iOS 15.0, *)) {
+                CAFrameRateRange range;
+                range.minimum = (mMinFps > 0) ? mMinFps : 0.0;
+                range.maximum = (mMaxFps > 0) ? mMaxFps : 0.0;
+                range.preferred = (mPreferredFps > 0) ? mPreferredFps : 0.0;
+                mDisplayLink.preferredFrameRateRange = range;
+            } else
+#endif
+            {
+                // iOS 14 path: only preferredFramesPerSecond is available, use max/preferred
+                NSInteger setFps = (mMaxFps > 0) ? mMaxFps : mPreferredFps;
+                mDisplayLink.preferredFramesPerSecond = (int)setFps; // 0 means system default
+            }
+        };
+        if ([NSThread isMainThread]) applyBlock();
+        else dispatch_async(dispatch_get_main_queue(), applyBlock);
+    }
+}
+
 
 - (void)createScreenSurfaceIfNeeded {
     if (!mScreenSurface) {
@@ -264,11 +300,21 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     // Create display link on main run loop
     void (^startBlock)(void) = ^{
         mDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onDisplayLink:)];
-#if defined(__IPHONE_10_3) && (__IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_10_3)
-        if ([mDisplayLink respondsToSelector:@selector(preferredFramesPerSecond)]) {
-            mDisplayLink.preferredFramesPerSecond = 0; // Use native
-        }
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
+        if (@available(iOS 15.0, *)) {
+            CAFrameRateRange range;
+            range.minimum = (mMinFps > 0) ? mMinFps : 0.0;
+            range.maximum = (mMaxFps > 0) ? mMaxFps : 0.0;
+            range.preferred = (mPreferredFps > 0) ? mPreferredFps : 0.0;
+            mDisplayLink.preferredFrameRateRange = range;
+        } else
 #endif
+        {
+            // iOS 14 fallback: use preferredFramesPerSecond; choose max in the provided range
+            NSInteger setFps = (mMaxFps > 0) ? mMaxFps : mPreferredFps;
+            if ([mDisplayLink respondsToSelector:@selector(preferredFramesPerSecond)])
+                mDisplayLink.preferredFramesPerSecond = (int)setFps; // 0 uses native/system default
+        }
         [mDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     };
 

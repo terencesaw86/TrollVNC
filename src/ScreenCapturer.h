@@ -18,6 +18,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)startCaptureWithFrameHandler:(void (^)(CMSampleBufferRef sampleBuffer))frameHandler;
 - (void)endCapture;
 
+/**
+ Set preferred frame rate range for the CADisplayLink driving capture.
+ Pass 0 to any of the arguments to leave it unspecified (system default).
+ On iOS 15+, preferredFrameRateRange will be used; on iOS 14, preferredFramesPerSecond uses maxFps.
+ */
+- (void)setPreferredFrameRateWithMin:(NSInteger)minFps preferred:(NSInteger)preferredFps max:(NSInteger)maxFps;
+
 @end
 
 NS_ASSUME_NONNULL_END

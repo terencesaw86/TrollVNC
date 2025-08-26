@@ -69,6 +69,10 @@ static double gScale = 1.0;                 // 0 < scale <= 1.0, 1.0 = no scalin
 static BOOL gKeyEventLogging = NO;          // Log keyboard events (keysym, mapping)
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
+// Preferred frame rate range (0 = unspecified)
+static int gFpsMin = 0;
+static int gFpsPref = 0;
+static int gFpsMax = 0;
 // VNC authentication: if set via env TROLLVNC_PASSWORD, enable classic VNC auth
 // LibVNCServer expects a NULL-terminated list of char* for rfbCheckPasswordByList
 static char **gAuthPasswdVec = NULL;        // owns the vector
@@ -733,7 +737,7 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
             "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-W px] "
-            "[-w k=v,...] [-N] [-M scheme] [-K] [-h]\n",
+            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-K] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -752,6 +756,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
+    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; iOS14 uses max.\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     fprintf(stderr, "Environment:\n");
@@ -767,7 +772,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:K")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:K")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -871,6 +876,50 @@ static void parseCLI(int argc, const char *argv[]) {
                 fprintf(stderr, "Invalid -M scheme: %s (expected std|altcmd)\n", val);
                 exit(EXIT_FAILURE);
             }
+            break;
+        }
+        case 'F': {
+            // Accept formats: "fps", "min-max", "min:pref:max"
+            const char *spec = optarg ? optarg : "";
+            int minV = 0, prefV = 0, maxV = 0;
+            if (spec[0] == '\0') {
+                break; // ignore empty
+            }
+            const char *colon1 = strchr(spec, ':');
+            const char *dash = strchr(spec, '-');
+            if (colon1) {
+                // min:pref:max
+                long a = strtol(spec, NULL, 10);
+                const char *p2 = colon1 + 1;
+                const char *colon2 = strchr(p2, ':');
+                if (!colon2) {
+                    fprintf(stderr, "Invalid -F spec: %s (expected min:pref:max)\n", spec);
+                    exit(EXIT_FAILURE);
+                }
+                long b = strtol(p2, NULL, 10);
+                long c = strtol(colon2 + 1, NULL, 10);
+                minV = (int)a; prefV = (int)b; maxV = (int)c;
+            } else if (dash) {
+                // min-max (preferred defaults to max)
+                long a = strtol(spec, NULL, 10);
+                long b = strtol(dash + 1, NULL, 10);
+                minV = (int)a; prefV = (int)b; maxV = (int)b;
+            } else {
+                // single fps
+                long v = strtol(spec, NULL, 10);
+                minV = (int)v; prefV = (int)v; maxV = (int)v;
+            }
+            // Normalize & validate: allow 0..240 (0 = unspecified)
+            auto clampF = [](int v) { return v < 0 ? 0 : (v > 240 ? 240 : v); };
+            minV = clampF(minV); prefV = clampF(prefV); maxV = clampF(maxV);
+            if (minV > 0 && maxV > 0 && minV > maxV) {
+                int tmp = minV; minV = maxV; maxV = tmp;
+            }
+            if (prefV > 0) {
+                if (minV > 0 && prefV < minV) prefV = minV;
+                if (maxV > 0 && prefV > maxV) prefV = maxV;
+            }
+            gFpsMin = minV; gFpsPref = prefV; gFpsMax = maxV;
             break;
         }
         case 'K': {
@@ -1007,6 +1056,10 @@ int main(int argc, const char *argv[]) {
         // 6) Prepare screen capture, but DO NOT start yet; start on first client connect
         initTilingOrReset();
         gCapturer = [ScreenCapturer sharedCapturer];
+        // Apply preferred frame rate (if provided)
+        if (gFpsMin > 0 || gFpsPref > 0 || gFpsMax > 0) {
+            [gCapturer setPreferredFrameRateWithMin:gFpsMin preferred:gFpsPref max:gFpsMax];
+        }
         gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
             if (!pb)
