@@ -59,14 +59,14 @@ static void (^gFrameHandler)(CMSampleBufferRef) = nil;
 static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
 static BOOL gViewOnly = NO;
 static NSString *gDesktopName = @"TrollVNC";
-static BOOL gAsyncSwapEnabled = NO;          // Enable non-blocking swap (may cause tearing)
-static int gTileSize = 32;                   // Tile size for dirty detection (pixels)
-static int gFullscreenThresholdPercent = 30; // If changed tiles exceed this %, update full screen
-static int gMaxRectsLimit = 256;             // Max rects before falling back to bbox/fullscreen
-static double gDeferWindowSec = 0.015;       // Coalescing window; 0 disables deferral
-static int gMaxInflightUpdates = 1;          // Max concurrent client encodes; drop frames if >= this
-static double gScale = 1.0;                  // 0 < scale <= 1.0, 1.0 = no scaling
-static BOOL gKeyEventLogging = NO;           // Log keyboard events (keysym, mapping)
+static BOOL gAsyncSwapEnabled = NO;         // Enable non-blocking swap (may cause tearing)
+static int gTileSize = 32;                  // Tile size for dirty detection (pixels)
+static int gFullscreenThresholdPercent = 0; // If changed tiles exceed this %, update full screen
+static int gMaxRectsLimit = 256;            // Max rects before falling back to bbox/fullscreen
+static double gDeferWindowSec = 0.015;      // Coalescing window; 0 disables deferral
+static int gMaxInflightUpdates = 1;         // Max concurrent client encodes; drop frames if >= this
+static double gScale = 1.0;                 // 0 < scale <= 1.0, 1.0 = no scaling
+static BOOL gKeyEventLogging = NO;          // Log keyboard events (keysym, mapping)
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
 // VNC authentication: if set via env TROLLVNC_PASSWORD, enable classic VNC auth
@@ -519,30 +519,7 @@ static void initTilingOrReset(void) {
 }
 
 // Copy with stride while updating per-tile hashes for curr frame
-static void copyAndHashTiled(uint8_t *dstTight, const uint8_t *src, int copyW, int copyH, size_t srcBPR) {
-    size_t dstBPR = (size_t)copyW * (size_t)gBytesPerPixel;
-    for (int y = 0; y < copyH; ++y) {
-        // Copy the whole line into tight buffer
-        memcpy(dstTight + (size_t)y * dstBPR, src + (size_t)y * srcBPR, dstBPR);
-
-        // Update tile hashes for this line
-        int ty = y / gTileSize;
-        int tileRowStartY = ty * gTileSize;
-        (void)tileRowStartY; // not used further, but kept for clarity
-        for (int tx = 0; tx < gTilesX; ++tx) {
-            int startX = tx * gTileSize;
-            if (startX >= copyW)
-                break;
-            int endX = startX + gTileSize;
-            if (endX > copyW)
-                endX = copyW;
-            size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
-            size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
-            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-            gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], src + (size_t)y * srcBPR + offset, length);
-        }
-    }
-}
+// copyAndHashTiled removed: replaced by separate copy + hashTiledFromBuffer over back buffer
 
 typedef struct {
     int x, y, w, h;
@@ -763,13 +740,14 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -v        View-only (ignore input)\n");
     fprintf(stderr, "  -a        Enable non-blocking swap (may cause tearing)\n");
     fprintf(stderr, "  -t size   Tile size for dirty-detection (8..128, default: %d)\n", gTileSize);
-    fprintf(stderr, "  -P pct    Fullscreen fallback threshold percent (1..100, default: %d)\n",
+    fprintf(stderr,
+            "  -P pct    Fullscreen fallback threshold percent (0..100, 0 disables dirty detection; default: %d)\n",
             gFullscreenThresholdPercent);
     fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
     fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
     fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
             gMaxInflightUpdates);
-    fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (default: %.2f, 1 means no scaling)\n", gScale);
+    fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (1 means no scaling, default: %.2f)\n", gScale);
     fprintf(stderr, "  -W px     Wheel step in pixels per tick (default: %.0f)\n", gWheelStepPx);
     fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
@@ -824,8 +802,9 @@ static void parseCLI(int argc, const char *argv[]) {
         }
         case 'P': {
             long p = strtol(optarg, NULL, 10);
-            if (p < 1 || p > 100) {
-                fprintf(stderr, "Invalid threshold percent: %s (expected 1..100)\n", optarg);
+            if (p < 0 || p > 100) {
+                fprintf(stderr, "Invalid threshold percent: %s (expected 0..100; 0 disables dirty detection)\n",
+                        optarg);
                 exit(EXIT_FAILURE);
             }
             gFullscreenThresholdPercent = (int)p;
@@ -1035,35 +1014,7 @@ int main(int argc, const char *argv[]) {
 
             // Busy-drop: if encoders are busy and limit reached, skip this frame (disabled when -Q 0)
             if (gMaxInflightUpdates > 0 && gInflight.load(std::memory_order_relaxed) >= gMaxInflightUpdates) {
-                if (gScale == 1.0) {
-                    // Advance hash basis without copying to keep pending detection sane
-                    CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-                    const uint8_t *baseRO = (const uint8_t *)CVPixelBufferGetBaseAddress(pb);
-                    const size_t srcBPRRO = (size_t)CVPixelBufferGetBytesPerRow(pb);
-                    const int copyWRO = MIN((int)CVPixelBufferGetWidth(pb), gWidth);
-                    const int copyHRO = MIN((int)CVPixelBufferGetHeight(pb), gHeight);
-                    resetCurrTileHashes();
-                    for (int y = 0; y < copyHRO; ++y) {
-                        int ty = y / gTileSize;
-                        for (int tx = 0; tx < gTilesX; ++tx) {
-                            int startX = tx * gTileSize;
-                            if (startX >= copyWRO)
-                                break;
-                            int endX = startX + gTileSize;
-                            if (endX > copyWRO)
-                                endX = copyWRO;
-                            size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
-                            size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
-                            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-                            gCurrHash[tileIndex] =
-                                fnv1a_update(gCurrHash[tileIndex], baseRO + (size_t)y * srcBPRRO + offset, length);
-                        }
-                    }
-                    accumulatePendingDirty();
-                    swapTileHashes();
-                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-                }
-                // When scaled, skip advancing hashes to avoid expensive work; we'll catch up on next frame.
+                // When busy dropping, skip all hashing/dirty work.
                 return;
             }
 
@@ -1089,13 +1040,14 @@ int main(int argc, const char *argv[]) {
                 }
             }
 
-            // Copy/Scale into back buffer, then hash per tile
-            resetCurrTileHashes();
+            // Copy/Scale into back buffer. If dirty detection is enabled, hashing occurs later; if disabled, we avoid
+            // hashing entirely.
+            BOOL dirtyDisabled = (gFullscreenThresholdPercent == 0);
             if (gScale == 1.0) {
-                // Fast path: 1:1 copy + hash
+                // Fast path: 1:1 copy without hashing
                 int copyW = MIN((int)width, gWidth);
                 int copyH = MIN((int)height, gHeight);
-                copyAndHashTiled((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
+                copyWithStrideTight((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
             } else {
                 // vImage scaling path: scale source into tightly-packed back buffer (BGRA/ARGB8888)
                 vImage_Buffer srcBuf;
@@ -1118,13 +1070,39 @@ int main(int argc, const char *argv[]) {
                     CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
                     return;
                 }
-                // Hash over the scaled back buffer
-                hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight,
-                                    (size_t)gWidth * (size_t)gBytesPerPixel);
             }
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-            // Build dirty rectangles with deferred coalescing window
+            // If dirty detection disabled, just do a full-screen update immediately
+            if (dirtyDisabled) {
+                if (gAsyncSwapEnabled) {
+                    pthread_mutex_t *locked[64];
+                    size_t lockedCount = 0;
+                    if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
+                        swapBuffers();
+                        for (size_t i = 0; i < lockedCount; ++i)
+                            pthread_mutex_unlock(locked[i]);
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    } else {
+                        // Whole screen copy fallback (tight -> tight)
+                        copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
+                                            (size_t)gWidth * (size_t)gBytesPerPixel);
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    }
+                } else {
+                    // Blocking swap to avoid tearing
+                    lockAllClientsBlocking();
+                    swapBuffers();
+                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    unlockAllClientsBlocking();
+                }
+                return;
+            }
+
+            // Build dirty rectangles with deferred coalescing window (enabled)
+            // Prepare tile hashes for this frame from the back buffer
+            resetCurrTileHashes();
+            hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
             enum { kRectBuf = 1024 };
             DirtyRect rects[kRectBuf];
             int changedTiles = 0;
@@ -1194,7 +1172,6 @@ int main(int argc, const char *argv[]) {
                 gHasPending = NO;
             } else {
                 // Still deferring: do not notify clients yet
-                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
                 swapTileHashes();
                 return;
             }

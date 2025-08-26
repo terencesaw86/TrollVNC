@@ -17,7 +17,7 @@ Options:
 - -v        View-only (ignore input)
 - -a        Enable non-blocking swap (may cause tearing). Default off.
 - -t size   Tile size for dirty-detection in pixels (8..128, default: 32)
-- -P pct    Fullscreen fallback threshold percent (1..100, default: 30)
+- -P pct    Fullscreen fallback threshold percent (0..100, default: 30; 0 disables dirty detection)
 - -R max    Max dirty rects before collapsing to a bounding box (default: 256)
 - -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
 - -Q n      Max in-flight updates before dropping new frames (0..8, default: 1; 0 disables dropping)
@@ -33,7 +33,7 @@ Notes:
 
 - Capture starts only when at least one client is connected, and stops when the last disconnects.
 - When -a is enabled, we try a non-blocking swap to reduce contention; if it fails, we copy only dirty rectangles to the front buffer to minimize tearing and bandwidth.
-- Dirty rectangles are detected via per-tile FNV-1a hashing. If too many tiles change (>= threshold), we fallback to full-screen updates for efficiency.
+- Dirty rectangles are detected via per-tile FNV-1a hashing. If too many tiles change (>= threshold), we fallback to full-screen updates for efficiency. Set -P 0 to disable hashing/dirty detection entirely and always send full-screen updates.
 - Scaling uses Accelerate/vImage for high-quality resampling. Tiling/hash/dirty detection runs on the scaled output to reduce bandwidth and CPU.
 
 ## Performance Tips
