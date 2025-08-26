@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>com.apple.Pasteboard.background-access</key>
+	<true/>
+	<key>com.apple.Pasteboard.originating-bundle-id-query</key>
+	<true/>
+	<key>com.apple.Pasteboard.paste-unchecked</key>
+	<true/>
+	<key>com.apple.Pasteboard.trigger-janitor</key>
+	<true/>
 	<key>com.apple.QuartzCore.cache-asynchronous</key>
 	<true/>
 	<key>com.apple.QuartzCore.displayable-context</key>

@@ -14,6 +14,7 @@ trollvncserver_USE_MODULES := 0
 trollvncserver_FILES += src/trollvncserver.mm
 trollvncserver_FILES += src/ScreenCapturer.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
+trollvncserver_FILES += src/ClipboardManager.mm
 
 trollvncserver_CFLAGS += -fobjc-arc
 trollvncserver_CFLAGS += -Iinclude

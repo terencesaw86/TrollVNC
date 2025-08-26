@@ -25,11 +25,13 @@
 #import <stdbool.h>
 #import <stdlib.h>
 #import <string.h>
+#import <string>
 #import <unistd.h>
 
+#import "ClipboardManager.h"
+#import "IOKitSPI.h"
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
-#import "IOKitSPI.h"
 
 #if DEBUG
 #define TVLog(fmt, ...) NSLog((@"%s:%d " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
@@ -90,6 +92,7 @@ static uint8_t *gPendingDirty = NULL; // per-tile pending dirty mask
 static CFAbsoluteTime gDeferStartTime = 0;
 static BOOL gHasPending = NO;
 static std::atomic<int> gInflight(0);
+static std::atomic<int> gClipboardSuppressSend(0); // >0 means suppress sending clipboard to clients
 
 // Wheel scroll coalescing state (async, non-blocking)
 static dispatch_queue_t gWheelQueue = nil; // serial queue for wheel gestures
@@ -789,6 +792,80 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
     gInflight.fetch_sub(1, std::memory_order_relaxed);
 }
 
+// MARK: - Clipboard (UTF-8 only; with Latin-1 fallback for legacy)
+
+static void sendClipboardToClients(NSString *_Nullable text) {
+    if (!gScreen)
+        return;
+    if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
+        return; // suppressed (likely local set)
+    const char *utf8 = NULL;
+    int utf8Len = 0;
+    const char *latin1 = NULL;
+    int latin1Len = 0;
+    std::string utf8Buf;
+    std::string latin1Buf;
+    if (text) {
+        NSData *utf8Data = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+        utf8Len = (int)utf8Data.length;
+        utf8Buf.assign((const char *)utf8Data.bytes, (size_t)utf8Len);
+        utf8 = utf8Len > 0 ? utf8Buf.data() : "";
+        // Prepare best-effort Latin-1 fallback
+        NSData *latin1Data = [text dataUsingEncoding:NSISOLatin1StringEncoding allowLossyConversion:YES];
+        latin1Len = (int)latin1Data.length;
+        latin1Buf.assign((const char *)latin1Data.bytes, (size_t)latin1Len);
+        latin1 = latin1Len > 0 ? latin1Buf.data() : "";
+    } else {
+        // Empty/clear
+        utf8 = "";
+        utf8Len = 0;
+        latin1 = "";
+        latin1Len = 0;
+    }
+#ifdef LIBVNCSERVER_HAVE_LIBZ
+    rfbSendServerCutTextUTF8(gScreen, (char *)utf8, utf8Len, (char *)latin1, latin1Len);
+#else
+    // Legacy path: send Latin-1 only
+    rfbSendServerCutText(gScreen, (char *)latin1, latin1Len);
+#endif
+}
+
+static void setXCutTextLatin1(char *str, int len, rfbClientPtr cl) {
+    (void)cl;
+    if (!str || len < 0)
+        len = 0;
+    NSData *data = [NSData dataWithBytes:str length:(NSUInteger)len];
+    NSString *s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+    if (!s)
+        s = @"";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        gClipboardSuppressSend.fetch_add(1, std::memory_order_relaxed);
+        [[ClipboardManager shared] setStringFromRemote:s];
+        gClipboardSuppressSend.fetch_sub(1, std::memory_order_relaxed);
+    });
+}
+
+#ifdef LIBVNCSERVER_HAVE_LIBZ
+static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
+    (void)cl;
+    if (!str || len < 0)
+        len = 0;
+    NSData *data = [NSData dataWithBytes:str length:(NSUInteger)len];
+    NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (!s) {
+        // Fallback try Latin-1 if UTF-8 decode fails
+        s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
+        if (!s)
+            s = @"";
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        gClipboardSuppressSend.fetch_add(1, std::memory_order_relaxed);
+        [[ClipboardManager shared] setStringFromRemote:s];
+        gClipboardSuppressSend.fetch_sub(1, std::memory_order_relaxed);
+    });
+}
+#endif
+
 // MARK: - CLI
 
 static void printUsageAndExit(const char *prog) {
@@ -813,7 +890,8 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
-    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; iOS14 uses max.\n");
+    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; "
+                    "iOS14 uses max.\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     fprintf(stderr, "Environment:\n");
@@ -955,29 +1033,50 @@ static void parseCLI(int argc, const char *argv[]) {
                 }
                 long b = strtol(p2, NULL, 10);
                 long c = strtol(colon2 + 1, NULL, 10);
-                minV = (int)a; prefV = (int)b; maxV = (int)c;
+                minV = (int)a;
+                prefV = (int)b;
+                maxV = (int)c;
             } else if (dash) {
                 // min-max (preferred defaults to max)
                 long a = strtol(spec, NULL, 10);
                 long b = strtol(dash + 1, NULL, 10);
-                minV = (int)a; prefV = (int)b; maxV = (int)b;
+                minV = (int)a;
+                prefV = (int)b;
+                maxV = (int)b;
             } else {
                 // single fps
                 long v = strtol(spec, NULL, 10);
-                minV = (int)v; prefV = (int)v; maxV = (int)v;
+                minV = (int)v;
+                prefV = (int)v;
+                maxV = (int)v;
             }
             // Normalize & validate: allow 0..240 (0 = unspecified)
-            if (minV < 0) minV = 0; if (minV > 240) minV = 240;
-            if (prefV < 0) prefV = 0; if (prefV > 240) prefV = 240;
-            if (maxV < 0) maxV = 0; if (maxV > 240) maxV = 240;
+            if (minV < 0)
+                minV = 0;
+            if (minV > 240)
+                minV = 240;
+            if (prefV < 0)
+                prefV = 0;
+            if (prefV > 240)
+                prefV = 240;
+            if (maxV < 0)
+                maxV = 0;
+            if (maxV > 240)
+                maxV = 240;
             if (minV > 0 && maxV > 0 && minV > maxV) {
-                int tmp = minV; minV = maxV; maxV = tmp;
+                int tmp = minV;
+                minV = maxV;
+                maxV = tmp;
             }
             if (prefV > 0) {
-                if (minV > 0 && prefV < minV) prefV = minV;
-                if (maxV > 0 && prefV > maxV) prefV = maxV;
+                if (minV > 0 && prefV < minV)
+                    prefV = minV;
+                if (maxV > 0 && prefV > maxV)
+                    prefV = maxV;
             }
-            gFpsMin = minV; gFpsPref = prefV; gFpsMax = maxV;
+            gFpsMin = minV;
+            gFpsPref = prefV;
+            gFpsMax = maxV;
             break;
         }
         case 'K': {
@@ -1046,6 +1145,12 @@ int main(int argc, const char *argv[]) {
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
 
+        // Clipboard: register handlers for client-to-server cut text
+        gScreen->setXCutText = setXCutTextLatin1;
+#ifdef LIBVNCSERVER_HAVE_LIBZ
+        gScreen->setXCutTextUTF8 = setXCutTextUTF8;
+#endif
+
         // Enable classic VNC authentication if environment variables are provided
         const char *envPwd = getenv("TROLLVNC_PASSWORD");
         const char *envViewPwd = getenv("TROLLVNC_VIEWONLY_PASSWORD");
@@ -1104,6 +1209,15 @@ int main(int argc, const char *argv[]) {
 
         rfbInitServer(gScreen);
         TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
+
+        // Clipboard: start manager and wire server->client sync (UTF-8)
+        [[ClipboardManager shared] start];
+        [ClipboardManager shared].onChange = ^(NSString *_Nullable text) {
+            // If we're in suppression (coming from client->server), do nothing
+            if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
+                return;
+            sendClipboardToClients(text);
+        };
 
         // Run VNC in background thread
         rfbRunEventLoop(gScreen, -1, TRUE);
