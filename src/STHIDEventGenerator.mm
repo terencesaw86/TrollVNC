@@ -1363,12 +1363,12 @@ static inline uint32_t hidUsageCodeForCharacter(NSString *key) {
 }
 
 - (void)muteDown {
-    [self _sendIOHIDKeyboardEvent:kHIDPage_Telephony usage:kHUDUsage_Telephony_Mute isKeyDown:true];
+    [self _sendIOHIDKeyboardEvent:kHIDPage_Consumer usage:kHIDUsage_Csmr_Mute isKeyDown:true];
     [self sendMarkerHIDEvent];
 }
 
 - (void)muteUp {
-    [self _sendIOHIDKeyboardEvent:kHIDPage_Telephony usage:kHUDUsage_Telephony_Mute isKeyDown:false];
+    [self _sendIOHIDKeyboardEvent:kHIDPage_Consumer usage:kHIDUsage_Csmr_Mute isKeyDown:false];
     [self sendMarkerHIDEvent];
 }
 

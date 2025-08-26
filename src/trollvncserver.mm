@@ -29,6 +29,7 @@
 
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
+#import "IOKitSPI.h"
 
 #if DEBUG
 #define TVLog(fmt, ...) NSLog((@"%s:%d " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
@@ -380,6 +381,62 @@ static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
     if (gViewOnly)
         return;
     STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+    // Map common XF86 multimedia/brightness keysyms to iOS HID events
+    switch ((unsigned long)keySym) {
+    // Brightness Up/Down
+    case 0x1008ff02UL: // XF86MonBrightnessUp
+        if (down)
+            [gen displayBrightnessIncrementDown];
+        else
+            [gen displayBrightnessIncrementUp];
+        return;
+    case 0x1008ff03UL: // XF86MonBrightnessDown
+        if (down)
+            [gen displayBrightnessDecrementDown];
+        else
+            [gen displayBrightnessDecrementUp];
+        return;
+    // Volume/Mute
+    case 0x1008ff13UL: // XF86AudioRaiseVolume
+        if (down)
+            [gen volumeIncrementDown];
+        else
+            [gen volumeIncrementUp];
+        return;
+    case 0x1008ff11UL: // XF86AudioLowerVolume
+        if (down)
+            [gen volumeDecrementDown];
+        else
+            [gen volumeDecrementUp];
+        return;
+    case 0x1008ff12UL: // XF86AudioMute
+        if (down)
+            [gen muteDown];
+        else
+            [gen muteUp];
+        return;
+    // Media keys: Previous / Play-Pause / Next (use Consumer usages)
+    case 0x1008ff3eUL: // Map as Previous Track (per user observation)
+        if (down)
+            [gen otherConsumerUsageDown:kHIDUsage_Csmr_ScanPreviousTrack];
+        else
+            [gen otherConsumerUsageUp:kHIDUsage_Csmr_ScanPreviousTrack];
+        return;
+    case 0x1008ff14UL: // XF86AudioPlay (toggle Play/Pause)
+        if (down)
+            [gen otherConsumerUsageDown:kHIDUsage_Csmr_PlayOrPause];
+        else
+            [gen otherConsumerUsageUp:kHIDUsage_Csmr_PlayOrPause];
+        return;
+    case 0x1008ff97UL: // Map as Next Track (per user observation)
+        if (down)
+            [gen otherConsumerUsageDown:kHIDUsage_Csmr_ScanNextTrack];
+        else
+            [gen otherConsumerUsageUp:kHIDUsage_Csmr_ScanNextTrack];
+        return;
+    default:
+        break;
+    }
     NSString *keyStr = keysymToString(keySym);
     if (gKeyEventLogging) {
         const char *mapped = keyStr ? [keyStr UTF8String] : "(nil)";
@@ -910,8 +967,9 @@ static void parseCLI(int argc, const char *argv[]) {
                 minV = (int)v; prefV = (int)v; maxV = (int)v;
             }
             // Normalize & validate: allow 0..240 (0 = unspecified)
-            auto clampF = [](int v) { return v < 0 ? 0 : (v > 240 ? 240 : v); };
-            minV = clampF(minV); prefV = clampF(prefV); maxV = clampF(maxV);
+            if (minV < 0) minV = 0; if (minV > 240) minV = 240;
+            if (prefV < 0) prefV = 0; if (prefV > 240) prefV = 240;
+            if (maxV < 0) maxV = 0; if (maxV > 240) maxV = 240;
             if (minV > 0 && maxV > 0 && minV > maxV) {
                 int tmp = minV; minV = maxV; maxV = tmp;
             }
