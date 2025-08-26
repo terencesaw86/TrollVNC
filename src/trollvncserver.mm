@@ -51,8 +51,9 @@ static int gSrcWidth = 0;      // capture source width
 static int gSrcHeight = 0;     // capture source height
 static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
 static volatile sig_atomic_t gShouldTerminate = 0;
-static int gClientCount = 0;        // Number of connected clients
-static BOOL gIsCaptureStarted = NO; // Whether ScreenCapturer has been started
+static int gClientCount = 0;          // Number of connected clients
+static BOOL gIsCaptureStarted = NO;   // Whether ScreenCapturer has been started
+static BOOL gIsClipboardStarted = NO; // Whether ClipboardManager has been started
 
 // Capture globals
 static ScreenCapturer *gCapturer = nil;
@@ -762,6 +763,12 @@ static void clientGone(rfbClientPtr cl) {
         gIsCaptureStarted = NO;
         TVLog(@"No clients remaining; screen capture stopped.");
     }
+
+    if (gIsClipboardStarted && gClientCount == 0) {
+        [[ClipboardManager shared] stop];
+        gIsClipboardStarted = NO;
+        TVLog(@"No clients remaining; clipboard listening stopped.");
+    }
 }
 
 static enum rfbNewClientAction newClient(rfbClientPtr cl) {
@@ -777,6 +784,13 @@ static enum rfbNewClientAction newClient(rfbClientPtr cl) {
         [gCapturer startCaptureWithFrameHandler:gFrameHandler];
         TVLog(@"Screen capture started (clients=%d).", gClientCount);
     }
+
+    if (!gIsClipboardStarted && gClientCount > 0) {
+        [[ClipboardManager shared] start];
+        gIsClipboardStarted = YES;
+        TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
+    }
+
     return RFB_CLIENT_ACCEPT;
 }
 
@@ -1210,8 +1224,7 @@ int main(int argc, const char *argv[]) {
         rfbInitServer(gScreen);
         TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
 
-        // Clipboard: start manager and wire server->client sync (UTF-8)
-        [[ClipboardManager shared] start];
+        // Clipboard: wire server->client sync (UTF-8); start/stop tied to client presence
         [ClipboardManager shared].onChange = ^(NSString *_Nullable text) {
             // If we're in suppression (coming from client->server), do nothing
             if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
