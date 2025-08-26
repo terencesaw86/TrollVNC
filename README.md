@@ -22,12 +22,13 @@ Options:
 - -d sec    Defer update window in seconds to coalesce changes (0..0.5, default: 0.015)
 - -Q n      Max in-flight updates before dropping new frames (0..8, default: 1; 0 disables dropping)
 - -s scale  Output scale factor 0<s<=1 (default: 1.0; 1 means no scaling)
-- -W px     Wheel step in pixels per tick (default: 48)
+- -W px     Wheel step in pixels per tick (0 disables, default: 48)
 - -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax
 - -N        Natural scroll direction (invert wheel delta)
 - -M scheme Modifier mapping: std|altcmd (default: std)
 - -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; iOS14 uses the max.
 - -K        Log keyboard events (keysym -> mapping) to stderr
+- -C on|off Enable or disable clipboard sync (default: on)
 - -h        Show built-in help and LibVNCServer usage
 
 Notes:
@@ -53,7 +54,7 @@ Tuning knobs and how they trade off latency, bandwidth, and CPU usage:
 
 The scroll wheel is emulated with short drags. Fast wheel motion becomes one longer flick; slow motion becomes short drags. You can tune its feel at runtime:
 
-- -W px: Base pixels per wheel tick (default 48). Larger = faster scrolls.
+- -W px: Base pixels per wheel tick (0 disables, default 48). Larger = faster scrolls.
 - -w k=v,... keys:
   - step: same as -W (pixels)
   - coalesce: coalescing window in seconds (default 0.03, 0..0.5)
@@ -87,6 +88,18 @@ More sensitive small scrolls:
 ```sh
 trollvncserver ... -w minratio=0.5,durbase=0.055
 ```
+
+Disable wheel entirely:
+
+```sh
+trollvncserver ... -W 0
+```
+
+### Clipboard Sync
+
+- UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
+- Starts when the first client connects and stops when the last disconnects.
+- Disable it with `-C off` if not desired.
 
 ### Frame Rate Control
 

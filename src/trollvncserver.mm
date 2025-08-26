@@ -71,6 +71,7 @@ static double gDeferWindowSec = 0.015;      // Coalescing window; 0 disables def
 static int gMaxInflightUpdates = 1;         // Max concurrent client encodes; drop frames if >= this
 static double gScale = 1.0;                 // 0 < scale <= 1.0, 1.0 = no scaling
 static BOOL gKeyEventLogging = NO;          // Log keyboard events (keysym, mapping)
+static BOOL gClipboardEnabled = YES;        // Clipboard sync enabled (CLI -C on|off)
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
 // Preferred frame rate range (0 = unspecified)
@@ -322,7 +323,7 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     if (!gWheelQueue) {
         gWheelQueue = dispatch_queue_create("com.82flex.trollvnc.wheel", DISPATCH_QUEUE_SERIAL);
     }
-    if ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev)) {
+    if (gWheelStepPx > 0 && ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev))) {
         double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
         if (gWheelNaturalDir)
             delta = -delta;
@@ -339,6 +340,11 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 }
 
 static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
+    if (gWheelStepPx <= 0) { // disabled
+        gWheelAccumPx = 0.0;
+        gWheelFlushScheduled = NO;
+        return;
+    }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySec * NSEC_PER_SEC)), gWheelQueue, ^{
         // Consume the entire accumulation in one gesture to avoid many small drags.
         double takeRaw = gWheelAccumPx;
@@ -785,7 +791,7 @@ static enum rfbNewClientAction newClient(rfbClientPtr cl) {
         TVLog(@"Screen capture started (clients=%d).", gClientCount);
     }
 
-    if (!gIsClipboardStarted && gClientCount > 0) {
+    if (gClipboardEnabled && !gIsClipboardStarted && gClientCount > 0) {
         [[ClipboardManager shared] start];
         gIsClipboardStarted = YES;
         TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
@@ -810,6 +816,8 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 
 static void sendClipboardToClients(NSString *_Nullable text) {
     if (!gScreen)
+        return;
+    if (!gClipboardEnabled)
         return;
     if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
         return; // suppressed (likely local set)
@@ -884,8 +892,8 @@ static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
 
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
-            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-R max] [-d sec] [-Q n] [-s scale] [-W px] "
-            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-K] [-h]\n",
+            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-d sec] [-Q n] [-s scale] [-W px] "
+            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-K] [-C on|off] [-R max] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -896,16 +904,17 @@ static void printUsageAndExit(const char *prog) {
             "  -P pct    Fullscreen fallback threshold percent (0..100, 0 disables dirty detection; default: %d)\n",
             gFullscreenThresholdPercent);
     fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
+    fprintf(stderr, "  -C on|off Enable or disable clipboard sync (default: on)\n");
     fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
     fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
             gMaxInflightUpdates);
     fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (1 means no scaling, default: %.2f)\n", gScale);
-    fprintf(stderr, "  -W px     Wheel step in pixels per tick (default: %.0f)\n", gWheelStepPx);
+    fprintf(stderr, "  -W px     Wheel step in pixels per tick (0 disables, default: %.0f)\n", gWheelStepPx);
     fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
-    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS15+ uses a range; "
-                    "iOS14 uses max.\n");
+    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS 15+ uses a range; "
+                    "iOS 14 uses max.\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     fprintf(stderr, "Environment:\n");
@@ -921,7 +930,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:K")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:KC:")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -1002,8 +1011,14 @@ static void parseCLI(int argc, const char *argv[]) {
         }
         case 'W': {
             double px = strtod(optarg, NULL);
+            if (px == 0.0) {
+                // 0 disables wheel emulation
+                gWheelStepPx = 0.0;
+                gWheelMaxStepPx = 0.0;
+                break;
+            }
             if (!(px > 4.0 && px <= 1000.0)) {
-                fprintf(stderr, "Invalid wheel step px: %s (expected >4..<=1000)\n", optarg);
+                fprintf(stderr, "Invalid wheel step px: %s (expected 0 or >4..<=1000)\n", optarg);
                 exit(EXIT_FAILURE);
             }
             gWheelStepPx = px;
@@ -1097,6 +1112,18 @@ static void parseCLI(int argc, const char *argv[]) {
             gKeyEventLogging = YES;
             break;
         }
+        case 'C': {
+            const char *val = optarg ? optarg : "on";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gClipboardEnabled = YES;
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gClipboardEnabled = NO;
+            } else {
+                fprintf(stderr, "Invalid -C value: %s (expected on|off|1|0|true|false)\n", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -1159,11 +1186,18 @@ int main(int argc, const char *argv[]) {
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
 
-        // Clipboard: register handlers for client-to-server cut text
-        gScreen->setXCutText = setXCutTextLatin1;
+        // Clipboard: register handlers for client-to-server cut text (conditional)
+        if (gClipboardEnabled) {
+            gScreen->setXCutText = setXCutTextLatin1;
 #ifdef LIBVNCSERVER_HAVE_LIBZ
-        gScreen->setXCutTextUTF8 = setXCutTextUTF8;
+            gScreen->setXCutTextUTF8 = setXCutTextUTF8;
 #endif
+        } else {
+            gScreen->setXCutText = NULL;
+#ifdef LIBVNCSERVER_HAVE_LIBZ
+            gScreen->setXCutTextUTF8 = NULL;
+#endif
+        }
 
         // Enable classic VNC authentication if environment variables are provided
         const char *envPwd = getenv("TROLLVNC_PASSWORD");
@@ -1225,12 +1259,16 @@ int main(int argc, const char *argv[]) {
         TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
 
         // Clipboard: wire server->client sync (UTF-8); start/stop tied to client presence
-        [ClipboardManager shared].onChange = ^(NSString *_Nullable text) {
-            // If we're in suppression (coming from client->server), do nothing
-            if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
-                return;
-            sendClipboardToClients(text);
-        };
+        if (gClipboardEnabled) {
+            [ClipboardManager shared].onChange = ^(NSString *_Nullable text) {
+                // If we're in suppression (coming from client->server), do nothing
+                if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
+                    return;
+                sendClipboardToClients(text);
+            };
+        } else {
+            [ClipboardManager shared].onChange = nil;
+        }
 
         // Run VNC in background thread
         rfbRunEventLoop(gScreen, -1, TRUE);
