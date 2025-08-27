@@ -48,10 +48,9 @@ static void *gBackBuffer = NULL;  // We render into this and then swap
 static size_t gFBSize = 0;        // bytes
 static int gWidth = 0;
 static int gHeight = 0;
-static int gSrcWidth = 0;      // capture source width
-static int gSrcHeight = 0;     // capture source height
-static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
-static volatile sig_atomic_t gShouldTerminate = 0;
+static int gSrcWidth = 0;             // capture source width
+static int gSrcHeight = 0;            // capture source height
+static int gBytesPerPixel = 4;        // ARGB/BGRA 32-bit
 static int gClientCount = 0;          // Number of connected clients
 static BOOL gIsCaptureStarted = NO;   // Whether ScreenCapturer has been started
 static BOOL gIsClipboardStarted = NO; // Whether ClipboardManager has been started
@@ -202,6 +201,7 @@ static void handleSignal(int signum);
 static void cleanupAndExit(int code);
 static inline void resetCurrTileHashes(void);
 static void startOrientationObserver(void);
+static void stopOrientationObserver(void);
 static inline int rotationForOrientation(UIInterfaceOrientation o);
 static int ensureRotateScratch(size_t w, size_t h);
 static void maybeResizeFramebufferForRotation(int rotQ);
@@ -1879,14 +1879,15 @@ int main(int argc, const char *argv[]) {
 
     // Keep process alive: ScreenCapturer uses CADisplayLink on main run loop.
     CFRunLoopRun();
-    return 0;
+
+    cleanupAndExit(EXIT_SUCCESS);
+    return EXIT_SUCCESS;
 }
 
 // MARK: - Signals / Shutdown
 
 static void handleSignal(int signum) {
     (void)signum;
-    gShouldTerminate = 1;
     // Best-effort: stop runloop to unwind main and allow cleanup.
     CFRunLoopStop(CFRunLoopGetMain());
 }
@@ -1899,25 +1900,26 @@ static void installSignalHandlers(void) {
     sigaction(SIGTERM, &sa, NULL);
 }
 
-__attribute__((unused)) static void cleanupAndExit(int code) {
+static void cleanupAndExit(int code) {
 
-    // Orientation rotation scratch
+    stopOrientationObserver();
+
+    if (gScreen) {
+        rfbShutdownServer(gScreen, YES);
+        rfbScreenCleanup(gScreen);
+        gScreen = NULL;
+    }
+
     if (gRotateScratch) {
         free(gRotateScratch);
         gRotateScratch = NULL;
         gRotateScratchSize = 0;
     }
 
-    // vImage scale temp buffer
     if (gScaleTemp) {
         free(gScaleTemp);
         gScaleTemp = NULL;
         gScaleTempSize = 0;
-    }
-
-    if (gScreen) {
-        rfbScreenCleanup(gScreen);
-        gScreen = NULL;
     }
 
     if (gFrontBuffer) {
@@ -2002,6 +2004,15 @@ static void startOrientationObserver(void) {
 
     TVLog(@"Orientation observer registered (initial=%ld -> rotQ=%d)", (long)gActiveOrientation,
           gRotationQuad.load(std::memory_order_relaxed));
+}
+
+static void stopOrientationObserver(void) {
+    if (!gOrientationObserver)
+        return;
+
+    [gOrientationObserver invalidate];
+    gOrientationObserver = nil;
+    TVLog(@"Orientation observer stopped");
 }
 
 // Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
