@@ -185,8 +185,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     void (^cb)(NSString *_Nullable) = self.onChange;
     if (cb) {
         // Ensure callback is invoked on the main thread
-        NSUInteger len = current.length;
-        CMLog("Invoking onChange with %s string (len=%lu)", local ? "local" : "system", (unsigned long)len);
+        CMLog("Invoking onChange with %s string (len=%lu)", local ? "local" : "system", (unsigned long)current.length);
         if ([NSThread isMainThread]) {
             cb(current);
         } else {

@@ -1985,13 +1985,15 @@ static void startOrientationObserver(void) {
             return;
 
         gActiveOrientation = [update orientation];
-        NSUInteger seq = [update sequenceNumber];
-        NSInteger direction = [update rotationDirection];
-        NSTimeInterval dur = [update duration];
 
         // Note: Actual framebuffer rotation will be handled in the next step.
         gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
 
+#if DEBUG
+        NSUInteger seq = [update sequenceNumber];
+        NSInteger direction = [update rotationDirection];
+        NSTimeInterval dur = [update duration];
+#endif
         TVLog(@"Orientation update: seq=%lu dir=%ld ori=%ld dur=%.3f", seq, direction, (long)gActiveOrientation, dur);
     };
 
