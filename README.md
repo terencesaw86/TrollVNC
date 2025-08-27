@@ -42,14 +42,18 @@ Scroll/Input:
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
 
+Cursor & Rotation:
+
+- `-U on|off` Enable server-side cursor overlay (default: `off`)
+- `-O on|off` Sync UI orientation and rotate output (default: `off`)
+
+Help:
+
 - `-h`        Show built-in help and LibVNCServer usage
 
 Notes:
 
 - Capture starts only when at least one client is connected, and stops when the last disconnects.
-- Scaling uses Accelerate/vImage for high-quality resampling. Tiling/hash/dirty detection runs on the scaled output to reduce bandwidth and CPU.
-- When `-a` is enabled, we try a non-blocking swap to reduce contention; if it fails, we copy only dirty rectangles to the front buffer to minimize tearing and bandwidth.
-- Dirty rectangles are detected via per-tile FNV-1a hashing. If too many tiles change (>= threshold), we fallback to full-screen updates for efficiency. Set `-P 0` to disable hashing/dirty detection entirely and always send full-screen updates.
 - You may want to use `-M altcmd` on macOS clients.
 
 ## Performance Tips
@@ -63,7 +67,7 @@ Quick guidance on key trade-offs (latency vs. bandwidth vs. CPU/battery):
 - `-t size`: Dirty-detection tile size. `32` default; `64` cuts hashing/rect overhead on slower devices; `16` (or `8`) captures finer UI details at higher CPU cost.
 - `-P pct`: Fullscreen fallback threshold. Practical `25–40`; higher values stick to rect updates longer. `0` disables dirty detection (always fullscreen).
 - `-R max`: Rect cap before collapsing to a bounding box. `128–512` common; too high increases RFB overhead.
-- `-a`: Non-blocking swap. Can reduce stalls/contension; may introduce tearing. Try if you see occasional stalls; leave off for maximal visual stability.
+- `-a`: Non-blocking swap. Can reduce stalls/contension; may introduce tearing. Try if you see occasional stalls; leave off for maximal visual stability. If a non-blocking swap cannot lock clients, TrollVNC falls back to copying only dirty rectangles to the front buffer to minimize tearing and bandwidth.
 
 ### Preset Examples
 
@@ -131,19 +135,7 @@ Use `-A` to periodically send a harmless dummy key event to keep the device awak
 - Active only when at least one client is connected; automatically stops when the last client disconnects.
 - Set `-A 0` (or omit) to disable. Shorter intervals may increase battery usage.
 
-Example:
-
-```sh
-trollvncserver ... -A 30
-```
-
-### Clipboard Sync
-
-- UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
-- Starts when the first client connects and stops when the last disconnects.
-- Disable it with `-C off` if not desired.
-
-### Wheel/Scroll Tuning
+## Wheel/Scroll Tuning
 
 The scroll wheel is emulated with short drags. Fast wheel motion becomes one longer flick; slow motion becomes short drags. You can tune its feel at runtime:
 
@@ -162,7 +154,7 @@ The scroll wheel is emulated with short drags. Fast wheel motion becomes one lon
   - `durmax`: max gesture duration (default `0.14`)
   - `natural`: `1` to enable natural direction, `0` to disable
 
-#### Examples
+### Examples
 
 Smooth and slow:
 
@@ -187,6 +179,57 @@ Disable wheel entirely:
 ```sh
 trollvncserver ... -W 0
 ```
+
+## Clipboard Sync
+
+- UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
+- Starts when the first client connects and stops when the last disconnects.
+- Disable it with `-C off` if not desired.
+
+## Rotate / Orientation
+
+When `-O on` is set, TrollVNC tracks iOS interface orientation and rotates the outgoing framebuffer to match (0°, 90°, 180°, 270°). Touch and scroll input are mapped into the device coordinate space with the correct axis and direction in all orientations.
+
+Pipeline overview (per frame):
+
+1) Capture portrait buffer from `ScreenCapturer`.
+2) Rotate with Accelerate/vImage (90/180/270) into a tight ARGB buffer.
+3) Scale to the server output size (if `-s < 1.0`), reusing a persistent vImage temp buffer to reduce allocations.
+4) Width is rounded up to a multiple of 4 bytes per pixel row to satisfy encoders/clients; height is adjusted to preserve aspect ratio.
+5) Framebuffer is resized via LibVNCServer when geometry changes; width/height and pixel format are kept consistent (BGRA little-endian).
+6) Dirty detection (if enabled via `-P > 0`) runs on the rotated+scaled back buffer.
+
+Dirty detection and rotation:
+
+- On an orientation change, TrollVNC performs a one-time full-screen update and clears pending tile state to establish a clean baseline.
+- Tile/hash tables are reinitialized on any geometry change (e.g., 90°/270° or scale changes).
+- Subsequent frames use normal tile hashing and dirty rectangles again.
+- Set `-P 0` to disable dirty detection entirely and always send full frames.
+
+Input mapping:
+
+- Touch coordinates are transformed from the VNC framebuffer space back into the device’s portrait space, inverting the current rotation.
+- The scroll wheel is emulated with short drags; when rotated, the gesture axis and direction are remapped (e.g., in landscape, vertical wheel becomes a horizontal drag). `-N` still toggles natural direction.
+
+Examples:
+
+```sh
+# Enable rotation sync and keep dirty detection enabled with a reasonable threshold
+trollvncserver -O on -P 35 -t 32 -R 512
+
+# Rotation sync with full frames (dirty detection disabled)
+trollvncserver -O on -P 0
+```
+
+## Server-side Cursor
+
+iOS does not present a native on-screen cursor in this setup. TrollVNC does not draw a cursor by default; most VNC viewers render their own pointer. If your viewer expects the server to render a cursor, enable it with `-U on`.
+
+Details:
+
+- Overlay style: a simple “X” cursor shape with centered hotspot. Alpha is disabled to keep the cursor crisp.
+- Pros: visible even if the client does not draw its own cursor.
+- Cons: may show two cursors if the client also renders one. Keep it off unless needed.
 
 ## Authentication
 
