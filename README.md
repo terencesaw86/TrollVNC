@@ -47,21 +47,101 @@ Scroll/Input:
 Notes:
 
 - Capture starts only when at least one client is connected, and stops when the last disconnects.
+- Scaling uses Accelerate/vImage for high-quality resampling. Tiling/hash/dirty detection runs on the scaled output to reduce bandwidth and CPU.
 - When `-a` is enabled, we try a non-blocking swap to reduce contention; if it fails, we copy only dirty rectangles to the front buffer to minimize tearing and bandwidth.
 - Dirty rectangles are detected via per-tile FNV-1a hashing. If too many tiles change (>= threshold), we fallback to full-screen updates for efficiency. Set `-P 0` to disable hashing/dirty detection entirely and always send full-screen updates.
-- Scaling uses Accelerate/vImage for high-quality resampling. Tiling/hash/dirty detection runs on the scaled output to reduce bandwidth and CPU.
+- You may want to use `-M altcmd` on macOS clients.
 
 ## Performance Tips
 
-Tuning knobs and how they trade off latency, bandwidth, and CPU usage:
+Quick guidance on key trade-offs (latency vs. bandwidth vs. CPU/battery):
 
-- `-s scale`: Output resolution scale. Smaller scale cuts bandwidth and encoding cost the most. For text-heavy UIs, `0.66~0.75` often reads better than `0.5`.
-- `-d sec`: Defer window. Larger values coalesce more updates (less CPU/bandwidth) at the cost of added latency. Typical range: `0.005–0.030`.
-- `-Q n`: Max in-flight encodes. Higher values increase throughput but can raise CPU and memory; `0` disables dropping and can increase latency when encoders are slow.
-- `-t size`: Tile size for dirty detection. Smaller tiles detect fine-grained changes but raise hashing/rect overhead. `32` is a good default; `64` reduces CPU on slower devices.
-- `-P pct`: Threshold to switch to full-screen updates. `25–40` is a practical range; higher values favor rect updates longer.
-- `-R max`: Rect cap before collapsing to a bounding box. Too high increases RFB overhead; `128–512` is often sufficient.
-- `-a`: Non-blocking swap. Can reduce contention and stutter under load but may occasionally increase tearing; leave off for maximal visual stability.
+- `-s scale`: Biggest lever for bandwidth and encoder CPU. Start at `0.66–0.75` for text-heavy UIs; use `0.5` for tight links or slow networks; `1.0` for pixel-perfect.
+- `-F spec`: Cap preferred frame rate to balance smoothness and battery. `30–60` is a sensible range; on 120 Hz devices, `60` often suffices. On iOS 14 the max (or preferred) value is used.
+- `-d sec`: Coalesce updates. Larger values lower CPU/bitrate but add latency. Typical range `0.005–0.030`; interactive UIs prefer `≤ 0.015`.
+- `-Q n`: Throughput vs. latency backpressure. `1–2` recommended. `0` disables dropping and can grow latency when encoders are slow.
+- `-t size`: Dirty-detection tile size. `32` default; `64` cuts hashing/rect overhead on slower devices; `16` (or `8`) captures finer UI details at higher CPU cost.
+- `-P pct`: Fullscreen fallback threshold. Practical `25–40`; higher values stick to rect updates longer. `0` disables dirty detection (always fullscreen).
+- `-R max`: Rect cap before collapsing to a bounding box. `128–512` common; too high increases RFB overhead.
+- `-a`: Non-blocking swap. Can reduce stalls/contension; may introduce tearing. Try if you see occasional stalls; leave off for maximal visual stability.
+
+### Preset Examples
+
+By default, dirty detection is **disabled** because it usually has a high CPU cost. You can enable it with `-P` to set a fullscreen fallback threshold.
+
+Low-latency interactive (LAN):
+
+```sh
+trollvncserver -p 5901 -n "My iPhone" -s 0.75 -d 0.008 -Q 1 -t 32 -P 35 -R 512
+```
+
+Battery/bandwidth saver (cellular/WAN):
+
+```sh
+trollvncserver -p 5901 -n "My iPhone" -s 0.5 -d 0.025 -Q 2 -t 64 -P 50 -R 128
+```
+
+High quality on fast LAN:
+
+```sh
+trollvncserver -p 5901 -n "My iPhone" -s 1.0 -d 0.012 -Q 2 -t 32 -P 30 -R 512
+```
+
+Choppy network (high RTT/loss):
+
+```sh
+trollvncserver -p 5901 -n "My iPhone" -s 0.66 -d 0.035 -Q 1 -t 64 -P 60 -R 128
+```
+
+Older devices (CPU-limited):
+
+```sh
+trollvncserver -p 5901 -n "My iPhone" -s 0.5 -d 0.02 -Q 1 -t 64 -P 40 -R 256
+```
+
+Optional: add `-a` to any profile if you observe occasional stalls due to encoder contention; remove it if tearing is noticeable:
+
+```sh
+trollvncserver ... -a
+```
+
+### Frame Rate Control
+
+Use -F to set the CADisplayLink frame rate:
+
+- Single value: `-F 60`
+- Range: `-F 30-60`
+- Full range with preferred: `-F 30:60:120`
+
+Notes:
+
+- On iOS 15+, the full range is applied via `preferredFrameRateRange`.
+- On iOS 14, only `preferredFramesPerSecond` is available, so the max (or preferred if provided) is used.
+
+Notes:
+
+- Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
+- With `-Q 0`, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
+- On older devices, prefer lowering `-s` and increasing `-t` to reduce CPU and memory bandwidth.
+
+### Keep-Alive (Prevent Sleep)
+
+Use `-A` to periodically send a harmless dummy key event to keep the device awake while clients are connected.
+
+- Active only when at least one client is connected; automatically stops when the last client disconnects.
+- Set `-A 0` (or omit) to disable. Shorter intervals may increase battery usage.
+
+Example:
+
+```sh
+trollvncserver ... -A 30
+```
+
+### Clipboard Sync
+
+- UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
+- Starts when the first client connects and stops when the last disconnects.
+- Disable it with `-C off` if not desired.
 
 ### Wheel/Scroll Tuning
 
@@ -108,44 +188,6 @@ Disable wheel entirely:
 trollvncserver ... -W 0
 ```
 
-### Clipboard Sync
-
-- UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
-- Starts when the first client connects and stops when the last disconnects.
-- Disable it with `-C off` if not desired.
-
-### Keep-Alive (Prevent Sleep)
-
-Use `-A` to periodically send a harmless dummy key event to keep the device awake while clients are connected.
-
-- Active only when at least one client is connected; automatically stops when the last client disconnects.
-- Set `-A 0` (or omit) to disable. Shorter intervals may increase battery usage.
-
-Example:
-
-```sh
-trollvncserver ... -A 30
-```
-
-### Frame Rate Control
-
-Use -F to set the CADisplayLink frame rate:
-
-- Single value: `-F 60`
-- Range: `-F 30-60`
-- Full range with preferred: `-F 30:60:120`
-
-Notes:
-
-- On iOS 15+, the full range is applied via preferredFrameRateRange.
-- On iOS 14, only preferredFramesPerSecond is available, so the max (or preferred if provided) is used.
-
-Notes:
-
-- Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
-- With `-Q 0`, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
-- On older devices, prefer lowering `-s` and increasing `-t` to reduce CPU and memory bandwidth.
-
 ## Authentication
 
 Classic VNC authentication can be enabled via environment variables:
@@ -170,46 +212,6 @@ Notes:
 
 - `-v` forces global view-only regardless of password. View-only password applies per client.
 - Environment variables may be visible to the process environment; consider using a secure launcher if needed.
-
-## Preset Examples
-
-By default, dirty detection is **disabled** because it usually has a high CPU cost. You can enable it with `-P` to set a fullscreen fallback threshold.
-
-Low-latency interactive (LAN):
-
-```sh
-trollvncserver -p 5901 -n "My iPhone" -s 0.75 -d 0.008 -Q 1 -t 32 -P 35 -R 512
-```
-
-Battery/bandwidth saver (cellular/WAN):
-
-```sh
-trollvncserver -p 5901 -n "My iPhone" -s 0.5 -d 0.025 -Q 2 -t 64 -P 50 -R 128
-```
-
-High quality on fast LAN:
-
-```sh
-trollvncserver -p 5901 -n "My iPhone" -s 1.0 -d 0.012 -Q 2 -t 32 -P 30 -R 512
-```
-
-Choppy network (high RTT/loss):
-
-```sh
-trollvncserver -p 5901 -n "My iPhone" -s 0.66 -d 0.035 -Q 1 -t 64 -P 60 -R 128
-```
-
-Older devices (CPU-limited):
-
-```sh
-trollvncserver -p 5901 -n "My iPhone" -s 0.5 -d 0.02 -Q 1 -t 64 -P 40 -R 256
-```
-
-Optional: add `-a` to any profile if you observe occasional stalls due to encoder contention; remove it if tearing is noticeable:
-
-```sh
-trollvncserver ... -a
-```
 
 ## Build Dependencies
 
