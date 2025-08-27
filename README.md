@@ -69,6 +69,12 @@ Quick guidance on key trade-offs (latency vs. bandwidth vs. CPU/battery):
 - `-R max`: Rect cap before collapsing to a bounding box. `128–512` common; too high increases RFB overhead.
 - `-a`: Non-blocking swap. Can reduce stalls/contension; may introduce tearing. Try if you see occasional stalls; leave off for maximal visual stability. If a non-blocking swap cannot lock clients, TrollVNC falls back to copying only dirty rectangles to the front buffer to minimize tearing and bandwidth.
 
+Notes:
+
+- Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
+- With `-Q 0`, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
+- On older devices, prefer lowering `-s` and increasing `-t` to reduce CPU and memory bandwidth.
+
 ### Preset Examples
 
 By default, dirty detection is **disabled** because it usually has a high CPU cost. You can enable it with `-P` to set a fullscreen fallback threshold.
@@ -121,12 +127,6 @@ Notes:
 
 - On iOS 15+, the full range is applied via `preferredFrameRateRange`.
 - On iOS 14, only `preferredFramesPerSecond` is available, so the max (or preferred if provided) is used.
-
-Notes:
-
-- Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
-- With `-Q 0`, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
-- On older devices, prefer lowering `-s` and increasing `-t` to reduce CPU and memory bandwidth.
 
 ### Keep-Alive (Prevent Sleep)
 
