@@ -1059,10 +1059,12 @@ static void printUsageAndExit(const char *prog) {
             "  -w k=v,.. Wheel tuning keys: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
-    fprintf(stderr, "  -K        Log keyboard events to stderr\n");
-    fprintf(stderr, "\nCursor:\n");
-    fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n");
-    fprintf(stderr, "\nHelp:\n");
+    fprintf(stderr, "  -K        Log keyboard events to stderr\n\n");
+
+    fprintf(stderr, "Cursor:\n");
+    fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n\n");
+
+    fprintf(stderr, "Help:\n");
     fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
 
     fprintf(stderr, "Environment:\n");
