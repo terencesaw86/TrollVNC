@@ -74,6 +74,8 @@ static BOOL gKeyEventLogging = NO;          // Log keyboard events (keysym, mapp
 static BOOL gClipboardEnabled = YES;        // Clipboard sync enabled (CLI -C on|off)
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
+// Cursor: disabled by default; can be enabled via CLI (-U on|off)
+static BOOL gCursorEnabled = NO;
 // Preferred frame rate range (0 = unspecified)
 static int gFpsMin = 0;
 static int gFpsPref = 0;
@@ -775,6 +777,72 @@ static void copyWithStrideTight(uint8_t *dstTight, const uint8_t *src, int width
     }
 }
 
+// MARK: - Cursor helpers (fixed style: XCursor + alpha mode=2)
+
+static void TVSetXCursor(rfbScreenInfoPtr screen) {
+    int width = 13, height = 11;
+    const char cursor[] = "             "
+                          " xx       xx "
+                          "  xx     xx  "
+                          "   xx   xx   "
+                          "    xx xx    "
+                          "     xxx     "
+                          "    xx xx    "
+                          "   xx   xx   "
+                          "  xx     xx  "
+                          " xx       xx "
+                          "             ";
+    const char mask[] = "xxxx     xxxx"
+                        "xxxx     xxxx"
+                        " xxxx   xxxx "
+                        "  xxxx xxxx  "
+                        "   xxxxxxx   "
+                        "    xxxxx    "
+                        "   xxxxxxx   "
+                        "  xxxx xxxx  "
+                        " xxxx   xxxx "
+                        "xxxx     xxxx"
+                        "xxxx     xxxx";
+    rfbCursorPtr c = rfbMakeXCursor(width, height, (char *)cursor, (char *)mask);
+    if (!c)
+        return;
+    c->xhot = width / 2;
+    c->yhot = height / 2;
+    rfbSetCursor(screen, c);
+}
+
+static void TVSetAlphaCursor(rfbScreenInfoPtr screen, int mode) {
+    int i, j;
+    rfbCursorPtr c = screen ? screen->cursor : NULL;
+    if (!c)
+        return;
+
+    int maskStride = (c->width + 7) / 8;
+
+    if (c->alphaSource) {
+        free(c->alphaSource);
+        c->alphaSource = NULL;
+    }
+    if (mode == 0)
+        return;
+
+    c->alphaSource = (unsigned char *)malloc((size_t)c->width * (size_t)c->height);
+    if (!c->alphaSource)
+        return;
+
+    for (j = 0; j < c->height; j++) {
+        for (i = 0; i < c->width; i++) {
+            unsigned char value = (unsigned char)(0x100 * i / c->width);
+            rfbBool masked = (c->mask[(i / 8) + maskStride * j] << (i & 7)) & 0x80;
+            c->alphaSource[i + c->width * j] = (unsigned char)(masked ? (mode == 1 ? value : 0xff - value) : 0);
+        }
+    }
+    if (c->cleanupMask)
+        free(c->mask);
+    c->mask = (unsigned char *)rfbMakeMaskFromAlphaSource(c->width, c->height, c->alphaSource);
+    c->cleanupMask = TRUE;
+}
+
 // MARK: - LibVNCServer callbacks (input disabled in this step)
 
 static void clientGone(rfbClientPtr cl) {
@@ -971,6 +1039,8 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events to stderr\n");
+    fprintf(stderr, "\nCursor:\n");
+    fprintf(stderr, "  -U on|off Enable server-side cursor with alpha (default: off)\n");
     fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
 
     fprintf(stderr, "Environment:\n");
@@ -985,7 +1055,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:U:")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -1193,6 +1263,20 @@ static void parseCLI(int argc, const char *argv[]) {
             TVLog(@"CLI: Keyboard event logging enabled (-K)");
             break;
         }
+        case 'U': {
+            const char *val = optarg ? optarg : "off";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gCursorEnabled = YES;
+                TVLog(@"CLI: Cursor enabled (-U %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gCursorEnabled = NO;
+                TVLog(@"CLI: Cursor disabled (-U %s)", [@(val) UTF8String]);
+            } else {
+                fprintf(stderr, "Invalid -U value: %s (expected on|off|1|0|true|false)\n", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
         case 'C': {
             const char *val = optarg ? optarg : "on";
             if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
@@ -1338,7 +1422,14 @@ int main(int argc, const char *argv[]) {
         gScreen->kbdAddEvent = kbdAddEvent;
 
         // Cursor: we capture the cursor in the framebuffer already.
-        gScreen->cursor = NULL;
+        if (gCursorEnabled) {
+            TVSetXCursor(gScreen);
+            TVSetAlphaCursor(gScreen, 0);
+            TVLog(@"Cursor: XCursor + alpha mode=2 enabled");
+        } else {
+            gScreen->cursor = NULL;
+            TVLog(@"Cursor: disabled (default; enable with -U on)");
+        }
 
         rfbInitServer(gScreen);
         TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
