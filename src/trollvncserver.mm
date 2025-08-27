@@ -78,6 +78,8 @@ static int gModMapScheme = 0;
 static int gFpsMin = 0;
 static int gFpsPref = 0;
 static int gFpsMax = 0;
+// KeepAlive: hardwareUnlock interval in seconds (0 disables). Only active when >=1 client is connected.
+static double gKeepAliveSec = 0.0;
 // VNC authentication: if set via env TROLLVNC_PASSWORD, enable classic VNC auth
 // LibVNCServer expects a NULL-terminated list of char* for rfbCheckPasswordByList
 static char **gAuthPasswdVec = NULL;        // owns the vector
@@ -333,7 +335,7 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     bool wheelUpPrev = (gLastButtonMask & 8) != 0;
     bool wheelDnPrev = (gLastButtonMask & 16) != 0;
     if (!gWheelQueue) {
-        gWheelQueue = dispatch_queue_create("com.82flex.trollvnc.wheel", DISPATCH_QUEUE_SERIAL);
+        gWheelQueue = dispatch_queue_create("com.82flex.trollvnc.wheel", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
     }
     if (gWheelStepPx > 0 && ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev))) {
         double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
@@ -357,6 +359,7 @@ static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
         gWheelFlushScheduled = NO;
         return;
     }
+
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySec * NSEC_PER_SEC)), gWheelQueue, ^{
         // Consume the entire accumulation in one gesture to avoid many small drags.
         double takeRaw = gWheelAccumPx;
@@ -370,10 +373,12 @@ static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
         // slightly increase distance instead of emitting many short drags.
         double amp = 1.0 + fmin(gWheelAmpCap, gWheelAmpCoeff * log1p(mag / fmax(gWheelStepPx, 1.0)));
         double take = copysign(mag * amp, takeRaw);
+
         // Guarantee a small-but-meaningful movement for tiny scrolls
         if (fabs(take) < (gWheelMinTakeRatio * gWheelStepPx)) {
             take = copysign(gWheelMinTakeRatio * gWheelStepPx, take);
         }
+
         // Absolute clamp for safety
         double absClamp = gWheelMaxStepPx * gWheelAbsClampFactor;
         if (take > absClamp)
@@ -388,12 +393,14 @@ static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
         if (endY > maxY)
             endY = maxY;
         CGPoint endPt = CGPointMake(anchorPoint.x, endY);
+
         // Duration scales sub-linearly with distance; parameters configurable
         double dur = gWheelDurBase + gWheelDurK * sqrt(fabs(take));
         if (dur > gWheelDurMax)
             dur = gWheelDurMax;
         if (dur < gWheelDurMin)
             dur = gWheelDurMin;
+
         [[STHIDEventGenerator sharedGenerator] dragLinearWithStartPoint:anchorPoint endPoint:endPt duration:dur];
     });
 }
@@ -787,6 +794,13 @@ static void clientGone(rfbClientPtr cl) {
         gIsClipboardStarted = NO;
         TVLog(@"No clients remaining; clipboard listening stopped.");
     }
+
+    // KeepAlive: disable when no clients remain
+    if (gClientCount == 0) {
+        STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+        gen.keepAliveInterval = 0;
+        TVLog(@"No clients remaining; KeepAlive stopped.");
+    }
 }
 
 static enum rfbNewClientAction newClient(rfbClientPtr cl) {
@@ -807,6 +821,13 @@ static enum rfbNewClientAction newClient(rfbClientPtr cl) {
         [[ClipboardManager shared] start];
         gIsClipboardStarted = YES;
         TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
+    }
+
+    // KeepAlive: enable when at least one client is connected and interval > 0
+    if (gClientCount > 0 && gKeepAliveSec > 0.0) {
+        STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+        gen.keepAliveInterval = gKeepAliveSec;
+        TVLog(@"KeepAlive started with interval (%.3f sec)", gKeepAliveSec);
     }
 
     return RFB_CLIENT_ACCEPT;
@@ -922,7 +943,7 @@ static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
 static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
             "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-d sec] [-Q n] [-s scale] [-W px] "
-            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-K] [-C on|off] [-R max] [-h]\n",
+            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-A sec] [-K] [-C on|off] [-R max] [-h]\n",
             prog);
     fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
@@ -944,6 +965,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS 15+ uses a range; "
                     "iOS 14 uses max.\n");
+    fprintf(stderr, "  -A sec    KeepAlive interval in seconds (0 disables; applies only when >=1 client)\n");
     fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
     fprintf(stderr, "  -h        Show help\n\n");
     fprintf(stderr, "Environment:\n");
@@ -959,7 +981,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:KC:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -1150,6 +1172,16 @@ static void parseCLI(int argc, const char *argv[]) {
             gFpsPref = prefV;
             gFpsMax = maxV;
             TVLog(@"CLI: FPS preference set to min=%d pref=%d max=%d", gFpsMin, gFpsPref, gFpsMax);
+            break;
+        }
+        case 'A': {
+            double sec = strtod(optarg ? optarg : "0", NULL);
+            if (sec < 0.0 || sec > 24 * 3600.0) {
+                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 0..86400)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gKeepAliveSec = sec;
+            TVLog(@"CLI: KeepAlive interval set to %.3f sec (-A)", gKeepAliveSec);
             break;
         }
         case 'K': {
