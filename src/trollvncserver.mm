@@ -67,6 +67,8 @@ static UIInterfaceOrientation gActiveOrientation = UIInterfaceOrientationUnknown
 static std::atomic<int> gRotationQuad(0); // 0=0°, 1=90°, 2=180°, 3=270° (clockwise)
 static void *gRotateScratch = NULL;       // rotation scratch (for 90°/270°)
 static size_t gRotateScratchSize = 0;     // bytes
+static void *gScaleTemp = NULL;           // vImage scale temp buffer
+static size_t gScaleTempSize = 0;         // bytes
 
 // CLI options
 static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
@@ -205,6 +207,7 @@ static inline int rotationForOrientation(UIInterfaceOrientation o);
 static int ensureRotateScratch(size_t w, size_t h);
 static void maybeResizeFramebufferForRotation(int rotQ);
 static inline void alignDimensionsForVNC(int rawW, int rawH, int *alignedW, int *alignedH);
+static int ensureScaleTemp(size_t srcW, size_t srcH, size_t dstW, size_t dstH, vImage_Flags flags);
 
 // Expose private methods we use from STHIDEventGenerator
 @interface STHIDEventGenerator (Private)
@@ -1604,7 +1607,13 @@ int main(int argc, const char *argv[]) {
                 copyWithStrideTight((uint8_t *)dstBuf.data, (const uint8_t *)stage.data, gWidth, gHeight,
                                     stage.rowBytes);
             } else {
-                vImage_Error err = vImageScale_ARGB8888(&stage, &dstBuf, NULL, kvImageHighQualityResampling);
+                if (ensureScaleTemp(stage.width, stage.height, dstBuf.width, dstBuf.height,
+                                    kvImageHighQualityResampling) != 0) {
+                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                    return;
+                }
+
+                vImage_Error err = vImageScale_ARGB8888(&stage, &dstBuf, gScaleTemp, kvImageHighQualityResampling);
                 if (err != kvImageNoError) {
                     static BOOL sLoggedVImageErrOnce = NO;
                     if (!sLoggedVImageErrOnce) {
@@ -1788,6 +1797,10 @@ static void installSignalHandlers(void) {
 }
 
 __attribute__((unused)) static void cleanupAndExit(int code) {
+
+    // Orientation observer cleanup
+    stopOrientationObserverIfActive();
+
     // Orientation rotation scratch
     if (gRotateScratch) {
         free(gRotateScratch);
@@ -1795,8 +1808,12 @@ __attribute__((unused)) static void cleanupAndExit(int code) {
         gRotateScratchSize = 0;
     }
 
-    // Orientation observer cleanup
-    stopOrientationObserverIfActive();
+    // vImage scale temp buffer
+    if (gScaleTemp) {
+        free(gScaleTemp);
+        gScaleTemp = NULL;
+        gScaleTempSize = 0;
+    }
 
     if (gScreen) {
         rfbScreenCleanup(gScreen);
@@ -2004,6 +2021,31 @@ static inline void alignDimensionsForVNC(int rawW, int rawH, int *alignedW, int 
         hAdj = 1;
     *alignedW = w4;
     *alignedH = hAdj;
+}
+
+static int ensureScaleTemp(size_t srcW, size_t srcH, size_t dstW, size_t dstH, vImage_Flags flags) {
+    vImage_Buffer s = {.data = NULL,
+                       .width = (vImagePixelCount)srcW,
+                       .height = (vImagePixelCount)srcH,
+                       .rowBytes = srcW * (size_t)gBytesPerPixel};
+    vImage_Buffer d = {.data = NULL,
+                       .width = (vImagePixelCount)dstW,
+                       .height = (vImagePixelCount)dstH,
+                       .rowBytes = dstW * (size_t)gBytesPerPixel};
+    vImage_Error need = vImageScale_ARGB8888(&s, &d, NULL, flags | kvImageGetTempBufferSize);
+    if (need < 0)
+        return -1;
+    size_t nbytes = (size_t)need;
+    if (nbytes == 0)
+        return 0;
+    if (gScaleTempSize >= nbytes && gScaleTemp)
+        return 0;
+    void *nbuf = realloc(gScaleTemp, nbytes);
+    if (!nbuf)
+        return -1;
+    gScaleTemp = nbuf;
+    gScaleTempSize = nbytes;
+    return 0;
 }
 
 static void stopOrientationObserverIfActive(void) {
