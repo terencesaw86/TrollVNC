@@ -9,6 +9,12 @@
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
 
+#if DEBUG
+#define STLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#define STLog(...)
+#endif
+
 static const NSTimeInterval fingerLiftDelay = 0.05;
 static const NSTimeInterval multiTapInterval = 0.15;
 static const NSTimeInterval fingerMoveInterval = 0.016;
@@ -192,15 +198,13 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
                                                      selector:@selector(_keepAliveFired:)
                                                      userInfo:nil
                                                       repeats:YES];
-
-    // Fire immediately to avoid initial delay
-    [self _keepAliveFired:_keepAliveTimer];
 }
 
 - (void)_keepAliveFired:(NSTimer *)timer {
     // Fire-and-forget on background to avoid blocking main thread with nanosleep
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
         [self hardwareUnlock];
+        STLog(@"KeepAlive!");
     });
 }
 
