@@ -1135,7 +1135,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
 
     fprintf(stderr, "Help:\n");
-    fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
+    fprintf(stderr, "  -h        Show this help message\n\n");
 
     fprintf(stderr, "Environment:\n");
     fprintf(stderr,
@@ -1143,7 +1143,6 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
             "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; passwords stored as [full..., view-only...]\n\n");
 
-    rfbUsage();
     exit(EXIT_SUCCESS);
 }
 

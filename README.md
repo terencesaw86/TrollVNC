@@ -51,7 +51,7 @@ Cursor & Rotation:
 
 Help:
 
-- `-h`        Show built-in help and LibVNCServer usage
+- `-h`        Show built-in help message
 
 Notes:
 
