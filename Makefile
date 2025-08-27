@@ -62,7 +62,7 @@ trollvncserver_PRIVATE_FRAMEWORKS += IOMobileFramebuffer
 trollvncserver_PRIVATE_FRAMEWORKS += IOSurfaceAccelerator
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
-trollvncserver_CODESIGN_FLAGS += -s "Apple Development" --entitlements src/trollvncserver.entitlements
+trollvncserver_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncserver.entitlements
 else
 trollvncserver_CODESIGN_FLAGS += -Ssrc/trollvncserver.entitlements
 endif
