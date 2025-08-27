@@ -979,7 +979,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr,
             "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; passwords stored as [full..., view-only...]\n\n");
 
-    // rfbUsage();
+    rfbUsage();
     exit(EXIT_SUCCESS);
 }
 
