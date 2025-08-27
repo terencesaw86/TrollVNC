@@ -29,6 +29,7 @@
 #import <unistd.h>
 
 #import "ClipboardManager.h"
+#import "FBSOrientationObserver.h"
 #import "IOKitSPI.h"
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
