@@ -127,7 +127,7 @@ static double gWheelDurK = 0.00016;        // duration factor applied to sqrt(di
 static double gWheelDurMin = 0.05;         // duration clamp min
 static double gWheelDurMax = 0.14;         // duration clamp max
 static BOOL gWheelNaturalDir = NO;         // natural scroll direction (invert delta)
-static void wheel_schedule_flush(CGPoint anchor, double delaySec);
+static void wheel_schedule_flush(CGPoint anchor, double delaySec, int rotQ);
 
 static void parseWheelOptions(const char *spec) {
     if (!spec)
@@ -219,11 +219,52 @@ static int ensureScaleTemp(size_t srcW, size_t srcH, size_t dstW, size_t dstH, v
 // MARK: - Input helpers
 
 static inline CGPoint vncPointToDevicePoint(int vx, int vy) {
-    // Map from VNC framebuffer space (gWidth x gHeight) to device capture space (gSrcWidth x gSrcHeight)
-    double sx = (gWidth > 0) ? ((double)gSrcWidth / (double)gWidth) : 1.0;
-    double sy = (gHeight > 0) ? ((double)gSrcHeight / (double)gHeight) : 1.0;
-    double dx = sx * (double)vx;
-    double dy = sy * (double)vy;
+    // Map from VNC framebuffer space (gWidth x gHeight, post-rotation & scaling)
+    // back to device capture space (portrait, gSrcWidth x gSrcHeight), inverting rotation.
+    int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
+
+    // Dimensions of the rotated (pre-scale) stage
+    int rotW = (rotQ % 2 == 0) ? gSrcWidth : gSrcHeight;
+    int rotH = (rotQ % 2 == 0) ? gSrcHeight : gSrcWidth;
+
+    // Undo scaling from stage(rotW x rotH) -> VNC(gWidth x gHeight)
+    double sx = (gWidth > 0) ? ((double)rotW / (double)gWidth) : 1.0;
+    double sy = (gHeight > 0) ? ((double)rotH / (double)gHeight) : 1.0;
+    double stX = sx * (double)vx;
+    double stY = sy * (double)vy;
+
+    // Clamp to stage bounds
+    if (stX < 0)
+        stX = 0;
+    if (stY < 0)
+        stY = 0;
+    if (stX > (double)(rotW - 1))
+        stX = (double)(rotW - 1);
+    if (stY > (double)(rotH - 1))
+        stY = (double)(rotH - 1);
+
+    // Invert rotation: stage -> source portrait space
+    double dx = 0.0, dy = 0.0;
+    switch (rotQ) {
+    case 0: // identity
+        dx = stX;
+        dy = stY;
+        break;
+    case 1: // 90 CW: inverse of stageX=srcH-1-srcY, stageY=srcX -> srcX=stageY; srcY=srcH-1-stageX
+        dx = stY;
+        dy = (double)(gSrcHeight - 1) - stX;
+        break;
+    case 2: // 180: srcX = srcW-1 - stageX; srcY = srcH-1 - stageY
+        dx = (double)(gSrcWidth - 1) - stX;
+        dy = (double)(gSrcHeight - 1) - stY;
+        break;
+    case 3: // 270 CW (90 CCW): inverse of stageX=srcY, stageY=srcW-1-srcX -> srcX=srcW-1-stageY; srcY=stageX
+        dx = (double)(gSrcWidth - 1) - stY;
+        dy = stX;
+        break;
+    }
+
+    // Final clamp to device bounds
     if (dx < 0)
         dx = 0;
     if (dy < 0)
@@ -232,6 +273,7 @@ static inline CGPoint vncPointToDevicePoint(int vx, int vy) {
         dx = (double)(gSrcWidth - 1);
     if (dy > (double)(gSrcHeight - 1))
         dy = (double)(gSrcHeight - 1);
+
     return CGPointMake((CGFloat)dx, (CGFloat)dy);
 }
 
@@ -361,11 +403,12 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
         double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
         if (gWheelNaturalDir)
             delta = -delta;
+        int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
         dispatch_async(gWheelQueue, ^{
             gWheelAccumPx += delta;
             if (!gWheelFlushScheduled) {
                 gWheelFlushScheduled = YES;
-                wheel_schedule_flush(pt, gWheelCoalesceSec);
+                wheel_schedule_flush(pt, gWheelCoalesceSec, rotQ);
             }
         });
     }
@@ -373,7 +416,7 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     gLastButtonMask = buttonMask;
 }
 
-static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
+static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec, int rotQ) {
     if (gWheelStepPx <= 0) { // disabled
         gWheelAccumPx = 0.0;
         gWheelFlushScheduled = NO;
@@ -406,13 +449,40 @@ static void wheel_schedule_flush(CGPoint anchorPoint, double delaySec) {
         if (take < -absClamp)
             take = -absClamp;
 
-        CGFloat endY = anchorPoint.y + (CGFloat)take;
+        // Map VNC-vertical delta into device axis based on rotation
+        CGFloat dx = 0, dy = 0;
+        switch (rotQ & 3) {
+        case 0: // portrait
+            dx = 0;
+            dy = (CGFloat)take;
+            break;
+        case 2: // upside-down
+            dx = 0;
+            dy = (CGFloat)(-take);
+            break;
+        case 1: // landscape left (90 CW)
+            dx = (CGFloat)(+take);
+            dy = 0;
+            break;
+        case 3: // landscape right (270 CW)
+            dx = (CGFloat)(-take);
+            dy = 0;
+            break;
+        }
+
+        CGFloat endX = anchorPoint.x + dx;
+        CGFloat endY = anchorPoint.y + dy;
+        if (endX < 0)
+            endX = 0;
+        CGFloat maxX = (CGFloat)gSrcWidth - 1;
+        if (endX > maxX)
+            endX = maxX;
         if (endY < 0)
             endY = 0;
         CGFloat maxY = (CGFloat)gSrcHeight - 1;
         if (endY > maxY)
             endY = maxY;
-        CGPoint endPt = CGPointMake(anchorPoint.x, endY);
+        CGPoint endPt = CGPointMake(endX, endY);
 
         // Duration scales sub-linearly with distance; parameters configurable
         double dur = gWheelDurBase + gWheelDurK * sqrt(fabs(take));
