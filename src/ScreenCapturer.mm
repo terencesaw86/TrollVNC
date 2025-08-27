@@ -236,6 +236,9 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #pragma mark - Rendering
 
 - (void)renderDisplayToScreenSurface:(IOSurfaceRef)dstSurface {
+#if TARGET_OS_SIMULATOR
+    CARenderServerRenderDisplay(0, CFSTR("LCD"), dstSurface, 0, 0);
+#else
     CFRunLoopRef runLoop = CFRunLoopGetMain();
 
     static IOSurfaceRef srcSurface;
@@ -254,6 +257,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     /// Fast ~20ms, sRGB, while the image is GOOD. Recommended.
     CARenderServerRenderDisplay(0, CFSTR("LCD"), srcSurface, 0, 0);
     IOSurfaceAcceleratorTransformSurface(accelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL, NULL);
+#endif
 }
 
 - (void)updateDisplay:(CADisplayLink *)displayLink {

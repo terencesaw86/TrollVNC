@@ -155,9 +155,13 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     if (!self)
         return nil;
 
+#if TARGET_OS_SIMULATOR
+    _physicalScreenSize = [[UIScreen mainScreen] nativeBounds].size;
+#else
     IOMobileFramebufferRef framebufferConnection = NULL;
     IOMobileFramebufferGetMainDisplay(&framebufferConnection);
     IOMobileFramebufferGetDisplaySize(framebufferConnection, &_physicalScreenSize);
+#endif
 
     dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL,
                                                                          QOS_CLASS_USER_INTERACTIVE, 0);
