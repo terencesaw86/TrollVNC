@@ -64,6 +64,9 @@ static void (^gFrameHandler)(CMSampleBufferRef) = nil;
 static BOOL gOrientationSyncEnabled = NO; // CLI: -O on|off (default: off)
 static FBSOrientationObserver *gOrientationObserver = nil;
 static UIInterfaceOrientation gActiveOrientation = UIInterfaceOrientationUnknown;
+static std::atomic<int> gRotationQuad(0); // 0=0°, 1=90°, 2=180°, 3=270° (clockwise)
+static void *gRotateScratch = NULL;       // rotation scratch (for 90°/270°)
+static size_t gRotateScratchSize = 0;     // bytes
 
 // CLI options
 static int gPort = 5901; // Default LibVNCServer port (adjust as needed)
@@ -198,6 +201,10 @@ static void cleanupAndExit(int code);
 static inline void resetCurrTileHashes(void);
 static void startOrientationObserverIfNeeded(void);
 static void stopOrientationObserverIfActive(void);
+static inline int rotationForOrientation(UIInterfaceOrientation o);
+static int ensureRotateScratch(size_t w, size_t h);
+static void maybeResizeFramebufferForRotation(int rotQ);
+static inline void alignDimensionsForVNC(int rawW, int rawH, int *alignedW, int *alignedH);
 
 // Expose private methods we use from STHIDEventGenerator
 @interface STHIDEventGenerator (Private)
@@ -1352,14 +1359,10 @@ int main(int argc, const char *argv[]) {
             fprintf(stderr, "Failed to resolve screen size from ScreenCapturer properties.\n");
             return EXIT_FAILURE;
         }
-        // Apply output scaling if requested
-        if (gScale > 0.0 && gScale < 1.0) {
-            gWidth = MAX(1, (int)floor((double)gSrcWidth * gScale));
-            gHeight = MAX(1, (int)floor((double)gSrcHeight * gScale));
-        } else {
-            gWidth = gSrcWidth;
-            gHeight = gSrcHeight;
-        }
+        // Apply output scaling if requested, then align (width multiple of 4)
+        int tmpW = (gScale > 0.0 && gScale < 1.0) ? MAX(1, (int)floor((double)gSrcWidth * gScale)) : gSrcWidth;
+        int tmpH = (gScale > 0.0 && gScale < 1.0) ? MAX(1, (int)floor((double)gSrcHeight * gScale)) : gSrcHeight;
+        alignDimensionsForVNC(tmpW, tmpH, &gWidth, &gHeight);
         gFBSize = (size_t)gWidth * (size_t)gHeight * (size_t)gBytesPerPixel;
 
         // 3) Allocate double buffers (tightly packed BGRA/ARGB32)
@@ -1390,6 +1393,7 @@ int main(int argc, const char *argv[]) {
         gScreen->newClientHook = newClient;
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
+        gScreen->paddedWidthInBytes = gWidth * gBytesPerPixel;
 
         // Clipboard: register handlers for client-to-server cut text (conditional)
         if (gClipboardEnabled) {
@@ -1515,6 +1519,10 @@ int main(int argc, const char *argv[]) {
             const size_t width = (size_t)CVPixelBufferGetWidth(pb);
             const size_t height = (size_t)CVPixelBufferGetHeight(pb);
 
+            // Determine rotation and resize framebuffer if orientation implies new dimensions.
+            int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
+            maybeResizeFramebufferForRotation(rotQ);
+
             if ((int)width != gWidth || (int)height != gHeight) {
                 // With scaling enabled, this is expected; log once for info. Without scaling, warn once.
                 static BOOL sLoggedSizeInfoOnce = NO;
@@ -1531,27 +1539,72 @@ int main(int argc, const char *argv[]) {
                 }
             }
 
-            // Copy/Scale into back buffer. If dirty detection is enabled, hashing occurs later; if disabled, we avoid
-            // hashing entirely.
-            BOOL dirtyDisabled = (gFullscreenThresholdPercent == 0);
-            if (gScale == 1.0) {
-                // Fast path: 1:1 copy without hashing
-                int copyW = MIN((int)width, gWidth);
-                int copyH = MIN((int)height, gHeight);
-                copyWithStrideTight((uint8_t *)gBackBuffer, base, copyW, copyH, srcBPR);
+            // Copy/Rotate/Scale into back buffer. ScreenCapturer is always portrait-oriented.
+            // We rotate by UI orientation then scale to server size.
+            BOOL dirtyDisabled = gOrientationSyncEnabled ? YES : (gFullscreenThresholdPercent == 0);
+
+            bool needsRotate = (rotQ != 0);
+
+            vImage_Buffer srcBuf = {
+                .data = base, .height = (vImagePixelCount)height, .width = (vImagePixelCount)width, .rowBytes = srcBPR};
+
+            vImage_Buffer stage = srcBuf; // after rotation
+            vImage_Buffer rotBuf = {0};
+
+            if (needsRotate) {
+                size_t rotW = (rotQ % 2 == 0) ? (size_t)width : (size_t)height;
+                size_t rotH = (rotQ % 2 == 0) ? (size_t)height : (size_t)width;
+                if (ensureRotateScratch(rotW, rotH) != 0) {
+                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                    return;
+                }
+
+                rotBuf.data = gRotateScratch;
+                rotBuf.width = (vImagePixelCount)rotW;
+                rotBuf.height = (vImagePixelCount)rotH;
+                rotBuf.rowBytes = rotW * (size_t)gBytesPerPixel;
+
+                uint8_t rotConst = kRotate0DegreesClockwise;
+                switch (rotQ) {
+                case 1:
+                    rotConst = kRotate90DegreesClockwise;
+                    break;
+                case 2:
+                    rotConst = kRotate180DegreesClockwise;
+                    break;
+                case 3:
+                    rotConst = kRotate270DegreesClockwise;
+                    break;
+                default:
+                    rotConst = kRotate0DegreesClockwise;
+                    break;
+                }
+
+                uint8_t bg[4] = {0, 0, 0, 0};
+                vImage_Error rerr = vImageRotate90_ARGB8888(&srcBuf, &rotBuf, rotConst, bg, kvImageNoFlags);
+                if (rerr != kvImageNoError) {
+                    static BOOL sLoggedRotErrOnce = NO;
+                    if (!sLoggedRotErrOnce) {
+                        TVLog(@"vImageRotate90_ARGB8888 failed: %ld", (long)rerr);
+                        sLoggedRotErrOnce = YES;
+                    }
+                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                    return;
+                }
+
+                stage = rotBuf;
+            }
+
+            // Scale stage to back buffer (tightly packed)
+            vImage_Buffer dstBuf = {.data = gBackBuffer,
+                                    .height = (vImagePixelCount)gHeight,
+                                    .width = (vImagePixelCount)gWidth,
+                                    .rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel};
+            if (stage.width == dstBuf.width && stage.height == dstBuf.height && gScale == 1.0) {
+                copyWithStrideTight((uint8_t *)dstBuf.data, (const uint8_t *)stage.data, gWidth, gHeight,
+                                    stage.rowBytes);
             } else {
-                // vImage scaling path: scale source into tightly-packed back buffer (BGRA/ARGB8888)
-                vImage_Buffer srcBuf;
-                srcBuf.data = base;
-                srcBuf.height = (vImagePixelCount)height;
-                srcBuf.width = (vImagePixelCount)width;
-                srcBuf.rowBytes = srcBPR;
-                vImage_Buffer dstBuf;
-                dstBuf.data = gBackBuffer;
-                dstBuf.height = (vImagePixelCount)gHeight;
-                dstBuf.width = (vImagePixelCount)gWidth;
-                dstBuf.rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel;
-                vImage_Error err = vImageScale_ARGB8888(&srcBuf, &dstBuf, NULL, kvImageHighQualityResampling);
+                vImage_Error err = vImageScale_ARGB8888(&stage, &dstBuf, NULL, kvImageHighQualityResampling);
                 if (err != kvImageNoError) {
                     static BOOL sLoggedVImageErrOnce = NO;
                     if (!sLoggedVImageErrOnce) {
@@ -1562,6 +1615,7 @@ int main(int argc, const char *argv[]) {
                     return;
                 }
             }
+
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
             // If dirty detection disabled, just do a full-screen update immediately
@@ -1734,6 +1788,13 @@ static void installSignalHandlers(void) {
 }
 
 __attribute__((unused)) static void cleanupAndExit(int code) {
+    // Orientation rotation scratch
+    if (gRotateScratch) {
+        free(gRotateScratch);
+        gRotateScratch = NULL;
+        gRotateScratchSize = 0;
+    }
+
     // Orientation observer cleanup
     stopOrientationObserverIfActive();
 
@@ -1815,6 +1876,7 @@ static void startOrientationObserverIfNeeded(void) {
 
             TVLog(@"Orientation update: seq=%lu dir=%ld ori=%ld dur=%.3f", seq, direction, (long)gActiveOrientation,
                   dur);
+            gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
             // Note: Actual framebuffer rotation will be handled in the next step.
         };
 
@@ -1822,10 +1884,126 @@ static void startOrientationObserverIfNeeded(void) {
 
         // Prime current orientation if available
         gActiveOrientation = [obs activeInterfaceOrientation];
+        gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
         gOrientationObserver = obs;
 
-        TVLog(@"Orientation observer registered (initial=%ld)", (long)gActiveOrientation);
+        TVLog(@"Orientation observer registered (initial=%ld -> rotQ=%d)", (long)gActiveOrientation,
+              gRotationQuad.load(std::memory_order_relaxed));
     });
+}
+
+// Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
+static inline int rotationForOrientation(UIInterfaceOrientation o) {
+    switch (o) {
+    case UIInterfaceOrientationPortrait:
+    default:
+        return 0; // 0°
+    case UIInterfaceOrientationPortraitUpsideDown:
+        return 2; // 180°
+    case UIInterfaceOrientationLandscapeLeft:
+        return 1; // 90° CW
+    case UIInterfaceOrientationLandscapeRight:
+        return 3; // 270° CW
+    }
+}
+
+// Ensure scratch buffer for rotation is available and large enough
+static int ensureRotateScratch(size_t w, size_t h) {
+    size_t need = w * h * (size_t)gBytesPerPixel;
+    if (need == 0)
+        return -1;
+    if (gRotateScratchSize >= need && gRotateScratch)
+        return 0;
+    void *nbuf = realloc(gRotateScratch, need);
+    if (!nbuf)
+        return -1;
+    gRotateScratch = nbuf;
+    gRotateScratchSize = need;
+    return 0;
+}
+
+// Resize framebuffer according to rotation (0/180 keep WxH from src, 90/270 swap), then apply scale
+static void maybeResizeFramebufferForRotation(int rotQ) {
+    // Source capture size (portrait-orientated)
+    int srcW = gSrcWidth;
+    int srcH = gSrcHeight;
+    if (srcW <= 0 || srcH <= 0)
+        return;
+
+    // Rotate at source dimension stage
+    int rotW = (rotQ % 2 == 0) ? srcW : srcH;
+    int rotH = (rotQ % 2 == 0) ? srcH : srcW;
+
+    // Apply output scaling then align width to multiple of 4 (adjust height to preserve aspect)
+    int outWraw = (gScale > 0.0 && gScale < 1.0) ? MAX(1, (int)floor((double)rotW * gScale)) : rotW;
+    int outHraw = (gScale > 0.0 && gScale < 1.0) ? MAX(1, (int)floor((double)rotH * gScale)) : rotH;
+    int outW = 0, outH = 0;
+    alignDimensionsForVNC(outWraw, outHraw, &outW, &outH);
+
+    if (outW == gWidth && outH == gHeight)
+        return; // no change
+
+    // Allocate new double buffers
+    size_t newFBSize = (size_t)outW * (size_t)outH * (size_t)gBytesPerPixel;
+    void *newFront = calloc(1, newFBSize);
+    void *newBack = calloc(1, newFBSize);
+    if (!newFront || !newBack) {
+        if (newFront)
+            free(newFront);
+        if (newBack)
+            free(newBack);
+        TVLog(@"Resize: allocation failed for %dx%d", outW, outH);
+        return;
+    }
+
+    // Swap buffers into screen & notify clients
+    gWidth = outW;
+    gHeight = outH;
+    gFBSize = newFBSize;
+
+    if (gScreen) {
+        // Update server with new framebuffer
+        rfbNewFramebuffer(gScreen, (char *)newFront, gWidth, gHeight, 8, 3, gBytesPerPixel);
+        // Restore BGRA little-endian channel layout (R shift=16, G=8, B=0)
+        int bps = 8;
+        gScreen->serverFormat.redShift = bps * 2;   // 16
+        gScreen->serverFormat.greenShift = bps * 1; // 8
+        gScreen->serverFormat.blueShift = 0;        // 0
+        gScreen->paddedWidthInBytes = gWidth * gBytesPerPixel;
+    }
+
+    // Free old buffers and store new pointers
+    if (gFrontBuffer)
+        free(gFrontBuffer);
+    if (gBackBuffer)
+        free(gBackBuffer);
+    gFrontBuffer = newFront;
+    gBackBuffer = newBack;
+
+    // Keep gScreen->frameBuffer in sync (rfbNewFramebuffer already did, but ensure local)
+    if (gScreen)
+        gScreen->frameBuffer = (char *)gFrontBuffer;
+
+    // Re-init tiling/hash state for new geometry
+    initTilingOrReset();
+
+    TVLog(@"Resize: framebuffer changed to %dx%d (rotQ=%d, scale=%.3f)", gWidth, gHeight, rotQ, gScale);
+}
+
+// Align width up to a multiple of 4 (helps encoders/clients). Preserve aspect by adjusting height.
+static inline void alignDimensionsForVNC(int rawW, int rawH, int *alignedW, int *alignedH) {
+    if (rawW <= 0)
+        rawW = 1;
+    if (rawH <= 0)
+        rawH = 1;
+    // Round width up to next multiple of 4
+    int w4 = (rawW + 3) & ~3;
+    long long numer = (long long)rawH * (long long)w4;
+    int hAdj = (int)((numer + rawW / 2) / rawW); // rounded to nearest
+    if (hAdj <= 0)
+        hAdj = 1;
+    *alignedW = w4;
+    *alignedH = hAdj;
 }
 
 static void stopOrientationObserverIfActive(void) {
