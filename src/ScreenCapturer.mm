@@ -223,6 +223,12 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     }
 }
 
+// Human-readable memory usage description based on __getMemoryUsedInBytes
++ (NSString *)__getMemoryUsageDescription {
+    long long bytes = (long long)[self __getMemoryUsedInBytes];
+    return [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleBinary];
+}
+
 - (BOOL)writeScreenUIImagePNGDataToFile:(NSString *)path {
     return [[self getScreenUIImagePNGData] writeToFile:path atomically:YES];
 }
@@ -305,9 +311,8 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         double windowSec = (double)(endAt - s_fpsWindowStartNs) / 1e9; // ns -> s
         double fps = (windowSec > 0.0) ? (s_fpsFrames / windowSec) : 0.0;
         double instOut = (s_instFpsEma > 0.0) ? s_instFpsEma : instFps;
-        SCLog(
-            @"time elapsed %.2fms, capture fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, %zu bytes memory used",
-            used, fps, s_fpsFrames, windowSec, instOut, [ScreenCapturer __getMemoryUsedInBytes]);
+        SCLog(@"time elapsed %.2fms, capture fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used,
+              fps, s_fpsFrames, windowSec, instOut, [ScreenCapturer __getMemoryUsageDescription]);
         s_lastLogAtMs = nowMs;
 
         // Reset FPS window
