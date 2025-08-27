@@ -37,6 +37,9 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     NSInteger mMinFps;
     NSInteger mPreferredFps;
     NSInteger mMaxFps;
+    // Stats configuration (effective in DEBUG only)
+    NSTimeInterval mStatsWindowSeconds; // average FPS logging window
+    double mInstFpsAlpha;               // EMA smoothing factor for instantaneous FPS
 }
 
 + (instancetype)sharedCapturer {
@@ -44,6 +47,11 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         _inst = [[self alloc] init];
+        // Defaults for stats logging
+#if DEBUG
+        [_inst setStatsLogWindowSeconds:5.0];
+        [_inst setInstantFpsSmoothingFactor:0.2];
+#endif
     });
     return _inst;
 }
@@ -112,9 +120,12 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     mMaxFps = MAX(0, maxFps);
     mPreferredFps = MAX(0, preferredFps);
     if (mPreferredFps == 0) {
-        if (mMaxFps > 0) mPreferredFps = mMaxFps;
-        else if (mMinFps > 0) mPreferredFps = mMinFps;
-        else mPreferredFps = 0;
+        if (mMaxFps > 0)
+            mPreferredFps = mMaxFps;
+        else if (mMinFps > 0)
+            mPreferredFps = mMinFps;
+        else
+            mPreferredFps = 0;
     }
     // If display link is already running, update it on main thread
     if (mDisplayLink) {
@@ -134,11 +145,24 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
                 mDisplayLink.preferredFramesPerSecond = (int)setFps; // 0 means system default
             }
         };
-        if ([NSThread isMainThread]) applyBlock();
-        else dispatch_async(dispatch_get_main_queue(), applyBlock);
+        if ([NSThread isMainThread])
+            applyBlock();
+        else
+            dispatch_async(dispatch_get_main_queue(), applyBlock);
     }
 }
 
+- (void)setStatsLogWindowSeconds:(NSTimeInterval)seconds {
+    mStatsWindowSeconds = seconds;
+}
+
+- (void)setInstantFpsSmoothingFactor:(double)alpha {
+    if (alpha < 0.0)
+        alpha = 0.0;
+    if (alpha > 1.0)
+        alpha = 1.0;
+    mInstFpsAlpha = alpha;
+}
 
 - (void)createScreenSurfaceIfNeeded {
     if (!mScreenSurface) {
@@ -226,7 +250,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     IOSurfaceAcceleratorTransformSurface(accelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL, NULL);
 }
 
-- (void)updateDisplay {
+- (void)updateDisplay:(CADisplayLink *)displayLink {
 #if DEBUG
     __uint64_t beginAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
@@ -244,11 +268,52 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     static double s_lastLogAtMs = 0.0;
+    static __uint64_t s_fpsWindowStartNs = 0;  // FPS window start (ns)
+    static unsigned long long s_fpsFrames = 0; // Accumulated frames in window
+    static __uint64_t s_prevFrameEndNs = 0;    // Fallback: previous frame end timestamp (ns) for instantaneous FPS
+    static double s_instFpsEma = 0.0;          // Smoothed instantaneous FPS (EMA)
+
+    // Accumulate frame count
+    s_fpsFrames++;
+    if (s_fpsWindowStartNs == 0) {
+        s_fpsWindowStartNs = endAt;
+    }
+
+    // Instantaneous FPS sourced from CADisplayLink.duration; fallback to inter-frame delta if needed
+    double instFps = 0.0;
+    if (displayLink && displayLink.duration > 0.0) {
+        instFps = 1.0 / displayLink.duration;
+    } else if (s_prevFrameEndNs > 0) {
+        __uint64_t deltaNs = endAt - s_prevFrameEndNs;
+        if (deltaNs > 0)
+            instFps = 1e9 / (double)deltaNs;
+    }
+    s_prevFrameEndNs = endAt;
+
     double nowMs = (double)endAt / NSEC_PER_MSEC;
-    if (nowMs - s_lastLogAtMs >= 5000.0) { // log at most once every 5 seconds
+
+    // EMA smoothing for instantaneous FPS
+    if (instFps > 0.0) {
+        double alpha = mInstFpsAlpha;
+        s_instFpsEma = (s_instFpsEma == 0.0) ? instFps : (alpha * instFps + (1.0 - alpha) * s_instFpsEma);
+    }
+
+    // Periodic logging based on configurable window
+    double windowMs = (mStatsWindowSeconds > 0.0) ? (mStatsWindowSeconds * 1000.0) : 0.0;
+    if (windowMs > 0.0 && (nowMs - s_lastLogAtMs >= windowMs)) {
         double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-        SCLog(@"time elapsed %.2fms, %zu bytes memory used", used, [ScreenCapturer __getMemoryUsedInBytes]);
+        double windowSec = (double)(endAt - s_fpsWindowStartNs) / 1e9; // ns -> s
+        double fps = (windowSec > 0.0) ? (s_fpsFrames / windowSec) : 0.0;
+        double instOut = (s_instFpsEma > 0.0) ? s_instFpsEma : instFps;
+        SCLog(
+            @"time elapsed %.2fms, capture fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, %zu bytes memory used",
+            used, fps, s_fpsFrames, windowSec, instOut, [ScreenCapturer __getMemoryUsedInBytes]);
         s_lastLogAtMs = nowMs;
+
+        // Reset FPS window
+        s_fpsWindowStartNs = endAt;
+        s_fpsFrames = 0;
+        s_instFpsEma = 0.0;
     }
 #endif
 }
@@ -353,7 +418,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         return;
 
     // Update the screen contents into our IOSurface
-    [self updateDisplay];
+    [self updateDisplay:link];
 
     // Wrap IOSurface in a CVPixelBuffer (zero-copy)
     CVPixelBufferRef pixelBuffer = NULL;
