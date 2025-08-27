@@ -2,15 +2,21 @@
 #import <UIKit/UIKit.h>
 #import <notify.h>
 
+#if DEBUG
+#define CMLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#define CMLog(...)
+#endif
+
 static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.notify.changed";
 
 @interface ClipboardManager ()
-@property (nonatomic, assign) int notifyToken;
-@property (nonatomic, assign, getter=isStarted) BOOL started;
-@property (nonatomic, copy) NSString * _Nullable lastSetValue;
-@property (nonatomic, assign) NSInteger lastObservedChangeCount;   // last seen changeCount from UIPasteboard
-@property (nonatomic, assign) NSInteger lastLocalSetBaselineCount;  // changeCount observed right before a local set
-@property (nonatomic, assign) NSInteger suppressNextCallbacks; // >0: skip next onChange and one system notify once
+@property(nonatomic, assign) int notifyToken;
+@property(nonatomic, assign, getter=isStarted) BOOL started;
+@property(nonatomic, copy) NSString *_Nullable lastSetValue;
+@property(nonatomic, assign) NSInteger lastObservedChangeCount;   // last seen changeCount from UIPasteboard
+@property(nonatomic, assign) NSInteger lastLocalSetBaselineCount; // changeCount observed right before a local set
+@property(nonatomic, assign) NSInteger suppressNextCallbacks;     // >0: skip next onChange and one system notify once
 @end
 
 @implementation ClipboardManager
@@ -28,9 +34,9 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     if (self = [super init]) {
         _notifyToken = 0;
         _started = NO;
-    _lastObservedChangeCount = -1;
-    _lastLocalSetBaselineCount = -1;
-    _suppressNextCallbacks = 0;
+        _lastObservedChangeCount = -1;
+        _lastLocalSetBaselineCount = -1;
+        _suppressNextCallbacks = 0;
     }
     return self;
 }
@@ -40,20 +46,20 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 }
 
 - (void)start {
-    if (self.started) return;
+    if (self.started)
+        return;
     self.started = YES;
 
     // Register Darwin notification for pasteboard changes
     __weak __typeof(self) weakSelf = self;
     int token = 0;
-    uint32_t status = notify_register_dispatch(kPasteboardDarwinNotification.UTF8String,
-                                               &token,
-                                               dispatch_get_main_queue(),
-                                               ^(int t) {
-        __strong __typeof(weakSelf) selfRef = weakSelf;
-        if (!selfRef) return;
-        [selfRef handlePasteboardChangeFromSystem];
-    });
+    uint32_t status =
+        notify_register_dispatch(kPasteboardDarwinNotification.UTF8String, &token, dispatch_get_main_queue(), ^(int t) {
+            __strong __typeof(weakSelf) selfRef = weakSelf;
+            if (!selfRef)
+                return;
+            [selfRef handlePasteboardChangeFromSystem];
+        });
     if (status == NOTIFY_STATUS_OK) {
         self.notifyToken = token;
     } else {
@@ -66,7 +72,8 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 }
 
 - (void)stop {
-    if (!self.started) return;
+    if (!self.started)
+        return;
     self.started = NO;
     if (self.notifyToken != 0) {
         notify_cancel(self.notifyToken);
@@ -77,12 +84,14 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 - (nullable NSString *)currentString {
     UIPasteboard *pb = [UIPasteboard generalPasteboard];
     NSString *text = pb.string;
-    if (text.length == 0) return nil;
+    if (text.length == 0)
+        return nil;
     return text;
 }
 
 - (void)setString:(NSString *)text {
-    if (!text) return;
+    if (!text)
+        return;
     UIPasteboard *pb = [UIPasteboard generalPasteboard];
     // Record the baseline count before our local set; the system will bump it later in the loop.
     self.lastLocalSetBaselineCount = pb.changeCount;
@@ -93,7 +102,8 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 }
 
 - (void)setStringFromRemote:(NSString *)text {
-    if (!text) return;
+    if (!text)
+        return;
     UIPasteboard *pb = [UIPasteboard generalPasteboard];
     // Baseline before set; and mark suppression to avoid echo
     self.lastLocalSetBaselineCount = pb.changeCount;
@@ -131,8 +141,9 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
     // Avoid loop: If this matches the value we just set and this call is from the system notification, ignore it.
     // If it's a local setString call, allow the callback so the remote can be updated.
-    if (!local && self.lastSetValue && ((current ?: (id)NSNull.null) == (id)NSNull.null ? YES : [self.lastSetValue isEqualToString:current ?: @""])) {
-    // Clear the flag once, but do not callback
+    if (!local && self.lastSetValue &&
+        ((current ?: (id)NSNull.null) == (id)NSNull.null ? YES : [self.lastSetValue isEqualToString:current ?: @""])) {
+        // Clear the flag once, but do not callback
         self.lastSetValue = nil;
         return;
     }
@@ -154,7 +165,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
     void (^cb)(NSString *_Nullable) = self.onChange;
     if (cb) {
-    // Ensure callback is invoked on the main thread
+        // Ensure callback is invoked on the main thread
         if ([NSThread isMainThread]) {
             cb(current);
         } else {
