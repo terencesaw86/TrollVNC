@@ -1905,7 +1905,7 @@ static void cleanupAndExit(int code) {
     stopOrientationObserver();
 
     if (gScreen) {
-        // rfbShutdownServer(gScreen, YES);
+        rfbShutdownServer(gScreen, YES);
         rfbScreenCleanup(gScreen);
         gScreen = NULL;
     }
