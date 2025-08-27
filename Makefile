@@ -64,7 +64,7 @@ trollvncserver_PRIVATE_FRAMEWORKS += IOSurfaceAccelerator
 endif
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
-trollvncserver_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncserver.entitlements
+trollvncserver_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncserver-simulator.entitlements
 else
 trollvncserver_CODESIGN_FLAGS += -Ssrc/trollvncserver.entitlements
 endif
