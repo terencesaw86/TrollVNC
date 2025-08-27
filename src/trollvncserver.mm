@@ -1607,8 +1607,10 @@ int main(int argc, const char *argv[]) {
 
             // Copy/Rotate/Scale into back buffer. ScreenCapturer is always portrait-oriented.
             // We rotate by UI orientation then scale to server size.
-            BOOL dirtyDisabled = gOrientationSyncEnabled ? YES : (gFullscreenThresholdPercent == 0);
+            BOOL dirtyDisabled = (gFullscreenThresholdPercent == 0);
 
+            static int sLastRotQ = -1;
+            bool rotationChanged = (sLastRotQ == -1) ? false : ((rotQ & 3) != (sLastRotQ & 3));
             bool needsRotate = (rotQ != 0);
 
             vImage_Buffer srcBuf = {
@@ -1690,7 +1692,44 @@ int main(int argc, const char *argv[]) {
 
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-            // If dirty detection disabled, just do a full-screen update immediately
+            // If rotation just changed, force a full-screen update and reset dirty state
+            // to avoid mixing hashes/pending dirties from the previous orientation.
+            if (rotationChanged) {
+                // Clear pending mask/state
+                if (gPendingDirty)
+                    memset(gPendingDirty, 0, gTileCount);
+                gHasPending = NO;
+
+                if (gAsyncSwapEnabled) {
+                    pthread_mutex_t *locked[64];
+                    size_t lockedCount = 0;
+                    if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
+                        swapBuffers();
+                        for (size_t i = 0; i < lockedCount; ++i)
+                            pthread_mutex_unlock(locked[i]);
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    } else {
+                        copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
+                                            (size_t)gWidth * (size_t)gBytesPerPixel);
+                        rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    }
+                } else {
+                    lockAllClientsBlocking();
+                    swapBuffers();
+                    rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+                    unlockAllClientsBlocking();
+                }
+
+                // Skip dirty detection for this frame after rotation; return early
+                sLastRotQ = rotQ;
+                // Rotation may not change geometry (0<->180). Maintain hashes here so
+                // the next frame recomputes curr and swaps to form a clean baseline.
+                resetCurrTileHashes();
+                swapTileHashes();
+                return;
+            }
+
+            // If dirty detection is disabled, perform a full-screen update
             if (dirtyDisabled) {
                 if (gAsyncSwapEnabled) {
                     pthread_mutex_t *locked[64];
@@ -1832,6 +1871,7 @@ int main(int argc, const char *argv[]) {
 
             // Prepare for next frame: current hashes become previous
             swapTileHashes();
+            sLastRotQ = rotQ;
         };
 
         TVLog(@"Screen capture is armed and will start when the first client connects.");
@@ -2059,6 +2099,10 @@ static void maybeResizeFramebufferForRotation(int rotQ) {
 
     // Re-init tiling/hash state for new geometry
     initTilingOrReset();
+    // Clear pending dirty flags to avoid carrying over old-geometry state into the new geometry
+    if (gPendingDirty)
+        memset(gPendingDirty, 0, gTileCount);
+    gHasPending = NO;
 
     TVLog(@"Resize: framebuffer changed to %dx%d (rotQ=%d, scale=%.3f)", gWidth, gHeight, rotQ, gScale);
 }
