@@ -201,8 +201,7 @@ static void installSignalHandlers(void);
 static void handleSignal(int signum);
 static void cleanupAndExit(int code);
 static inline void resetCurrTileHashes(void);
-static void startOrientationObserverIfNeeded(void);
-static void stopOrientationObserverIfActive(void);
+static void startOrientationObserver(void);
 static inline int rotationForOrientation(UIInterfaceOrientation o);
 static int ensureRotateScratch(size_t w, size_t h);
 static void maybeResizeFramebufferForRotation(int rotQ);
@@ -937,17 +936,13 @@ static void clientGone(rfbClientPtr cl) {
     // Decrement client count and stop capture if this was the last client.
     if (gClientCount > 0)
         gClientCount--;
+
     TVLog(@"Client disconnected, active clients=%d", gClientCount);
 
     if (gIsCaptureStarted && gClientCount == 0 && gCapturer) {
         [gCapturer endCapture];
         gIsCaptureStarted = NO;
         TVLog(@"No clients remaining; screen capture stopped.");
-    }
-
-    // Orientation observer: stop when last client disconnects
-    if (gOrientationSyncEnabled && gClientCount == 0) {
-        stopOrientationObserverIfActive();
     }
 
     if (gIsClipboardStarted && gClientCount == 0) {
@@ -976,11 +971,6 @@ static enum rfbNewClientAction newClient(rfbClientPtr cl) {
         gIsCaptureStarted = YES;
         [gCapturer startCaptureWithFrameHandler:gFrameHandler];
         TVLog(@"Screen capture started (clients=%d).", gClientCount);
-    }
-
-    // Orientation observer: start when at least one client is connected
-    if (gClientCount > 0 && gOrientationSyncEnabled) {
-        startOrientationObserverIfNeeded();
     }
 
     if (gClipboardEnabled && !gIsClipboardStarted && gClientCount > 0) {
@@ -1546,6 +1536,9 @@ int main(int argc, const char *argv[]) {
             TVLog(@"Cursor: disabled (default; enable with -U on)");
         }
 
+        // Rotation / Orientation
+        startOrientationObserver();
+
         rfbInitServer(gScreen);
         TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
 
@@ -1868,9 +1861,6 @@ static void installSignalHandlers(void) {
 
 __attribute__((unused)) static void cleanupAndExit(int code) {
 
-    // Orientation observer cleanup
-    stopOrientationObserverIfActive();
-
     // Orientation rotation scratch
     if (gRotateScratch) {
         free(gRotateScratch);
@@ -1937,46 +1927,41 @@ __attribute__((unused)) static void cleanupAndExit(int code) {
 
 // MARK: - Orientation observer lifecycle
 
-static void startOrientationObserverIfNeeded(void) {
+static void startOrientationObserver(void) {
     if (gOrientationObserver || !gOrientationSyncEnabled)
         return;
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (gOrientationObserver)
+    FBSOrientationObserver *obs = [[FBSOrientationObserver alloc] init];
+    if (!obs) {
+        TVLog(@"Orientation: failed to create observer instance");
+        return;
+    }
+
+    // Set update handler
+    void (^handler)(FBSOrientationUpdate *) = ^(FBSOrientationUpdate *update) {
+        if (!update)
             return;
 
-        FBSOrientationObserver *obs = [[FBSOrientationObserver alloc] init];
-        if (!obs) {
-            TVLog(@"Orientation: failed to create observer instance");
-            return;
-        }
+        gActiveOrientation = [update orientation];
+        NSUInteger seq = [update sequenceNumber];
+        NSInteger direction = [update rotationDirection];
+        NSTimeInterval dur = [update duration];
 
-        // Set update handler
-        void (^handler)(FBSOrientationUpdate *) = ^(FBSOrientationUpdate *update) {
-            if (!update)
-                return;
-
-            gActiveOrientation = [update orientation];
-            NSUInteger seq = [update sequenceNumber];
-            NSInteger direction = [update rotationDirection];
-            NSTimeInterval dur = [update duration];
-
-            TVLog(@"Orientation update: seq=%lu dir=%ld ori=%ld dur=%.3f", seq, direction, (long)gActiveOrientation,
-                  dur);
-            gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
-            // Note: Actual framebuffer rotation will be handled in the next step.
-        };
-
-        [obs setHandler:handler];
-
-        // Prime current orientation if available
-        gActiveOrientation = [obs activeInterfaceOrientation];
+        // Note: Actual framebuffer rotation will be handled in the next step.
         gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
-        gOrientationObserver = obs;
 
-        TVLog(@"Orientation observer registered (initial=%ld -> rotQ=%d)", (long)gActiveOrientation,
-              gRotationQuad.load(std::memory_order_relaxed));
-    });
+        TVLog(@"Orientation update: seq=%lu dir=%ld ori=%ld dur=%.3f", seq, direction, (long)gActiveOrientation, dur);
+    };
+
+    [obs setHandler:handler];
+
+    // Prime current orientation if available
+    gActiveOrientation = [obs activeInterfaceOrientation];
+    gRotationQuad.store(rotationForOrientation(gActiveOrientation), std::memory_order_relaxed);
+    gOrientationObserver = obs;
+
+    TVLog(@"Orientation observer registered (initial=%ld -> rotQ=%d)", (long)gActiveOrientation,
+          gRotationQuad.load(std::memory_order_relaxed));
 }
 
 // Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
@@ -2002,6 +1987,7 @@ static int ensureRotateScratch(size_t w, size_t h) {
     if (gRotateScratchSize >= need && gRotateScratch)
         return 0;
     void *nbuf = realloc(gRotateScratch, need);
+    memset(nbuf, 0, need);
     if (!nbuf)
         return -1;
     gRotateScratch = nbuf;
@@ -2111,25 +2097,10 @@ static int ensureScaleTemp(size_t srcW, size_t srcH, size_t dstW, size_t dstH, v
     if (gScaleTempSize >= nbytes && gScaleTemp)
         return 0;
     void *nbuf = realloc(gScaleTemp, nbytes);
+    memset(nbuf, 0, nbytes);
     if (!nbuf)
         return -1;
     gScaleTemp = nbuf;
     gScaleTempSize = nbytes;
     return 0;
-}
-
-static void stopOrientationObserverIfActive(void) {
-    if (!gOrientationObserver)
-        return;
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (!gOrientationObserver)
-            return;
-
-        FBSOrientationObserver *obs = gOrientationObserver;
-        gOrientationObserver = nil;
-        [obs invalidate];
-
-        TVLog(@"Orientation observer invalidated");
-    });
 }
