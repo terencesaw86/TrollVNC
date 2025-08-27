@@ -1,6 +1,6 @@
 # TrollVNC
 
-TrollVNC is a VNC server for iOS devices, allowing remote access and control of the device's screen.
+TrollVNC is a VNC server for iOS devices, allowing remote access and control of the device’s screen.
 
 ## Usage
 
@@ -111,7 +111,7 @@ trollvncserver ... -a
 
 ### Frame Rate Control
 
-Use -F to set the CADisplayLink frame rate:
+Use `-F` to set the `CADisplayLink` frame rate:
 
 - Single value: `-F 60`
 - Range: `-F 30-60`
