@@ -254,6 +254,7 @@ trollvncserver -p 5901 -n "My iPhone"
 Notes:
 
 - `-v` forces global view-only regardless of password. View-only password applies per client.
+- You must set a password if you’re using the built-in VNC client of macOS.
 - Environment variables may be visible to the process environment; consider using a secure launcher if needed.
 
 ## Build Dependencies
