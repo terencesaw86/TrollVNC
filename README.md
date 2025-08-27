@@ -17,7 +17,7 @@ Basic:
 - `-p port`   TCP port for VNC (default: `5901`)
 - `-n name`   Desktop name shown to clients (default: `TrollVNC`)
 - `-v`        View-only (ignore input)
-- `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`30..86400`, `0` disables, default: `0`)
+- `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`15..86400`, `0` disables, default: `0`)
 - `-C on|off` Clipboard sync (default: `on`)
 
 Display/Performance:

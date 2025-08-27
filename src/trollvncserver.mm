@@ -1104,7 +1104,7 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -p port   VNC TCP port (default: %d)\n", gPort);
     fprintf(stderr, "  -n name   Desktop name (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
-    fprintf(stderr, "  -A sec    Keep-alive interval to prevent sleep; only when clients > 0 (30..86400, 0=off)\n");
+    fprintf(stderr, "  -A sec    Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n");
     fprintf(stderr, "  -C on|off Clipboard sync (default: on)\n\n");
 
     fprintf(stderr, "Display/Perf:\n");
@@ -1358,8 +1358,8 @@ static void parseCLI(int argc, const char *argv[]) {
         }
         case 'A': {
             double sec = strtod(optarg ? optarg : "0", NULL);
-            if (sec < 30.0 || sec > 24 * 3600.0) {
-                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 30..86400)\n", optarg);
+            if (sec < 15.0 || sec > 24 * 3600.0) {
+                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 15..86400)\n", optarg);
                 exit(EXIT_FAILURE);
             }
             gKeepAliveSec = sec;
