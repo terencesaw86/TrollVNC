@@ -777,7 +777,7 @@ static void copyWithStrideTight(uint8_t *dstTight, const uint8_t *src, int width
     }
 }
 
-// MARK: - Cursor helpers (fixed style: XCursor + alpha mode=2)
+// MARK: - Cursor helpers (fixed style: XCursor + alpha mode=0)
 
 static void TVSetXCursor(rfbScreenInfoPtr screen) {
     int width = 13, height = 11;
@@ -1040,7 +1040,8 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events to stderr\n");
     fprintf(stderr, "\nCursor:\n");
-    fprintf(stderr, "  -U on|off Enable server-side cursor with alpha (default: off)\n");
+    fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n");
+    fprintf(stderr, "\nHelp:\n");
     fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
 
     fprintf(stderr, "Environment:\n");
