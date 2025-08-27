@@ -941,41 +941,45 @@ static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
 // MARK: - CLI
 
 static void printUsageAndExit(const char *prog) {
-    fprintf(stderr,
-            "Usage: %s [-p port] [-n name] [-v] [-a] [-t size] [-P pct] [-d sec] [-Q n] [-s scale] [-W px] "
-            "[-w k=v,...] [-N] [-M scheme] [-F fps|min-max|min:pref:max] [-A sec] [-K] [-C on|off] [-R max] [-h]\n",
-            prog);
-    fprintf(stderr, "  -p port   TCP port for VNC (default: %d)\n", gPort);
-    fprintf(stderr, "  -n name   Desktop name shown to clients (default: %s)\n", [gDesktopName UTF8String]);
+    // Compact, grouped usage for quick reference. See README for detailed explanations.
+    fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
+
+    fprintf(stderr, "Basic:\n");
+    fprintf(stderr, "  -p port   VNC TCP port (default: %d)\n", gPort);
+    fprintf(stderr, "  -n name   Desktop name (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v        View-only (ignore input)\n");
-    fprintf(stderr, "  -a        Enable non-blocking swap (may cause tearing)\n");
-    fprintf(stderr, "  -t size   Tile size for dirty-detection (8..128, default: %d)\n", gTileSize);
-    fprintf(stderr,
-            "  -P pct    Fullscreen fallback threshold percent (0..100, 0 disables dirty detection; default: %d)\n",
+    fprintf(stderr, "  -A sec    Keep-alive interval to prevent sleep; only when clients > 0 (30..86400, 0=off)\n");
+    fprintf(stderr, "  -C on|off Clipboard sync (default: on)\n\n");
+
+    fprintf(stderr, "Display/Perf:\n");
+    fprintf(stderr, "  -s scale  Output scale 0<s<=1 (default: %.2f)\n", gScale);
+    fprintf(stderr, "  -F spec   Frame rate: fps | min-max | min:pref:max\n");
+    fprintf(stderr, "  -d sec    Defer window (0..0.5, default: %.3f)\n", gDeferWindowSec);
+    fprintf(stderr, "  -Q n      Max in-flight encodes (0=never drop, default: %d)\n\n", gMaxInflightUpdates);
+
+    fprintf(stderr, "Dirty detection:\n");
+    fprintf(stderr, "  -t size   Tile size (8..128, default: %d)\n", gTileSize);
+    fprintf(stderr, "  -P pct    Fullscreen fallback threshold (0..100; 0=disable dirty detection, default: %d)\n",
             gFullscreenThresholdPercent);
-    fprintf(stderr, "  -R max    Max dirty rects before falling back to bounding-box (default: %d)\n", gMaxRectsLimit);
-    fprintf(stderr, "  -C on|off Enable or disable clipboard sync (default: on)\n");
-    fprintf(stderr, "  -d sec    Defer update window in seconds (0..0.5, default: %.3f)\n", gDeferWindowSec);
-    fprintf(stderr, "  -Q n      Max in-flight updates before dropping new frames (0 disables, default: %d)\n",
-            gMaxInflightUpdates);
-    fprintf(stderr, "  -s scale  Output scale factor 0<s<=1 (1 means no scaling, default: %.2f)\n", gScale);
-    fprintf(stderr, "  -W px     Wheel step in pixels per tick (0 disables, default: %.0f)\n", gWheelStepPx);
-    fprintf(stderr, "  -w k=v,.. Wheel tuning: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
-    fprintf(stderr, "  -N        Natural scroll direction (invert wheel delta)\n");
+    fprintf(stderr, "  -R max    Max dirty rects before bbox (default: %d)\n", gMaxRectsLimit);
+    fprintf(stderr, "  -a        Non-blocking swap (may cause tearing)\n\n");
+
+    fprintf(stderr, "Scroll/Input:\n");
+    fprintf(stderr, "  -W px     Wheel step in pixels (0=disable, default: %.0f)\n", gWheelStepPx);
+    fprintf(stderr,
+            "  -w k=v,.. Wheel tuning keys: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
+    fprintf(stderr, "  -N        Natural scroll direction (invert wheel)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
-    fprintf(stderr, "  -F spec   Preferred frame rate: single fps, min-max, or min:pref:max. iOS 15+ uses a range; "
-                    "iOS 14 uses max.\n");
-    fprintf(stderr, "  -A sec    KeepAlive interval in seconds (0 disables; applies only when >=1 client)\n");
-    fprintf(stderr, "  -K        Log keyboard events (keysym -> mapping) to stderr\n");
-    fprintf(stderr, "  -h        Show help\n\n");
+    fprintf(stderr, "  -K        Log keyboard events to stderr\n");
+    fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
+
     fprintf(stderr, "Environment:\n");
     fprintf(stderr,
-            "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; use first 8 chars)\n");
+            "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; first 8 chars used)\n");
     fprintf(stderr,
-            "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; when set, passwords are [full..., view-only...] and\n");
-    fprintf(stderr,
-            "                               authPasswdFirstViewOnly is the count of full-access passwords.\n\n");
-    rfbUsage();
+            "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; passwords stored as [full..., view-only...]\n\n");
+
+    // rfbUsage();
     exit(EXIT_SUCCESS);
 }
 
@@ -1176,8 +1180,8 @@ static void parseCLI(int argc, const char *argv[]) {
         }
         case 'A': {
             double sec = strtod(optarg ? optarg : "0", NULL);
-            if (sec < 0.0 || sec > 24 * 3600.0) {
-                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 0..86400)\n", optarg);
+            if (sec < 30.0 || sec > 24 * 3600.0) {
+                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 30..86400)\n", optarg);
                 exit(EXIT_FAILURE);
             }
             gKeepAliveSec = sec;

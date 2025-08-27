@@ -10,25 +10,38 @@ Run on device:
 trollvncserver -p 5901 -n "My iPhone" [options]
 ```
 
-Options:
+### Options
+
+Basic:
 
 - `-p port`   TCP port for VNC (default: `5901`)
 - `-n name`   Desktop name shown to clients (default: `TrollVNC`)
 - `-v`        View-only (ignore input)
-- `-a`        Enable non-blocking swap (may cause tearing). Default off.
-- `-t size`   Tile size for dirty-detection in pixels (`8..128`, default: `32`)
-- `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `0`; `0` disables dirty detection)
-- `-R max`    Max dirty rects before collapsing to a bounding box (default: `256`)
+- `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`30..86400`, `0` disables, default: `0`)
+- `-C on|off` Clipboard sync (default: `on`)
+
+Display/Performance:
+
+- `-s scale`  Output scale factor (`0 < s <= 1`, default: `1.0`; `1` means no scaling)
+- `-F spec`   Frame rate: single `fps`, range `min-max`, or full `min:pref:max`; on iOS 15+ a range is applied, on iOS 14 the max (or preferred) is used
 - `-d sec`    Defer update window in seconds to coalesce changes (`0..0.5`, default: `0.015`)
 - `-Q n`      Max in-flight updates before dropping new frames (`0..8`, default: `1`; `0` disables dropping)
-- `-s scale`  Output scale factor (`0 < s <= 1`, default: `1.0`; `1` means no scaling)
+
+Dirty detection:
+
+- `-t size`   Tile size for dirty-detection in pixels (`8..128`, default: `32`)
+- `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `0`; `0` disables dirty detection entirely)
+- `-R max`    Max dirty rects before collapsing to a bounding box (default: `256`)
+- `-a`        Enable non-blocking swap (may cause tearing). Default off.
+
+Scroll/Input:
+
 - `-W px`     Wheel step in pixels per tick (`0` disables, default: `48`)
-- `-w k=v,..` Wheel tuning: `step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax`
+- `-w k=v,..` Wheel tuning keys: `step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax`
 - `-N`        Natural scroll direction (invert wheel delta)
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
-- `-F spec`   Preferred frame rate: single fps, min-max, or min:pref:max. iOS 15+ uses a range; iOS 14 uses the max.
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
-- `-C on|off` Enable or disable clipboard sync (default: `on`)
+
 - `-h`        Show built-in help and LibVNCServer usage
 
 Notes:
@@ -69,7 +82,7 @@ The scroll wheel is emulated with short drags. Fast wheel motion becomes one lon
   - `durmax`: max gesture duration (default `0.14`)
   - `natural`: `1` to enable natural direction, `0` to disable
 
-**Examples:**
+#### Examples
 
 Smooth and slow:
 
@@ -100,6 +113,19 @@ trollvncserver ... -W 0
 - UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
 - Starts when the first client connects and stops when the last disconnects.
 - Disable it with `-C off` if not desired.
+
+### Keep-Alive (Prevent Sleep)
+
+Use `-A` to periodically send a harmless dummy key event to keep the device awake while clients are connected.
+
+- Active only when at least one client is connected; automatically stops when the last client disconnects.
+- Set `-A 0` (or omit) to disable. Shorter intervals may increase battery usage.
+
+Example:
+
+```sh
+trollvncserver ... -A 30
+```
 
 ### Frame Rate Control
 

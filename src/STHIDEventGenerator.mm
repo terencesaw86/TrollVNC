@@ -187,11 +187,14 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     [self _invalidateKeepAliveTimer];
 
     // Schedule on main run loop to ensure timer fires reliably
-    _keepAliveTimer = [NSTimer scheduledTimerWithTimeInterval:_keepAliveInterval
+    _keepAliveTimer = [NSTimer scheduledTimerWithTimeInterval:MAX(30.0, _keepAliveInterval)
                                                        target:self
                                                      selector:@selector(_keepAliveFired:)
                                                      userInfo:nil
                                                       repeats:YES];
+
+    // Fire immediately to avoid initial delay
+    [self _keepAliveFired:_keepAliveTimer];
 }
 
 - (void)_keepAliveFired:(NSTimer *)timer {
