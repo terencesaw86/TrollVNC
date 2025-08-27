@@ -132,38 +132,50 @@ static void parseWheelOptions(const char *spec) {
         if (strcmp(key, "step") == 0) {
             if (d > 0)
                 gWheelStepPx = d;
+            TVLog(@"Wheel tuning: step=%g", gWheelStepPx);
         } else if (strcmp(key, "coalesce") == 0) {
             if (d >= 0 && d <= 0.5)
                 gWheelCoalesceSec = d;
+            TVLog(@"Wheel tuning: coalesce=%g", gWheelCoalesceSec);
         } else if (strcmp(key, "max") == 0) {
             if (d > 0)
                 gWheelMaxStepPx = d;
+            TVLog(@"Wheel tuning: max=%g", gWheelMaxStepPx);
         } else if (strcmp(key, "clamp") == 0) {
             if (d >= 1.0 && d <= 10.0)
                 gWheelAbsClampFactor = d;
+            TVLog(@"Wheel tuning: clamp=%g", gWheelAbsClampFactor);
         } else if (strcmp(key, "amp") == 0) {
             if (d >= 0.0 && d <= 5.0)
                 gWheelAmpCoeff = d;
+            TVLog(@"Wheel tuning: amp=%g", gWheelAmpCoeff);
         } else if (strcmp(key, "cap") == 0) {
             if (d >= 0.0 && d <= 2.0)
                 gWheelAmpCap = d;
+            TVLog(@"Wheel tuning: cap=%g", gWheelAmpCap);
         } else if (strcmp(key, "minratio") == 0) {
             if (d >= 0.0 && d <= 2.0)
                 gWheelMinTakeRatio = d;
+            TVLog(@"Wheel tuning: minratio=%g", gWheelMinTakeRatio);
         } else if (strcmp(key, "durbase") == 0) {
             if (d >= 0.0 && d <= 1.0)
                 gWheelDurBase = d;
+            TVLog(@"Wheel tuning: durbase=%g", gWheelDurBase);
         } else if (strcmp(key, "durk") == 0) {
             if (d >= 0.0 && d <= 1.0)
                 gWheelDurK = d;
+            TVLog(@"Wheel tuning: durk=%g", gWheelDurK);
         } else if (strcmp(key, "durmin") == 0) {
             if (d >= 0.0 && d <= 1.0)
                 gWheelDurMin = d;
+            TVLog(@"Wheel tuning: durmin=%g", gWheelDurMin);
         } else if (strcmp(key, "durmax") == 0) {
             if (d >= 0.0 && d <= 2.0)
                 gWheelDurMax = d;
+            TVLog(@"Wheel tuning: durmax=%g", gWheelDurMax);
         } else if (strcmp(key, "natural") == 0) {
             gWheelNaturalDir = (d != 0.0);
+            TVLog(@"Wheel tuning: natural=%@", gWheelNaturalDir ? @"YES" : @"NO");
         }
     }
     free(dup);
@@ -815,12 +827,22 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 // MARK: - Clipboard (UTF-8 only; with Latin-1 fallback for legacy)
 
 static void sendClipboardToClients(NSString *_Nullable text) {
-    if (!gScreen)
+    if (!gScreen) {
+        TVLog(@"Clipboard: screen not initialized; skipping send");
         return;
-    if (!gClipboardEnabled)
+    }
+    if (!gClipboardEnabled) {
+        TVLog(@"Clipboard: sync disabled; skipping send");
         return;
-    if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
+    }
+    if (gClientCount <= 0) {
+        TVLog(@"Clipboard: no connected clients; skipping send");
+        return;
+    }
+    if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0) {
+        TVLog(@"Clipboard: send suppressed (local set echo avoidance)");
         return; // suppressed (likely local set)
+    }
     const char *utf8 = NULL;
     int utf8Len = 0;
     const char *latin1 = NULL;
@@ -844,6 +866,7 @@ static void sendClipboardToClients(NSString *_Nullable text) {
         latin1 = "";
         latin1Len = 0;
     }
+    TVLog(@"Clipboard: sending to clients (utf8Len=%d, latin1Len=%d, clients=%d)", utf8Len, latin1Len, gClientCount);
 #ifdef LIBVNCSERVER_HAVE_LIBZ
     rfbSendServerCutTextUTF8(gScreen, (char *)utf8, utf8Len, (char *)latin1, latin1Len);
 #else
@@ -856,12 +879,15 @@ static void setXCutTextLatin1(char *str, int len, rfbClientPtr cl) {
     (void)cl;
     if (!str || len < 0)
         len = 0;
+    TVLog(@"Clipboard: received client cut text (Latin-1) len=%d", len);
     NSData *data = [NSData dataWithBytes:str length:(NSUInteger)len];
     NSString *s = [[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];
     if (!s)
         s = @"";
     dispatch_async(dispatch_get_main_queue(), ^{
         gClipboardSuppressSend.fetch_add(1, std::memory_order_relaxed);
+        TVLog(@"Clipboard: applying client text to UIPasteboard (Latin-1), suppression now=%d",
+              gClipboardSuppressSend.load(std::memory_order_relaxed));
         [[ClipboardManager shared] setStringFromRemote:s];
         gClipboardSuppressSend.fetch_sub(1, std::memory_order_relaxed);
     });
@@ -872,6 +898,7 @@ static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
     (void)cl;
     if (!str || len < 0)
         len = 0;
+    TVLog(@"Clipboard: received client cut text (UTF-8) len=%d", len);
     NSData *data = [NSData dataWithBytes:str length:(NSUInteger)len];
     NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
     if (!s) {
@@ -882,6 +909,8 @@ static void setXCutTextUTF8(char *str, int len, rfbClientPtr cl) {
     }
     dispatch_async(dispatch_get_main_queue(), ^{
         gClipboardSuppressSend.fetch_add(1, std::memory_order_relaxed);
+        TVLog(@"Clipboard: applying client text to UIPasteboard (UTF-8), suppression now=%d",
+              gClipboardSuppressSend.load(std::memory_order_relaxed));
         [[ClipboardManager shared] setStringFromRemote:s];
         gClipboardSuppressSend.fetch_sub(1, std::memory_order_relaxed);
     });
@@ -934,6 +963,7 @@ static void parseCLI(int argc, const char *argv[]) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
+            TVLog(@"CLI: Natural scroll direction enabled (-N)");
             break;
         }
         case 'p': {
@@ -943,16 +973,20 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gPort = (int)port;
+            TVLog(@"CLI: Port set to %d", gPort);
             break;
         }
         case 'n':
             gDesktopName = [NSString stringWithUTF8String:optarg ?: "TrollVNC"];
+            TVLog(@"CLI: Desktop name set to '%@'", gDesktopName);
             break;
         case 'v':
             gViewOnly = YES;
+            TVLog(@"CLI: View-only mode enabled (-v)");
             break;
         case 'a':
             gAsyncSwapEnabled = YES;
+            TVLog(@"CLI: Non-blocking swap enabled (-a)");
             break;
         case 't': {
             long ts = strtol(optarg, NULL, 10);
@@ -961,6 +995,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gTileSize = (int)ts;
+            TVLog(@"CLI: Tile size set to %d", gTileSize);
             break;
         }
         case 'P': {
@@ -971,6 +1006,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gFullscreenThresholdPercent = (int)p;
+            TVLog(@"CLI: Fullscreen threshold percent set to %d", gFullscreenThresholdPercent);
             break;
         }
         case 'R': {
@@ -980,6 +1016,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gMaxRectsLimit = (int)m;
+            TVLog(@"CLI: Max rects limit set to %d", gMaxRectsLimit);
             break;
         }
         case 'd': {
@@ -989,6 +1026,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gDeferWindowSec = s;
+            TVLog(@"CLI: Defer window set to %.3f sec", gDeferWindowSec);
             break;
         }
         case 'Q': {
@@ -998,6 +1036,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gMaxInflightUpdates = (int)q;
+            TVLog(@"CLI: Max in-flight updates set to %d", gMaxInflightUpdates);
             break;
         }
         case 's': {
@@ -1007,6 +1046,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             gScale = sc;
+            TVLog(@"CLI: Output scale factor set to %.3f", gScale);
             break;
         }
         case 'W': {
@@ -1015,6 +1055,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 // 0 disables wheel emulation
                 gWheelStepPx = 0.0;
                 gWheelMaxStepPx = 0.0;
+                TVLog(@"CLI: Wheel emulation disabled (-W 0)");
                 break;
             }
             if (!(px > 4.0 && px <= 1000.0)) {
@@ -1024,6 +1065,7 @@ static void parseCLI(int argc, const char *argv[]) {
             gWheelStepPx = px;
             // Scale max step roughly 4x and adjust duration slope mildly
             gWheelMaxStepPx = fmax(2.0 * gWheelStepPx, 96.0) * 1.0;
+            TVLog(@"CLI: Wheel step set to %.1f px (max=%.1f)", gWheelStepPx, gWheelMaxStepPx);
             break;
         }
         case 'w': {
@@ -1040,6 +1082,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 fprintf(stderr, "Invalid -M scheme: %s (expected std|altcmd)\n", val);
                 exit(EXIT_FAILURE);
             }
+            TVLog(@"CLI: Modifier mapping set to %s", gModMapScheme == 0 ? "std" : "altcmd");
             break;
         }
         case 'F': {
@@ -1106,18 +1149,22 @@ static void parseCLI(int argc, const char *argv[]) {
             gFpsMin = minV;
             gFpsPref = prefV;
             gFpsMax = maxV;
+            TVLog(@"CLI: FPS preference set to min=%d pref=%d max=%d", gFpsMin, gFpsPref, gFpsMax);
             break;
         }
         case 'K': {
             gKeyEventLogging = YES;
+            TVLog(@"CLI: Keyboard event logging enabled (-K)");
             break;
         }
         case 'C': {
             const char *val = optarg ? optarg : "on";
             if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
                 gClipboardEnabled = YES;
+                TVLog(@"CLI: Clipboard sync enabled (-C %s)", [@(val) UTF8String]);
             } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
                 gClipboardEnabled = NO;
+                TVLog(@"CLI: Clipboard sync disabled (-C %s)", [@(val) UTF8String]);
             } else {
                 fprintf(stderr, "Invalid -C value: %s (expected on|off|1|0|true|false)\n", val);
                 exit(EXIT_FAILURE);
@@ -1192,11 +1239,13 @@ int main(int argc, const char *argv[]) {
 #ifdef LIBVNCSERVER_HAVE_LIBZ
             gScreen->setXCutTextUTF8 = setXCutTextUTF8;
 #endif
+            TVLog(@"Clipboard: client->server handlers registered (enabled)");
         } else {
             gScreen->setXCutText = NULL;
 #ifdef LIBVNCSERVER_HAVE_LIBZ
             gScreen->setXCutTextUTF8 = NULL;
 #endif
+            TVLog(@"Clipboard: client->server handlers not registered (disabled)");
         }
 
         // Enable classic VNC authentication if environment variables are provided
@@ -1281,6 +1330,7 @@ int main(int argc, const char *argv[]) {
         gCapturer = [ScreenCapturer sharedCapturer];
         // Apply preferred frame rate (if provided)
         if (gFpsMin > 0 || gFpsPref > 0 || gFpsMax > 0) {
+            TVLog(@"Applying preferred FPS to ScreenCapturer: min=%d pref=%d max=%d", gFpsMin, gFpsPref, gFpsMax);
             [gCapturer setPreferredFrameRateWithMin:gFpsMin preferred:gFpsPref max:gFpsMax];
         }
         gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
