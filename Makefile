@@ -36,6 +36,7 @@ trollvncserver_FRAMEWORKS += IOKit
 trollvncserver_FRAMEWORKS += QuartzCore
 trollvncserver_FRAMEWORKS += UIKit
 
+trollvncserver_PRIVATE_FRAMEWORKS += FrontBoardServices
 trollvncserver_PRIVATE_FRAMEWORKS += IOMobileFramebuffer
 trollvncserver_PRIVATE_FRAMEWORKS += IOSurface
 
