@@ -5,6 +5,8 @@ else
 TARGET := iphone:clang:16.5:15.0
 endif
 
+GO_EASY_ON_ME := 1
+
 include $(THEOS)/makefiles/common.mk
 
 TOOL_NAME := trollvncserver
