@@ -17,7 +17,7 @@ Options:
 - `-v`        View-only (ignore input)
 - `-a`        Enable non-blocking swap (may cause tearing). Default off.
 - `-t size`   Tile size for dirty-detection in pixels (`8..128`, default: `32`)
-- `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `30`; `0` disables dirty detection)
+- `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `0`; `0` disables dirty detection)
 - `-R max`    Max dirty rects before collapsing to a bounding box (default: `256`)
 - `-d sec`    Defer update window in seconds to coalesce changes (`0..0.5`, default: `0.015`)
 - `-Q n`      Max in-flight updates before dropping new frames (`0..8`, default: `1`; `0` disables dropping)
@@ -146,6 +146,8 @@ Notes:
 - Environment variables may be visible to the process environment; consider using a secure launcher if needed.
 
 ## Preset Examples
+
+By default, dirty detection is **disabled** because it usually has a high CPU cost. You can enable it with `-P` to set a fullscreen fallback threshold.
 
 Low-latency interactive (LAN):
 
