@@ -1043,9 +1043,6 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -d sec    Defer window (0..0.5, default: %.3f)\n", gDeferWindowSec);
     fprintf(stderr, "  -Q n      Max in-flight encodes (0=never drop, default: %d)\n\n", gMaxInflightUpdates);
 
-    fprintf(stderr, "Rotate/Orientation:\n");
-    fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
-
     fprintf(stderr, "Dirty detection:\n");
     fprintf(stderr, "  -t size   Tile size (8..128, default: %d)\n", gTileSize);
     fprintf(stderr, "  -P pct    Fullscreen fallback threshold (0..100; 0=disable dirty detection, default: %d)\n",
@@ -1063,6 +1060,9 @@ static void printUsageAndExit(const char *prog) {
 
     fprintf(stderr, "Cursor:\n");
     fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n\n");
+
+    fprintf(stderr, "Rotate/Orientation:\n");
+    fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
 
     fprintf(stderr, "Help:\n");
     fprintf(stderr, "  -h        Help (shows LibVNCServer usage too)\n\n");
