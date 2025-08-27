@@ -1,6 +1,7 @@
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 ARCHS := arm64 x86_64
 TARGET := simulator:clang:latest:15.0
+IPHONE_SIMULATOR_ROOT := $(shell devkit/sim-root.sh)
 else
 ARCHS := arm64
 ifeq ($(THEOS_PACKAGE_SCHEME),)
@@ -23,19 +24,28 @@ trollvncserver_FILES += src/ScreenCapturer.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
 trollvncserver_FILES += src/ClipboardManager.mm
 
-trollvncserver_CFLAGS += -fobjc-arc
-trollvncserver_CFLAGS += -Iinclude
 trollvncserver_CCFLAGS += -std=c++20
+trollvncserver_CFLAGS += -fobjc-arc
 
-trollvncserver_LDFLAGS += -Llib
+trollvncserver_CFLAGS += -Iinclude-spi
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
+trollvncserver_CFLAGS += -Iinclude-simulator
+trollvncserver_LDFLAGS += -Llib-simulator
 trollvncserver_LDFLAGS += -FPrivateFrameworks
+else
+trollvncserver_CFLAGS += -Iinclude
+trollvncserver_LDFLAGS += -Llib
 endif
 
+ifeq ($(THEOS_DEVICE_SIMULATOR),1)
+trollvncserver_LIBRARIES += vncserver
+trollvncserver_LIBRARIES += z
+else
 trollvncserver_LIBRARIES += jpeg
 trollvncserver_LIBRARIES += png16
 trollvncserver_LIBRARIES += vncserver
 trollvncserver_LIBRARIES += z
+endif
 
 trollvncserver_FRAMEWORKS += Accelerate
 trollvncserver_FRAMEWORKS += CoreGraphics
@@ -51,6 +61,10 @@ trollvncserver_PRIVATE_FRAMEWORKS += FrontBoardServices
 trollvncserver_PRIVATE_FRAMEWORKS += IOMobileFramebuffer
 trollvncserver_PRIVATE_FRAMEWORKS += IOSurfaceAccelerator
 
+ifeq ($(THEOS_DEVICE_SIMULATOR),1)
+trollvncserver_CODESIGN_FLAGS += -s "Apple Development" --entitlements src/trollvncserver.entitlements
+else
 trollvncserver_CODESIGN_FLAGS += -Ssrc/trollvncserver.entitlements
+endif
 
 include $(THEOS_MAKE_PATH)/tool.mk
