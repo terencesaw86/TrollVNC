@@ -129,6 +129,8 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     CGSize _physicalScreenSize;
     NSMutableSet<NSNumber *> *_activeKeyCodes;
     dispatch_queue_t _hidEventQueue;
+    NSTimeInterval _keepAliveInterval;
+    NSTimer *_keepAliveTimer;
 }
 
 + (STHIDEventGenerator *)sharedGenerator {
@@ -159,8 +161,67 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
         _activePoints[i].identifier = fingerIdentifiers[i];
     _activeKeyCodes = [[NSMutableSet alloc] init];
 
+    // Default: keepAliveInterval disabled
+    _keepAliveInterval = 0;
+    _keepAliveTimer = nil;
+
     return self;
 }
+
+#pragma mark - Keep Alive Timer
+
+- (void)_invalidateKeepAliveTimer {
+    if (_keepAliveTimer) {
+        [_keepAliveTimer invalidate];
+        _keepAliveTimer = nil;
+    }
+}
+
+- (void)_scheduleKeepAliveTimerIfNeededOnMainThread {
+    if (_keepAliveInterval <= 0) {
+        [self _invalidateKeepAliveTimer];
+        return;
+    }
+
+    // Always recreate to apply new interval
+    [self _invalidateKeepAliveTimer];
+
+    // Schedule on main run loop to ensure timer fires reliably
+    _keepAliveTimer = [NSTimer scheduledTimerWithTimeInterval:_keepAliveInterval
+                                                       target:self
+                                                     selector:@selector(_keepAliveFired:)
+                                                     userInfo:nil
+                                                      repeats:YES];
+}
+
+- (void)_keepAliveFired:(NSTimer *)timer {
+    // Fire-and-forget on background to avoid blocking main thread with nanosleep
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
+        [self hardwareUnlock];
+    });
+}
+
+- (NSTimeInterval)keepAliveInterval {
+    @synchronized(self) {
+        return _keepAliveInterval;
+    }
+}
+
+- (void)setKeepAliveInterval:(NSTimeInterval)keepAliveInterval {
+    @synchronized(self) {
+        _keepAliveInterval = keepAliveInterval;
+    }
+
+    // Ensure timer scheduling happens on main thread
+    if ([NSThread isMainThread])
+        [self _scheduleKeepAliveTimerIfNeededOnMainThread];
+    else
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self _scheduleKeepAliveTimerIfNeededOnMainThread];
+        });
+}
+
+#pragma mark - HID Events
 
 - (void)_sendIOHIDKeyboardEvent:(uint32_t)page usage:(uint32_t)usage isKeyDown:(boolean_t)isKeyDown {
     if (page != kHIDPage_Telephony) {

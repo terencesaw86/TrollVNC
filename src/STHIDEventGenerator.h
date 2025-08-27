@@ -90,6 +90,9 @@ __used NS_INLINE void STAccurateSleep(NSTimeInterval seconds) {
 
 + (STHIDEventGenerator *)sharedGenerator;
 
+// Keep-Alive: interval in seconds. 0 disables the timer (default 0).
+@property (nonatomic) NSTimeInterval keepAliveInterval;
+
 /* MARK: --- Touches --- */
 
 - (void)touchDown:(CGPoint)location;
