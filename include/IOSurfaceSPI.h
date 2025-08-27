@@ -98,13 +98,13 @@ size_t IOSurfaceGetHeightOfPlane(IOSurfaceRef buffer, size_t planeIndex);
 //WTF_EXTERN_C_BEGIN
 
 //#if HAVE(IOSURFACE_SET_OWNERSHIP) || HAVE(IOSURFACE_SET_OWNERSHIP_IDENTITY)
-typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags) {
-    kIOSurfaceMemoryLedgerTagDefault     = 0x00000001,
-    kIOSurfaceMemoryLedgerTagNetwork     = 0x00000002,
-    kIOSurfaceMemoryLedgerTagMedia       = 0x00000003,
-    kIOSurfaceMemoryLedgerTagGraphics    = 0x00000004,
-    kIOSurfaceMemoryLedgerTagNeural      = 0x00000005,
-};
+// typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags) {
+//     kIOSurfaceMemoryLedgerTagDefault     = 0x00000001,
+//     kIOSurfaceMemoryLedgerTagNetwork     = 0x00000002,
+//     kIOSurfaceMemoryLedgerTagMedia       = 0x00000003,
+//     kIOSurfaceMemoryLedgerTagGraphics    = 0x00000004,
+//     kIOSurfaceMemoryLedgerTagNeural      = 0x00000005,
+// };
 //#endif
 
 //#if HAVE(IOSURFACE_SET_OWNERSHIP)
