@@ -1448,7 +1448,7 @@ int main(int argc, const char *argv[]) {
         }
 
         // Run VNC in background thread
-        rfbRunEventLoop(gScreen, -1, TRUE);
+        rfbRunEventLoop(gScreen, 40000, TRUE);
 
         // 5) Install signal handlers for graceful shutdown
         installSignalHandlers();
