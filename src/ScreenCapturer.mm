@@ -239,7 +239,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         double fps = (windowSec > 0.0) ? (sFpsFrames / windowSec) : 0.0;
         double instOut = (sInstFpsEma > 0.0) ? sInstFpsEma : instFps;
 
-        SCLog(@"elapsed %.2fms, fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used, fps,
+        SCLog(@"elapsed %.2fms, real fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used, fps,
               sFpsFrames, windowSec, instOut, [ScreenCapturer _getMemoryUsageDescription]);
 
         sLastLogAtMs = nowMs;

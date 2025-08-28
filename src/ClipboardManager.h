@@ -10,6 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Global singleton instance
 + (instancetype)sharedManager;
 
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
+
 /// Start listening for clipboard changes (idempotent)
 - (void)start;
 
