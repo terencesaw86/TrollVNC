@@ -2,7 +2,7 @@
 
 TrollVNC is a VNC server for iOS devices, allowing remote access and control of the device’s screen.
 
-<img width="763" height="582" alt="screenshot tiny" src="https://github.com/user-attachments/assets/2d2cd457-a3d2-475a-b391-e3232d747f48" />
+<img width="763" alt="screenshot tiny" src="https://github.com/user-attachments/assets/2d2cd457-a3d2-475a-b391-e3232d747f48" />
 
 ## Usage
 
