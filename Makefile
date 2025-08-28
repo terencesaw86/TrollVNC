@@ -64,7 +64,6 @@ trollvncserver_FRAMEWORKS += UIKit
 trollvncserver_PRIVATE_FRAMEWORKS += FrontBoardServices
 ifeq ($(THEOS_DEVICE_SIMULATOR),)
 trollvncserver_PRIVATE_FRAMEWORKS += IOMobileFramebuffer
-trollvncserver_PRIVATE_FRAMEWORKS += IOSurfaceAccelerator
 endif
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)

@@ -26,6 +26,7 @@ typedef void *IOMobileFramebufferRef;
 extern "C" {
 #endif
 
+CFIndex CARenderServerGetDirtyFrameCount(void *);
 void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef surface, int x, int y);
 
 #ifdef __cplusplus
@@ -178,10 +179,17 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         }
     });
 
+    static CFIndex previousDirtyFrameCount = 0;
+    CFIndex dirtyFrameCount = CARenderServerGetDirtyFrameCount(NULL);
+    if (dirtyFrameCount == previousDirtyFrameCount) {
+        return NO; // No change
+    }
+
     // Fast ~20ms, sRGB, while the image is GOOD. Recommended.
     CARenderServerRenderDisplay(0 /* Main Display */, CFSTR("LCD"), sourceSurface, 0, 0);
     IOSurfaceAcceleratorTransferSurface(accelerator, sourceSurface, dstSurface, NULL, NULL, NULL, NULL);
 
+    previousDirtyFrameCount = dirtyFrameCount;
     return YES;
 #endif
 }
@@ -195,54 +203,51 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 
 #if DEBUG
     __uint64_t endAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    static double s_lastLogAtMs = 0.0;
-    static __uint64_t s_fpsWindowStartNs = 0;  // FPS window start (ns)
-    static unsigned long long s_fpsFrames = 0; // Accumulated frames in window
-    static __uint64_t s_prevFrameEndNs = 0;    // Fallback: previous frame end timestamp (ns) for instantaneous FPS
-    static double s_instFpsEma = 0.0;          // Smoothed instantaneous FPS (EMA)
+    static double sLastLogAtMs = 0.0;
+    static __uint64_t sFpsWindowStartNs = 0;  // FPS window start (ns)
+    static unsigned long long sFpsFrames = 0; // Accumulated frames in window
+    static double sInstFpsEma = 0.0;          // Smoothed instantaneous FPS (EMA)
 
     // Accumulate frame count
-    s_fpsFrames++;
-    if (s_fpsWindowStartNs == 0) {
-        s_fpsWindowStartNs = endAt;
+    if (surfaceChanged) {
+        sFpsFrames++;
+    }
+    if (sFpsWindowStartNs == 0) {
+        sFpsWindowStartNs = endAt;
     }
 
     // Instantaneous FPS sourced from CADisplayLink.duration; fallback to inter-frame delta if needed
     double instFps = 0.0;
-    if (displayLink && displayLink.duration > 0.0) {
-        instFps = 1.0 / displayLink.duration;
-    } else if (s_prevFrameEndNs > 0) {
-        __uint64_t deltaNs = endAt - s_prevFrameEndNs;
-        if (deltaNs > 0)
-            instFps = 1e9 / (double)deltaNs;
+    CFTimeInterval duration = displayLink.duration;
+    if (duration > 0.0) {
+        instFps = 1.0 / duration;
     }
-    s_prevFrameEndNs = endAt;
 
     double nowMs = (double)endAt / NSEC_PER_MSEC;
 
     // EMA smoothing for instantaneous FPS
     if (instFps > 0.0) {
         double alpha = mInstFpsAlpha;
-        s_instFpsEma = (s_instFpsEma == 0.0) ? instFps : (alpha * instFps + (1.0 - alpha) * s_instFpsEma);
+        sInstFpsEma = (sInstFpsEma == 0.0) ? instFps : (alpha * instFps + (1.0 - alpha) * sInstFpsEma);
     }
 
     // Periodic logging based on configurable window
     double windowMs = (mStatsWindowSeconds > 0.0) ? (mStatsWindowSeconds * 1000.0) : 0.0;
-    if (windowMs > 0.0 && (nowMs - s_lastLogAtMs >= windowMs)) {
+    if (windowMs > 0.0 && (nowMs - sLastLogAtMs >= windowMs)) {
         double used = (double)(endAt - beginAt) / NSEC_PER_MSEC;
-        double windowSec = (double)(endAt - s_fpsWindowStartNs) / 1e9; // ns -> s
-        double fps = (windowSec > 0.0) ? (s_fpsFrames / windowSec) : 0.0;
-        double instOut = (s_instFpsEma > 0.0) ? s_instFpsEma : instFps;
+        double windowSec = (double)(endAt - sFpsWindowStartNs) / 1e9; // ns -> s
+        double fps = (windowSec > 0.0) ? (sFpsFrames / windowSec) : 0.0;
+        double instOut = (sInstFpsEma > 0.0) ? sInstFpsEma : instFps;
 
         SCLog(@"elapsed %.2fms, fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used, fps,
-              s_fpsFrames, windowSec, instOut, [ScreenCapturer _getMemoryUsageDescription]);
+              sFpsFrames, windowSec, instOut, [ScreenCapturer _getMemoryUsageDescription]);
 
-        s_lastLogAtMs = nowMs;
+        sLastLogAtMs = nowMs;
 
         // Reset FPS window
-        s_fpsWindowStartNs = endAt;
-        s_fpsFrames = 0;
-        s_instFpsEma = 0.0;
+        sFpsWindowStartNs = endAt;
+        sFpsFrames = 0;
+        sInstFpsEma = 0.0;
     }
 #endif
 
