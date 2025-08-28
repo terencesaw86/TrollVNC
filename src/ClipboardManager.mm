@@ -21,7 +21,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
 @implementation ClipboardManager
 
-+ (instancetype)shared {
++ (instancetype)sharedManager {
     static ClipboardManager *s;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{

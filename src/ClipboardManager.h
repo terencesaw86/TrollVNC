@@ -8,7 +8,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface ClipboardManager : NSObject
 
 /// Global singleton instance
-+ (instancetype)shared;
++ (instancetype)sharedManager;
 
 /// Start listening for clipboard changes (idempotent)
 - (void)start;

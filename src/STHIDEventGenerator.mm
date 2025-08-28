@@ -158,7 +158,7 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
 #if TARGET_OS_SIMULATOR
     _physicalScreenSize = [[UIScreen mainScreen] nativeBounds].size;
 #else
-    IOMobileFramebufferRef framebufferConnection = NULL;
+    static IOMobileFramebufferRef framebufferConnection = NULL;
     IOMobileFramebufferGetMainDisplay(&framebufferConnection);
     IOMobileFramebufferGetDisplaySize(framebufferConnection, &_physicalScreenSize);
 #endif

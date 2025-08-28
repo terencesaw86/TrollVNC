@@ -3,6 +3,7 @@
 #endif
 
 #import "ScreenCapturer.h"
+#import "IOKitSPI.h"
 #import "IOSurfaceSPI.h"
 
 #import <UIKit/UIDevice.h>
@@ -17,6 +18,9 @@
 #define SCLog(...)
 #endif
 
+typedef IOReturn IOMobileFramebufferReturn;
+typedef void *IOMobileFramebufferRef;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,6 +28,9 @@ extern "C" {
 UIImage *_UICreateScreenUIImage(void);
 CGImageRef UICreateCGImageFromIOSurface(IOSurfaceRef ioSurface);
 void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef surface, int x, int y);
+
+void IOMobileFramebufferGetDisplaySize(IOMobileFramebufferRef connect, CGSize *size);
+IOMobileFramebufferReturn IOMobileFramebufferGetMainDisplay(IOMobileFramebufferRef *pointer);
 
 #ifdef __cplusplus
 }
@@ -62,21 +69,31 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     dispatch_once(&onceToken, ^{
         @autoreleasepool {
 
+            int width, height;
+#if TARGET_OS_SIMULATOR
             CGRect bounds = [[UIScreen mainScreen] bounds];
             CGFloat scale = [[UIScreen mainScreen] scale];
-            CGRect screenRect = CGRectMake(0, 0, round(bounds.size.width * scale), round(bounds.size.height * scale));
+            CGSize screenSize = CGSizeMake(round(bounds.size.width * scale), round(bounds.size.height * scale));
 
             // Setup the width and height of the framebuffer for the device
-            int width, height;
             if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
                 // iPhone frame buffer is Portrait
-                width = screenRect.size.width;
-                height = screenRect.size.height;
+                width = screenSize.width;
+                height = screenSize.height;
             } else {
                 // iPad frame buffer is Landscape
-                width = screenRect.size.height;
-                height = screenRect.size.width;
+                width = screenSize.height;
+                height = screenSize.width;
             }
+#else
+            CGSize screenSize = CGSizeZero;
+            static IOMobileFramebufferRef framebufferConnection = NULL;
+            IOMobileFramebufferGetMainDisplay(&framebufferConnection);
+            IOMobileFramebufferGetDisplaySize(framebufferConnection, &screenSize);
+
+            width = (int)round(screenSize.width);
+            height = (int)round(screenSize.height);
+#endif
 
             // Pixel format for Alpha, Red, Green and Blue
             unsigned pixelFormat = 0x42475241; // 'ARGB'
