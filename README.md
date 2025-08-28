@@ -49,10 +49,12 @@ Cursor & Rotation:
 - `-U on|off` Enable server-side cursor overlay (default: `off`)
 - `-O on|off` Sync UI orientation and rotate output (default: `off`)
 
-HTTP/Web:
+HTTP/WebSockets:
 
 - `-H port`  Enable built-in HTTP server on port (`0` disables; default `0`)
-- `-D path`  Absolute path for HTTP document root (optional)
+- `-D path`  Absolute path for HTTP document root
+- `-e file`  Path to SSL certificate file
+- `-k file`  Path to SSL private key file
 
 Help:
 
@@ -264,7 +266,7 @@ Notes:
 - You must set a password if you’re using the built-in VNC client of macOS.
 - Environment variables may be visible to the process environment; consider using a secure launcher if needed.
 
-## HTTP / Web Client
+## HTTP / WebSockets
 
 TrollVNC can start LibVNCServer’s built-in HTTP server to serve a browser-based VNC client ([noVNC](https://github.com/novnc/noVNC)).
 
@@ -281,14 +283,39 @@ Examples:
 # Enable web client on port 5801 using the default web root
 trollvncserver -p 5901 -H 5801
 
-# Enable web client on port 80 with a custom web root
-trollvncserver -p 5901 -H 80 -D /var/www/trollvnc/webclients
+# Enable web client on port 8081 with a custom web root
+trollvncserver -p 5901 -H 8081 -D /var/www/trollvnc/webclients
 ```
 
 Notes:
 
 - Ensure the web root contains the required client assets.
 - If the directory is missing or incomplete, the HTTP server may start but won’t serve a functional client.
+
+### Using Secure WebSockets
+
+If you don’t already have an SSL cert that’s trusted by your browser, the most comfortable way to create one is using [minica](https://github.com/jsha/minica). On Debian-based distros, you can install it via `sudo apt install minica`, on MacOS via `brew install minica`.
+
+Examples:
+
+```sh
+# Generate a self-signed certificate with custom IP address using minica
+minica -ip-addresses "192.168.2.100"
+```
+
+Trust the CA cert in your browser by importing the created `minica.pem`, e.g. for Firefox go to _Options->Privacy & Security->View Certificates->Authorities_ and import the created `minica.pem`, tick the checkbox to use it for trusting websites. For other browsers, the process is similar.
+
+Then, you can finally start the secure WebSockets server, giving it the created **host** key and cert:
+
+```sh
+# Copy the generated keypair to the device
+scp -r "192.168.2.100" root@192.168.2.100:/usr/share/trollvnc/ssl/
+
+# Start the secure server with the generated keypair
+trollvncserver -p 5901 -H 5801 -e /usr/share/trollvnc/ssl/192.168.2.100/cert.pem -k /usr/share/trollvnc/ssl/192.168.2.100/key.pem
+```
+
+The server program will tell you a URL to point your web browser to. There, you can click on the noVNC-encrypted-connection-button to connect using the bundled noVNC viewer using an encrypted WebSockets connection.
 
 ## Build Dependencies
 

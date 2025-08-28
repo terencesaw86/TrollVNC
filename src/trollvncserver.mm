@@ -126,6 +126,8 @@ static void wheel_schedule_flush(CGPoint anchor, double delaySec, int rotQ);
 // HTTP server (LibVNCServer built-in web client)
 static int gHttpPort = 0;             // 0 = disabled; >0 enables HTTP server on this port
 static char *gHttpDirOverride = NULL; // absolute path override for httpDir
+static char *gSslCertPath = NULL;     // sslcertfile path (optional)
+static char *gSslKeyPath = NULL;      // sslkeyfile path (optional)
 
 static void parseWheelOptions(const char *spec) {
     if (!spec)
@@ -1133,9 +1135,11 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "Rotate/Orientation:\n");
     fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
 
-    fprintf(stderr, "HTTP/Web:\n");
+    fprintf(stderr, "HTTP/WebSockets:\n");
     fprintf(stderr, "  -H port   Enable built-in HTTP server on port (0=off, default: 0)\n");
-    fprintf(stderr, "  -D path   Absolute path for HTTP document root (optional)\n\n");
+    fprintf(stderr, "  -D path   Absolute path for HTTP document root\n");
+    fprintf(stderr, "  -e file   Path to SSL certificate file\n");
+    fprintf(stderr, "  -k file   Path to SSL private key file\n\n");
 
     fprintf(stderr, "Help:\n");
     fprintf(stderr, "  -h        Show this help message\n\n");
@@ -1151,7 +1155,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:U:O:H:D:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:U:O:H:D:e:k:")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -1170,6 +1174,36 @@ static void parseCLI(int argc, const char *argv[]) {
                 fprintf(stderr, "Invalid -O value: %s (expected on|off|1|0|true|false)\n", val);
                 exit(EXIT_FAILURE);
             }
+            break;
+        }
+        case 'e': {
+            const char *path = optarg ? optarg : "";
+            if (!path || !*path) {
+                fprintf(stderr, "Invalid value for -e (sslcertfile).\n");
+                exit(EXIT_FAILURE);
+            }
+            if (gSslCertPath) { free(gSslCertPath); gSslCertPath = NULL; }
+            gSslCertPath = strdup(path);
+            if (!gSslCertPath) {
+                fprintf(stderr, "Out of memory duplicating sslcertfile path.\n");
+                exit(EXIT_FAILURE);
+            }
+            TVLog(@"CLI: SSL cert file set (-e %s)", path);
+            break;
+        }
+        case 'k': {
+            const char *path = optarg ? optarg : "";
+            if (!path || !*path) {
+                fprintf(stderr, "Invalid value for -k (sslkeyfile).\n");
+                exit(EXIT_FAILURE);
+            }
+            if (gSslKeyPath) { free(gSslKeyPath); gSslKeyPath = NULL; }
+            gSslKeyPath = strdup(path);
+            if (!gSslKeyPath) {
+                fprintf(stderr, "Out of memory duplicating sslkeyfile path.\n");
+                exit(EXIT_FAILURE);
+            }
+            TVLog(@"CLI: SSL key file set (-k %s)", path);
             break;
         }
         case 'p': {
@@ -1526,6 +1560,16 @@ int main(int argc, const char *argv[]) {
         } else {
             gScreen->httpPort = 0;   // disabled
             gScreen->httpDir = NULL; // do not set dir to avoid default startup
+        }
+
+        // SSL certificate and key (optional)
+        if (gSslCertPath && *gSslCertPath) {
+            if (gScreen->sslcertfile) free(gScreen->sslcertfile);
+            gScreen->sslcertfile = strdup(gSslCertPath);
+        }
+        if (gSslKeyPath && *gSslKeyPath) {
+            if (gScreen->sslkeyfile) free(gScreen->sslkeyfile);
+            gScreen->sslkeyfile = strdup(gSslKeyPath);
         }
 
         // Clipboard: register handlers for client-to-server cut text (conditional)
@@ -2015,6 +2059,16 @@ static void cleanupAndExit(int code) {
     if (gHttpDirOverride) {
         free(gHttpDirOverride);
         gHttpDirOverride = NULL;
+    }
+
+    if (gSslCertPath) {
+        free(gSslCertPath);
+        gSslCertPath = NULL;
+    }
+
+    if (gSslKeyPath) {
+        free(gSslKeyPath);
+        gSslKeyPath = NULL;
     }
 
     if (gAuthPasswdVec) {
