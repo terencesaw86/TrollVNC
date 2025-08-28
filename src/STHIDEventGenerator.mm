@@ -4,6 +4,7 @@
 
 #import "STHIDEventGenerator.h"
 #import "IOKitSPI.h"
+#import "IOMobileFramebufferSPI.h"
 
 #import <UIKit/UIKit.h>
 #import <mach/mach_time.h>
@@ -22,15 +23,6 @@ static const NSTimeInterval longPressHoldDelay = 2.0;
 static const IOHIDFloat defaultMajorRadius = 5;
 static const IOHIDFloat defaultPathPressure = 0;
 static const long nanosecondsPerSecond = 1e9;
-
-typedef IOReturn IOMobileFramebufferReturn;
-typedef void *IOMobileFramebufferRef;
-
-OBJC_EXTERN
-IOMobileFramebufferReturn IOMobileFramebufferGetMainDisplay(IOMobileFramebufferRef *pointer);
-
-OBJC_EXTERN
-void IOMobileFramebufferGetDisplaySize(IOMobileFramebufferRef connect, CGSize *size);
 
 static int fingerIdentifiers[] = {
     2, 3, 4, 5, 1, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
@@ -600,7 +592,10 @@ static void _sendHIDEvent(IOHIDEventRef eventRef, dispatch_queue_t queue) {
 
     touchCount = MIN(touchCount, HIDMaxTouchCount);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
     CGPoint locations[touchCount];
+#pragma clang diagnostic pop
 
     for (NSUInteger index = 0; index < touchCount; ++index)
         locations[index] = location;
@@ -644,7 +639,10 @@ static void _sendHIDEvent(IOHIDEventRef eventRef, dispatch_queue_t queue) {
 
     touchCount = MIN(touchCount, HIDMaxTouchCount);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
     CGPoint locations[touchCount];
+#pragma clang diagnostic pop
 
     for (NSUInteger index = 0; index < touchCount; ++index)
         locations[index] = location;
@@ -669,8 +667,11 @@ static void _sendHIDEvent(IOHIDEventRef eventRef, dispatch_queue_t queue) {
 
     touchCount = MIN(touchCount, HIDMaxTouchCount);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
     CGPoint startLocations[touchCount];
     CGPoint nextLocations[touchCount];
+#pragma clang diagnostic pop
 
     CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
     CFTimeInterval elapsed = 0;
@@ -699,8 +700,11 @@ static void _sendHIDEvent(IOHIDEventRef eventRef, dispatch_queue_t queue) {
 
     touchCount = MIN(touchCount, HIDMaxTouchCount);
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
     CGPoint startLocations[touchCount];
     CGPoint nextLocations[touchCount];
+#pragma clang diagnostic pop
 
     CFAbsoluteTime startTime = CFAbsoluteTimeGetCurrent();
     CFTimeInterval elapsed = 0;

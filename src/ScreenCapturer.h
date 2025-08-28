@@ -33,15 +33,15 @@ NS_ASSUME_NONNULL_BEGIN
 /** Returns the shared singleton instance. */
 + (instancetype)sharedCapturer;
 
++ (instancetype)new NS_UNAVAILABLE;
+- (instancetype)init NS_UNAVAILABLE;
+
 /**
  Returns the IOSurface property dictionary used to create screen-sized surfaces
  compatible with the current device configuration (size/orientation/format).
  Consumers can use this to allocate compatible IOSurfaces.
  */
-+ (NSDictionary *)sharedRenderProperties;
-
-+ (instancetype)new NS_UNAVAILABLE;
-- (instancetype)init NS_UNAVAILABLE;
+@property(nonatomic, strong, readonly) NSDictionary *renderProperties;
 
 /**
  Start screen capture. The frame handler will be called on the main thread for

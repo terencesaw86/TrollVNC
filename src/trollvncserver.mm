@@ -1939,7 +1939,7 @@ NS_INLINE void setupAlphaCursor(rfbScreenInfoPtr screen, int mode) {
 #pragma mark - Setups
 
 static void setupGeometry(void) {
-    NSDictionary *props = [ScreenCapturer sharedRenderProperties];
+    NSDictionary *props = [[ScreenCapturer sharedCapturer] renderProperties];
     gSrcWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
     gSrcHeight = [props[(__bridge NSString *)kIOSurfaceHeight] intValue];
     if (gSrcWidth <= 0 || gSrcHeight <= 0) {

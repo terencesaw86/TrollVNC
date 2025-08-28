@@ -66,6 +66,7 @@ extern const CFStringRef kIOSurfacePlaneBytesPerRow;
 extern const CFStringRef kIOSurfacePlaneOffset;
 extern const CFStringRef kIOSurfacePlaneSize;
 extern const CFStringRef kIOSurfacePlaneInfo;
+extern const CFStringRef kIOSurfaceMemoryRegion;
 
 size_t IOSurfaceAlignProperty(CFStringRef property, size_t value);
 IOSurfaceRef IOSurfaceCreate(CFDictionaryRef properties);
@@ -153,6 +154,7 @@ typedef struct IOSurfaceAcceleratorCompletion {
     void* completionRefCon2;
 } IOSurfaceAcceleratorCompletion;
 
+IOReturn IOSurfaceAcceleratorTransferSurface(IOSurfaceAcceleratorRef, IOSurfaceRef sourceBuffer, IOSurfaceRef destinationBuffer, void *, void *, void *, void *);
 IOReturn IOSurfaceAcceleratorTransformSurface(IOSurfaceAcceleratorRef, IOSurfaceRef sourceBuffer, IOSurfaceRef destinationBuffer, CFDictionaryRef options, void* pCropRectangles, IOSurfaceAcceleratorCompletion* pCompletion, void* pSwap, uint32_t* pCommandID);
 
 //WTF_EXTERN_C_END

@@ -22,7 +22,13 @@
 	<true/>
 	<key>com.apple.QuartzCore.system-layers</key>
 	<true/>
+	<key>com.apple.gasgauge.user-access-device</key>
+	<true/>
+	<key>com.apple.private.IOSurface.protected-access</key>
+	<true/>
 	<key>com.apple.private.MobileContainerManager.allowed</key>
+	<true/>
+	<key>com.apple.private.allow-explicit-graphics-priority</key>
 	<true/>
 	<key>com.apple.private.hid.client.event-dispatch</key>
 	<true/>
