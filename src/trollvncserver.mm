@@ -1182,7 +1182,10 @@ static void parseCLI(int argc, const char *argv[]) {
                 fprintf(stderr, "Invalid value for -e (sslcertfile).\n");
                 exit(EXIT_FAILURE);
             }
-            if (gSslCertPath) { free(gSslCertPath); gSslCertPath = NULL; }
+            if (gSslCertPath) {
+                free(gSslCertPath);
+                gSslCertPath = NULL;
+            }
             gSslCertPath = strdup(path);
             if (!gSslCertPath) {
                 fprintf(stderr, "Out of memory duplicating sslcertfile path.\n");
@@ -1197,7 +1200,10 @@ static void parseCLI(int argc, const char *argv[]) {
                 fprintf(stderr, "Invalid value for -k (sslkeyfile).\n");
                 exit(EXIT_FAILURE);
             }
-            if (gSslKeyPath) { free(gSslKeyPath); gSslKeyPath = NULL; }
+            if (gSslKeyPath) {
+                free(gSslKeyPath);
+                gSslKeyPath = NULL;
+            }
             gSslKeyPath = strdup(path);
             if (!gSslKeyPath) {
                 fprintf(stderr, "Out of memory duplicating sslkeyfile path.\n");
@@ -1564,11 +1570,13 @@ int main(int argc, const char *argv[]) {
 
         // SSL certificate and key (optional)
         if (gSslCertPath && *gSslCertPath) {
-            if (gScreen->sslcertfile) free(gScreen->sslcertfile);
+            if (gScreen->sslcertfile)
+                free(gScreen->sslcertfile);
             gScreen->sslcertfile = strdup(gSslCertPath);
         }
         if (gSslKeyPath && *gSslKeyPath) {
-            if (gScreen->sslkeyfile) free(gScreen->sslkeyfile);
+            if (gScreen->sslkeyfile)
+                free(gScreen->sslkeyfile);
             gScreen->sslkeyfile = strdup(gSslKeyPath);
         }
 
