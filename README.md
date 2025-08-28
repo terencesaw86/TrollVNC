@@ -335,7 +335,7 @@ Notes:
 
 ## Build Dependencies
 
-OpenSSL is not necessary for building VNC server because it does not use any SSL/TLS features. See: <https://github.com/Lessica/BuildVNCServer>
+See: <https://github.com/Lessica/BuildVNCServer>
 
 ## License
 
