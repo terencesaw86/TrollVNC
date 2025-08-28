@@ -1523,6 +1523,7 @@ int main(int argc, const char *argv[]) {
         gScreen->desktopName = strdup([gDesktopName UTF8String]);
         gScreen->frameBuffer = (char *)gFrontBuffer;
         gScreen->port = gPort;
+        gScreen->ipv6port = gPort;
         gScreen->newClientHook = newClient;
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
@@ -1532,6 +1533,7 @@ int main(int argc, const char *argv[]) {
         gScreen->httpEnableProxyConnect = TRUE; // always allow CONNECT if HTTP is enabled
         if (gHttpPort > 0) {
             gScreen->httpPort = gHttpPort; // enable HTTP on specified port
+            gScreen->http6Port = gHttpPort;
             if (gHttpDirOverride) {
                 // Use override absolute path
                 gScreen->httpDir = strdup(gHttpDirOverride);
