@@ -41,8 +41,12 @@ ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 trollvncserver_LIBRARIES += vncserver
 trollvncserver_LIBRARIES += z
 else
-trollvncserver_LIBRARIES += jpeg
+trollvncserver_LIBRARIES += crypto
+trollvncserver_LIBRARIES += lzo2
+trollvncserver_LIBRARIES += turbojpeg
 trollvncserver_LIBRARIES += png16
+trollvncserver_LIBRARIES += sasl2
+trollvncserver_LIBRARIES += ssl
 trollvncserver_LIBRARIES += vncserver
 trollvncserver_LIBRARIES += z
 endif
