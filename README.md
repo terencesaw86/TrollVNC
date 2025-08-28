@@ -49,6 +49,11 @@ Cursor & Rotation:
 - `-U on|off` Enable server-side cursor overlay (default: `off`)
 - `-O on|off` Sync UI orientation and rotate output (default: `off`)
 
+HTTP/Web:
+
+- `-H port`  Enable built-in HTTP server on port (`0` disables; default `0`)
+- `-D path`  Absolute path for HTTP document root (optional)
+
 Help:
 
 - `-h`        Show built-in help message
@@ -258,6 +263,32 @@ Notes:
 - `-v` forces global view-only regardless of password. View-only password applies per client.
 - You must set a password if you’re using the built-in VNC client of macOS.
 - Environment variables may be visible to the process environment; consider using a secure launcher if needed.
+
+## HTTP / Web Client
+
+TrollVNC can start LibVNCServer’s built-in HTTP server to serve a browser-based VNC client ([noVNC](https://github.com/novnc/noVNC)).
+
+Behavior:
+
+- When `-H` is non-zero, the HTTP server listens on that port.
+- If `-D` is provided, its absolute path is used as `httpDir`.
+- If `-D` is omitted, TrollVNC derives a default `httpDir` relative to the executable `../share/trollvnc/webclients`.
+- HTTP proxy CONNECT is enabled to support certain viewer flows.
+
+Examples:
+
+```sh
+# Enable web client on port 5801 using the default web root
+trollvncserver -p 5901 -H 5801
+
+# Enable web client on port 80 with a custom web root
+trollvncserver -p 5901 -H 80 -D /var/www/trollvnc/webclients
+```
+
+Notes:
+
+- Ensure the web root contains the required client assets.
+- If the directory is missing or incomplete, the HTTP server may start but won’t serve a functional client.
 
 ## Build Dependencies
 

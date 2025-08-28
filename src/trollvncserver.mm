@@ -1,26 +1,21 @@
 //
 // trollvncserver.mm
-// iOS VNC server entrypoint and display pipeline.
-//
-// Responsibilities in this step:
-// - Initialize LibVNCServer with a 32-bit ARGB framebuffer.
-// - Capture iOS screen frames via ScreenCapturer.
-// - Copy frames into a tightly-packed double buffer and notify VNC clients.
-// - Minimal, production-lean CLI parsing with getopt (-p, -n, -v, -h).
+// TrollVNC
 //
 
+#import <Accelerate/Accelerate.h>
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-#import <Accelerate/Accelerate.h>
-#import <rfb/keysym.h>
-#import <rfb/rfb.h>
-
 #import <atomic>
 #import <errno.h>
+#import <limits.h>
+#import <mach-o/dyld.h>
 #import <pthread.h>
+#import <rfb/keysym.h>
+#import <rfb/rfb.h>
 #import <signal.h>
 #import <stdbool.h>
 #import <stdlib.h>
@@ -127,6 +122,10 @@ static double gWheelDurMin = 0.05;         // duration clamp min
 static double gWheelDurMax = 0.14;         // duration clamp max
 static BOOL gWheelNaturalDir = NO;         // natural scroll direction (invert delta)
 static void wheel_schedule_flush(CGPoint anchor, double delaySec, int rotQ);
+
+// HTTP server (LibVNCServer built-in web client)
+static int gHttpPort = 0;             // 0 = disabled; >0 enables HTTP server on this port
+static char *gHttpDirOverride = NULL; // absolute path override for httpDir
 
 static void parseWheelOptions(const char *spec) {
     if (!spec)
@@ -1134,6 +1133,10 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "Rotate/Orientation:\n");
     fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
 
+    fprintf(stderr, "HTTP/Web:\n");
+    fprintf(stderr, "  -H port   Enable built-in HTTP server on port (0=off, default: 0)\n");
+    fprintf(stderr, "  -D path   Absolute path for HTTP document root (optional)\n\n");
+
     fprintf(stderr, "Help:\n");
     fprintf(stderr, "  -h        Show this help message\n\n");
 
@@ -1148,7 +1151,7 @@ static void printUsageAndExit(const char *prog) {
 
 static void parseCLI(int argc, const char *argv[]) {
     int opt;
-    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:U:O:")) != -1) {
+    while ((opt = getopt(argc, (char *const *)argv, "p:n:vhat:P:R:d:Q:s:W:w:NM:F:A:KC:U:O:H:D:")) != -1) {
         switch (opt) {
         case 'N': {
             gWheelNaturalDir = YES;
@@ -1398,6 +1401,34 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             break;
         }
+        case 'H': {
+            long hp = strtol(optarg ? optarg : "0", NULL, 10);
+            if (hp < 0 || hp > 65535) {
+                fprintf(stderr, "Invalid HTTP port: %s (expected 0..65535)\n", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gHttpPort = (int)hp;
+            TVLog(@"CLI: HTTP port set to %d (-H)", gHttpPort);
+            break;
+        }
+        case 'D': {
+            const char *path = optarg ? optarg : "";
+            if (!path || path[0] != '/') {
+                fprintf(stderr, "Invalid httpDir path for -D: %s (must be absolute)\n", path);
+                exit(EXIT_FAILURE);
+            }
+            if (gHttpDirOverride) {
+                free(gHttpDirOverride);
+                gHttpDirOverride = NULL;
+            }
+            gHttpDirOverride = strdup(path);
+            if (!gHttpDirOverride) {
+                fprintf(stderr, "Out of memory duplicating httpDir override.\n");
+                exit(EXIT_FAILURE);
+            }
+            TVLog(@"CLI: HTTP dir override set to %s (-D)", path);
+            break;
+        }
         case 'h':
         default:
             printUsageAndExit(argv[0]);
@@ -1456,6 +1487,46 @@ int main(int argc, const char *argv[]) {
         gScreen->displayHook = displayHook;
         gScreen->displayFinishedHook = displayFinishedHook;
         gScreen->paddedWidthInBytes = gWidth * gBytesPerPixel;
+
+        // Built-in HTTP server settings (see rfb.h http* fields)
+        gScreen->httpEnableProxyConnect = TRUE; // always allow CONNECT if HTTP is enabled
+        if (gHttpPort > 0) {
+            gScreen->httpPort = gHttpPort; // enable HTTP on specified port
+            if (gHttpDirOverride) {
+                // Use override absolute path
+                gScreen->httpDir = strdup(gHttpDirOverride);
+                TVLog(@"HTTP server config: port=%d, dir=%s (override), proxyConnect=YES", gHttpPort, gHttpDirOverride);
+            } else {
+                // Compute httpDir relative to executable: ../share/trollvnc/webclients
+                do {
+                    // Resolve executable path
+                    uint32_t sz = 0;
+                    _NSGetExecutablePath(NULL, &sz); // query size
+                    char *exeBuf = (char *)malloc(sz > 0 ? sz : 1024);
+                    if (!exeBuf)
+                        break;
+                    if (_NSGetExecutablePath(exeBuf, &sz) != 0) {
+                        // Fallback: leave exeBuf as-is
+                    }
+                    // Canonicalize
+                    char realBuf[PATH_MAX];
+                    const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
+                    NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
+                    NSString *exeDir = [exe stringByDeletingLastPathComponent];
+                    NSString *webRel = @"../share/trollvnc/webclients";
+                    NSString *webPath = [[exeDir stringByAppendingPathComponent:webRel] stringByStandardizingPath];
+                    const char *fs = [webPath fileSystemRepresentation];
+                    if (fs && *fs) {
+                        gScreen->httpDir = strdup(fs);
+                        TVLog(@"HTTP server config: port=%d, dir=%@, proxyConnect=YES", gHttpPort, webPath);
+                    }
+                    free(exeBuf);
+                } while (0);
+            }
+        } else {
+            gScreen->httpPort = 0;   // disabled
+            gScreen->httpDir = NULL; // do not set dir to avoid default startup
+        }
 
         // Clipboard: register handlers for client-to-server cut text (conditional)
         if (gClipboardEnabled) {
@@ -1939,6 +2010,11 @@ static void cleanupAndExit(int code) {
     if (gCurrHash) {
         free(gCurrHash);
         gCurrHash = NULL;
+    }
+
+    if (gHttpDirOverride) {
+        free(gHttpDirOverride);
+        gHttpDirOverride = NULL;
     }
 
     if (gAuthPasswdVec) {
