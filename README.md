@@ -294,28 +294,44 @@ Notes:
 
 ### Using Secure WebSockets
 
-If you don’t already have an SSL cert that’s trusted by your browser, the most comfortable way to create one is using [minica](https://github.com/jsha/minica). On Debian-based distros, you can install it via `sudo apt install minica`, on MacOS via `brew install minica`.
+You can serve the web client over HTTPS/WSS by providing an SSL certificate and key via `-e` and `-k`.
 
-Examples:
+What you need:
+
+- A certificate (`cert.pem`) and private key (`key.pem`) that your browser will accept.
+- The HTTP server enabled on some port with `-H`.
+
+Quick start with a local CA (minica):
 
 ```sh
-# Generate a self-signed certificate with custom IP address using minica
+# 1) Install minica (macOS):
+brew install minica
+
+# 2) Create a host cert for your device IP or DNS name
 minica -ip-addresses "192.168.2.100"
+# This produces a CA (minica.pem) and a host folder (e.g., 192.168.2.100/) with cert.pem and key.pem
+
+# 3) Trust the CA in your browser/OS by importing minica.pem (Authorities/Trusted Roots)
+#    Without this, the browser will warn about an untrusted certificate.
+
+# 4) Copy the host cert and key to the device (pick any readable path)
+scp -r 192.168.2.100 root@192.168.2.100:/usr/share/trollvnc/ssl/
+
+# 5) Start TrollVNC with HTTPS/WSS enabled
+trollvncserver -p 5901 -H 5801 \
+  -e /usr/share/trollvnc/ssl/192.168.2.100/cert.pem \
+  -k /usr/share/trollvnc/ssl/192.168.2.100/key.pem
 ```
 
-Trust the CA cert in your browser by importing the created `minica.pem`, e.g. for Firefox go to _Options->Privacy & Security->View Certificates->Authorities_ and import the created `minica.pem`, tick the checkbox to use it for trusting websites. For other browsers, the process is similar.
+Connect:
 
-Then, you can finally start the secure WebSockets server, giving it the created **host** key and cert:
+- Open `https://192.168.2.100:5801/` in your browser.
+- Use the bundled web client page to connect to the VNC server.
 
-```sh
-# Copy the generated keypair to the device
-scp -r "192.168.2.100" root@192.168.2.100:/usr/share/trollvnc/ssl/
+Notes:
 
-# Start the secure server with the generated keypair
-trollvncserver -p 5901 -H 5801 -e /usr/share/trollvnc/ssl/192.168.2.100/cert.pem -k /usr/share/trollvnc/ssl/192.168.2.100/key.pem
-```
-
-The server program will tell you a URL to point your web browser to. There, you can click on the noVNC-encrypted-connection-button to connect using the bundled noVNC viewer using an encrypted WebSockets connection.
+- Certificates must match what the browser connects to (IP or hostname).
+- Self-signed setups require trusting the CA (minica.pem) or the specific certificate.
 
 ## Build Dependencies
 
