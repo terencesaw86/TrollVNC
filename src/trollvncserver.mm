@@ -1291,63 +1291,63 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     int changedPct = 0;
     BOOL fullScreen = NO;
 
-    if (shouldFlush) {
-        // Promote pending tiles into rects
-        rectCount = buildRectsFromPending(rects, MIN(gMaxRectsLimit, kRectBuf));
-
-        // If anything from this frame is also new dirty not in pending, ensure included
-        int extraTiles = 0;
-        if (rectCount == 0) {
-            rectCount = buildDirtyRects(rects, MIN(gMaxRectsLimit, kRectBuf), &changedTiles);
-        } else {
-            // Merge current frame dirties by re-running with hashes, bounded
-            DirtyRect rectsNow[kRectBuf];
-            int nowCount = buildDirtyRects(rectsNow, MIN(gMaxRectsLimit, kRectBuf), &extraTiles);
-
-            // Simple append then vertical merge will compact later in pipeline
-            int space = kRectBuf - rectCount;
-            int take = nowCount < space ? nowCount : space;
-            if (take > 0)
-                memcpy(&rects[rectCount], rectsNow, (size_t)take * sizeof(DirtyRect));
-            rectCount += take;
-        }
-
-        int totalTiles = (int)gTileCount;
-        int totalChanged = changedTiles + extraTiles;
-        changedPct = (totalTiles > 0) ? (totalChanged * 100 / totalTiles) : 100;
-
-        if (rectCount >= gMaxRectsLimit) {
-            // Collapse to bounding box
-            int minX = gWidth, minY = gHeight, maxX = 0, maxY = 0;
-            for (int i = 0; i < rectCount; ++i) {
-                if (rects[i].w <= 0 || rects[i].h <= 0)
-                    continue;
-                if (rects[i].x < minX)
-                    minX = rects[i].x;
-                if (rects[i].y < minY)
-                    minY = rects[i].y;
-                if (rects[i].x + rects[i].w > maxX)
-                    maxX = rects[i].x + rects[i].w;
-                if (rects[i].y + rects[i].h > maxY)
-                    maxY = rects[i].y + rects[i].h;
-            }
-
-            rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
-            rectCount = 1;
-        }
-
-        fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
-
-        // Clear pending
-        if (gPendingDirty)
-            memset(gPendingDirty, 0, gTileCount);
-
-        gHasPending = NO;
-    } else {
+    if (!shouldFlush) {
         // Still deferring: do not notify clients yet
         swapTileHashes();
         return;
     }
+
+    // Promote pending tiles into rects
+    rectCount = buildRectsFromPending(rects, MIN(gMaxRectsLimit, kRectBuf));
+
+    // If anything from this frame is also new dirty not in pending, ensure included
+    int extraTiles = 0;
+    if (rectCount == 0) {
+        rectCount = buildDirtyRects(rects, MIN(gMaxRectsLimit, kRectBuf), &changedTiles);
+    } else {
+        // Merge current frame dirties by re-running with hashes, bounded
+        DirtyRect rectsNow[kRectBuf];
+        int nowCount = buildDirtyRects(rectsNow, MIN(gMaxRectsLimit, kRectBuf), &extraTiles);
+
+        // Simple append then vertical merge will compact later in pipeline
+        int space = kRectBuf - rectCount;
+        int take = nowCount < space ? nowCount : space;
+        if (take > 0)
+            memcpy(&rects[rectCount], rectsNow, (size_t)take * sizeof(DirtyRect));
+        rectCount += take;
+    }
+
+    int totalTiles = (int)gTileCount;
+    int totalChanged = changedTiles + extraTiles;
+    changedPct = (totalTiles > 0) ? (totalChanged * 100 / totalTiles) : 100;
+
+    if (rectCount >= gMaxRectsLimit) {
+        // Collapse to bounding box
+        int minX = gWidth, minY = gHeight, maxX = 0, maxY = 0;
+        for (int i = 0; i < rectCount; ++i) {
+            if (rects[i].w <= 0 || rects[i].h <= 0)
+                continue;
+            if (rects[i].x < minX)
+                minX = rects[i].x;
+            if (rects[i].y < minY)
+                minY = rects[i].y;
+            if (rects[i].x + rects[i].w > maxX)
+                maxX = rects[i].x + rects[i].w;
+            if (rects[i].y + rects[i].h > maxY)
+                maxY = rects[i].y + rects[i].h;
+        }
+
+        rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
+        rectCount = 1;
+    }
+
+    fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
+
+    // Clear pending
+    if (gPendingDirty)
+        memset(gPendingDirty, 0, gTileCount);
+
+    gHasPending = NO;
 
     if (gAsyncSwapEnabled) {
         // Try non-blocking swap with fallback to single-buffer copy.
