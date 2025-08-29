@@ -24,8 +24,9 @@ trollvncserver_FILES += src/ScreenCapturer.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
 trollvncserver_FILES += src/ClipboardManager.mm
 
-trollvncserver_CCFLAGS += -std=c++20
 trollvncserver_CFLAGS += -fobjc-arc
+trollvncserver_CFLAGS += -march=armv8-a+crc
+trollvncserver_CCFLAGS += -std=c++20
 
 trollvncserver_CFLAGS += -Iinclude-spi
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)

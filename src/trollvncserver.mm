@@ -26,6 +26,12 @@
 #define TVLog(...)
 #endif
 
+#if FB_DEBUG
+#define FBLog(fmt, ...) NSLog((@"%s:%d FB: " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
+#else
+#define FBLog(...)
+#endif
+
 #pragma mark - Options
 
 static int gPort = 5901;
@@ -544,6 +550,82 @@ static int gBytesPerPixel = 4; // ARGB/BGRA 32-bit
 static void *gFrontBuffer = NULL; // Exposed to VNC clients via gScreen->frameBuffer
 static void *gBackBuffer = NULL;  // We render into this and then swap
 
+// Hash algorithm selection (auto: prefer CRC32 on ARM with hardware support)
+#if FB_LOG
+#if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
+static const BOOL gUseCRC32Hash = YES;
+#else
+static const BOOL gUseCRC32Hash = NO;
+#endif
+#endif
+
+typedef struct {
+    int x, y, w, h;
+} DirtyRect;
+
+#if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
+NS_INLINE uint64_t crc32_update(uint64_t h, const uint8_t *data, size_t len) {
+    uint32_t c = (uint32_t)h;
+    const uint8_t *p = data;
+    size_t n = len;
+    // Process 8-byte chunks
+    while (n >= 8) {
+        uint64_t v;
+        // Unaligned load is acceptable on ARM64; use memcpy to be safe for strict aliasing.
+        memcpy(&v, p, sizeof(v));
+        c = __builtin_arm_crc32d(c, v);
+        p += 8;
+        n -= 8;
+    }
+    if (n >= 4) {
+        uint32_t v32;
+        memcpy(&v32, p, sizeof(v32));
+        c = __builtin_arm_crc32w(c, v32);
+        p += 4;
+        n -= 4;
+    }
+    if (n >= 2) {
+        uint16_t v16;
+        memcpy(&v16, p, sizeof(v16));
+        c = __builtin_arm_crc32h(c, v16);
+        p += 2;
+        n -= 2;
+    }
+    if (n) {
+        c = __builtin_arm_crc32b(c, *p);
+    }
+    return (uint64_t)c;
+}
+#else
+NS_INLINE uint64_t fnv1a_basis(void) { return 1469598103934665603ULL; }
+NS_INLINE uint64_t fnv1a_update(uint64_t h, const uint8_t *data, size_t len) {
+    const uint64_t FNV_PRIME = 1099511628211ULL;
+    for (size_t i = 0; i < len; ++i) {
+        h ^= (uint64_t)data[i];
+        h *= FNV_PRIME;
+    }
+    return h;
+}
+#endif
+
+// Generic hash wrappers: prefer hardware CRC32 when enabled and available, else fallback to FNV-1a.
+NS_INLINE uint64_t hash_basis(void) {
+#if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
+    return 0u; // CRC32 initial accumulator
+#else
+    return fnv1a_basis();
+#endif
+}
+
+NS_INLINE uint64_t hash_update(uint64_t h, const uint8_t *data, size_t len) {
+#if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
+    return crc32_update(h, data, len);
+#else
+    // If CRC32 not supported at compile time, fallback to FNV-1a
+    return fnv1a_update(h, data, len);
+#endif
+}
+
 #pragma mark - Display Tiling
 
 static int gTilesX = 0;
@@ -553,21 +635,6 @@ static uint64_t *gPrevHash = NULL;
 static uint64_t *gCurrHash = NULL;
 static uint8_t *gPendingDirty = NULL; // per-tile pending dirty mask
 static BOOL gHasPending = NO;
-
-typedef struct {
-    int x, y, w, h;
-} DirtyRect;
-
-NS_INLINE uint64_t fnv1a_basis(void) { return 1469598103934665603ULL; }
-
-NS_INLINE uint64_t fnv1a_update(uint64_t h, const uint8_t *data, size_t len) {
-    const uint64_t FNV_PRIME = 1099511628211ULL;
-    for (size_t i = 0; i < len; ++i) {
-        h ^= (uint64_t)data[i];
-        h *= FNV_PRIME;
-    }
-    return h;
-}
 
 static void initializeTilingOrReset(void) {
     int tilesX = (gWidth + gTileSize - 1) / gTileSize;
@@ -594,7 +661,7 @@ static void initializeTilingOrReset(void) {
 
         for (size_t i = 0; i < tileCount; ++i) {
             gPrevHash[i] = 0; // force full update first frame
-            gCurrHash[i] = fnv1a_basis();
+            gCurrHash[i] = hash_basis();
         }
 
         gTilesX = tilesX;
@@ -605,7 +672,7 @@ static void initializeTilingOrReset(void) {
             memset(gPendingDirty, 0, gTileCount);
     } else {
         for (size_t i = 0; i < gTileCount; ++i) {
-            gCurrHash[i] = fnv1a_basis();
+            gCurrHash[i] = hash_basis();
         }
     }
 }
@@ -619,7 +686,7 @@ NS_INLINE void swapTileHashes(void) {
 NS_INLINE void resetCurrTileHashes(void) {
     if (!gCurrHash || gTileCount == 0)
         return;
-    uint64_t basis = fnv1a_basis();
+    uint64_t basis = hash_basis();
     for (size_t i = 0; i < gTileCount; ++i) {
         gCurrHash[i] = basis;
     }
@@ -650,9 +717,109 @@ NS_INLINE void hashTiledFromBuffer(const uint8_t *buf, int width, int height, si
             size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
             size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
             size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
-            gCurrHash[tileIndex] = fnv1a_update(gCurrHash[tileIndex], buf + (size_t)y * bpr + offset, length);
+            gCurrHash[tileIndex] = hash_update(gCurrHash[tileIndex], buf + (size_t)y * bpr + offset, length);
         }
     }
+}
+
+// Sparse sampling hash: sample a subset of pixels per tile to reduce bandwidth.
+NS_INLINE void hashTiledFromBufferSparse(const uint8_t *buf, int width, int height, size_t bpr, int sx, int sy) {
+    if (sx < 1)
+        sx = 1;
+    if (sy < 1)
+        sy = 1;
+    resetCurrTileHashes();
+    for (int y = 0; y < height; y += sy) {
+        int ty = y / gTileSize;
+        for (int tx = 0; tx < gTilesX; ++tx) {
+            int startX = tx * gTileSize;
+            if (startX >= width)
+                break;
+            int endX = startX + gTileSize;
+            if (endX > width)
+                endX = width;
+            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+            for (int x = startX; x < endX; x += sx) {
+                const uint8_t *p = buf + (size_t)y * bpr + (size_t)x * (size_t)gBytesPerPixel;
+                gCurrHash[tileIndex] = hash_update(gCurrHash[tileIndex], p, (size_t)gBytesPerPixel);
+            }
+            // Ensure last column contributes even if not aligned to stride
+            int lastX = endX - 1;
+            if (lastX >= startX && ((endX - startX - 1) % sx) != 0) {
+                const uint8_t *p = buf + (size_t)y * bpr + (size_t)lastX * (size_t)gBytesPerPixel;
+                gCurrHash[tileIndex] = hash_update(gCurrHash[tileIndex], p, (size_t)gBytesPerPixel);
+            }
+        }
+    }
+    // Also sample the last row if height-1 isn't covered by the stride
+    int lastY = height - 1;
+    if (lastY >= 0 && ((height - 1) % sy) != 0) {
+        int ty = lastY / gTileSize;
+        for (int tx = 0; tx < gTilesX; ++tx) {
+            int startX = tx * gTileSize;
+            if (startX >= width)
+                break;
+            int endX = startX + gTileSize;
+            if (endX > width)
+                endX = width;
+            size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+            for (int x = startX; x < endX; x += sx) {
+                const uint8_t *p = buf + (size_t)lastY * bpr + (size_t)x * (size_t)gBytesPerPixel;
+                gCurrHash[tileIndex] = hash_update(gCurrHash[tileIndex], p, (size_t)gBytesPerPixel);
+            }
+            int lastX = endX - 1;
+            if (lastX >= startX && ((endX - startX - 1) % sx) != 0) {
+                const uint8_t *p = buf + (size_t)lastY * bpr + (size_t)lastX * (size_t)gBytesPerPixel;
+                gCurrHash[tileIndex] = hash_update(gCurrHash[tileIndex], p, (size_t)gBytesPerPixel);
+            }
+        }
+    }
+}
+
+// Parallel full hash over tiles: split by tile rows to reduce wall clock at flush.
+NS_INLINE void hashTiledFromBufferParallel(const uint8_t *buf, int width, int height, size_t bpr, int threads) {
+    if (threads <= 1) {
+        hashTiledFromBuffer(buf, width, height, bpr);
+        return;
+    }
+    resetCurrTileHashes();
+    // Split by tile row bands
+    int tilesY = gTilesY;
+    if (tilesY <= 0)
+        return;
+    int bands = threads;
+    if (bands > tilesY)
+        bands = tilesY;
+    dispatch_group_t grp = dispatch_group_create();
+    for (int band = 0; band < bands; ++band) {
+        dispatch_group_async(grp, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
+            for (int ty = band; ty < tilesY; ty += bands) {
+                int startY = ty * gTileSize;
+                int endY = startY + gTileSize;
+                if (startY >= height)
+                    break;
+                if (endY > height)
+                    endY = height;
+                for (int y = startY; y < endY; ++y) {
+                    for (int tx = 0; tx < gTilesX; ++tx) {
+                        int startX = tx * gTileSize;
+                        if (startX >= width)
+                            break;
+                        int endX = startX + gTileSize;
+                        if (endX > width)
+                            endX = width;
+                        size_t offset = (size_t)startX * (size_t)gBytesPerPixel;
+                        size_t length = (size_t)(endX - startX) * (size_t)gBytesPerPixel;
+                        size_t tileIndex = (size_t)ty * (size_t)gTilesX + (size_t)tx;
+                        // Each tileIndex is updated by a single band (fixed ty), no race across bands.
+                        gCurrHash[tileIndex] =
+                            hash_update(gCurrHash[tileIndex], buf + (size_t)y * bpr + offset, length);
+                    }
+                }
+            }
+        });
+    }
+    dispatch_group_wait(grp, DISPATCH_TIME_FOREVER);
 }
 
 // Build dirty rectangles from tile hash diffs. Returns number of rects written, up to maxRects.
@@ -789,67 +956,6 @@ NS_INLINE void copyRectsFromBackToFront(DirtyRect *rects, int rectCount) {
     }
 }
 
-#pragma mark - Client Handlers
-
-static int gClientCount = 0; // Number of connected clients
-static BOOL gIsCaptureStarted = NO;
-static BOOL gIsClipboardStarted = NO;
-
-static void clientGone(rfbClientPtr cl) {
-    // Decrement client count and stop capture if this was the last client.
-    if (gClientCount > 0)
-        gClientCount--;
-
-    TVLog(@"Client disconnected, active clients=%d", gClientCount);
-
-    if (gIsCaptureStarted && gClientCount == 0) {
-        [[ScreenCapturer sharedCapturer] endCapture];
-        gIsCaptureStarted = NO;
-        TVLog(@"No clients remaining; screen capture stopped.");
-    }
-
-    if (gIsClipboardStarted && gClientCount == 0) {
-        [[ClipboardManager sharedManager] stop];
-        gIsClipboardStarted = NO;
-        TVLog(@"No clients remaining; clipboard listening stopped.");
-    }
-
-    // KeepAlive: disable when no clients remain
-    if (gClientCount == 0) {
-        [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:0];
-        TVLog(@"No clients remaining; KeepAlive stopped.");
-    }
-}
-
-static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
-    cl->clientGoneHook = clientGone;
-    cl->viewOnly = gViewOnly ? TRUE : FALSE;
-
-    gClientCount++;
-    TVLog(@"Client connected, active clients=%d", gClientCount);
-
-    if (!gIsCaptureStarted && gClientCount > 0 && gFrameHandler) {
-        // Start capture when entering non-zero client population.
-        gIsCaptureStarted = YES;
-        [[ScreenCapturer sharedCapturer] startCaptureWithFrameHandler:gFrameHandler];
-        TVLog(@"Screen capture started (clients=%d).", gClientCount);
-    }
-
-    if (gClipboardEnabled && !gIsClipboardStarted && gClientCount > 0) {
-        gIsClipboardStarted = YES;
-        [[ClipboardManager sharedManager] start];
-        TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
-    }
-
-    // KeepAlive: enable when at least one client is connected and interval > 0
-    if (gClientCount > 0 && gKeepAliveSec > 0.0) {
-        [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:gKeepAliveSec];
-        TVLog(@"KeepAlive started with interval (%.3f sec)", gKeepAliveSec);
-    }
-
-    return RFB_CLIENT_ACCEPT;
-}
-
 #pragma mark - Display Hooks
 
 static std::atomic<int> gInflight(0);
@@ -865,6 +971,18 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
     (void)result;
     gInflight.fetch_sub(1, std::memory_order_relaxed);
 }
+
+#pragma mark - Display Tiling Constants
+
+// Hashing performance controls
+static const int gHashStrideX = 4;              // sparse sampling stride X (>=1; 1 = full scan)
+static const int gHashStrideY = 4;              // sparse sampling stride Y (>=1; 1 = full scan)
+static const BOOL gSparseHashDuringDefer = YES; // use sparse hashing while within defer window
+// Skip vImage scaling when src/dst size difference is small; copy with pad/crop instead
+static const int gNoScalePadThresholdPx = 8; // if both |dW| and |dH| <= this, do pad/crop copy
+
+// Flush-time hashing optimization
+static const BOOL gParallelHashOnFlush = YES; // use parallel hashing at flush to reduce wall time
 
 #pragma mark - Frame Handler
 
@@ -920,8 +1038,8 @@ NS_INLINE void maybeResizeFramebufferForRotation(int rotQ) {
             free(newFront);
         if (newBack)
             free(newBack);
-        TVLog(@"Resize: allocation failed for %dx%d", outW, outH);
-        return;
+        fprintf(stderr, "Failed to allocate required frame buffers\n");
+        exit(EXIT_FAILURE);
     }
 
     // Swap buffers into screen & notify clients
@@ -1013,6 +1131,45 @@ NS_INLINE void copyWithStrideTight(uint8_t *dstTight, const uint8_t *src, int wi
     }
 }
 
+// Copy with small pad/crop to avoid expensive scaling when sizes are close.
+// Strategy:
+// - Copy overlap region at (0,0) with width=min(srcW,dstW), height=min(srcH,dstH)
+// - If dst wider, horizontally replicate the last pixel in each row to fill the right pad.
+// - If dst taller, vertically replicate the last valid row to fill the bottom pad.
+NS_INLINE void copyPadOrCropToTight(uint8_t *dstTight, int dstW, int dstH, const uint8_t *src, int srcW, int srcH,
+                                    size_t srcBytesPerRow) {
+    const int bpp = gBytesPerPixel;
+    const size_t dstBPR = (size_t)dstW * (size_t)bpp;
+    const int overlapW = srcW < dstW ? srcW : dstW;
+    const int overlapH = srcH < dstH ? srcH : dstH;
+
+    // 1) Copy overlap region row-by-row
+    if (overlapW > 0 && overlapH > 0) {
+        const size_t copyBytes = (size_t)overlapW * (size_t)bpp;
+        for (int y = 0; y < overlapH; ++y) {
+            uint8_t *drow = dstTight + (size_t)y * dstBPR;
+            const uint8_t *srow = src + (size_t)y * srcBytesPerRow;
+            memcpy(drow, srow, copyBytes);
+            // 2) Right pad by replicating last pixel if needed
+            if (dstW > overlapW) {
+                const uint8_t *lastPx = (overlapW > 0) ? (drow + ((size_t)overlapW - 1) * (size_t)bpp) : drow;
+                for (int x = overlapW; x < dstW; ++x) {
+                    memcpy(drow + (size_t)x * (size_t)bpp, lastPx, (size_t)bpp);
+                }
+            }
+        }
+    }
+
+    // 3) Bottom pad by replicating last valid row if needed
+    if (dstH > overlapH) {
+        uint8_t *lastRow = (overlapH > 0) ? (dstTight + (size_t)(overlapH - 1) * dstBPR) : dstTight;
+        for (int y = overlapH; y < dstH; ++y) {
+            uint8_t *drow = dstTight + (size_t)y * dstBPR;
+            memcpy(drow, lastRow, dstBPR);
+        }
+    }
+}
+
 NS_INLINE void swapBuffers(void) {
     void *tmp = gFrontBuffer;
     gFrontBuffer = gBackBuffer;
@@ -1077,17 +1234,38 @@ NS_INLINE void unlockAllClientsBlocking(void) {
 }
 
 static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
+
+#if FB_LOG
+    // Perf: overall start timestamp
+    CFAbsoluteTime __tv_tStart = CFAbsoluteTimeGetCurrent();
+#endif
+
     CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
-    if (!pb)
+    if (!pb) {
+        FBLog(@"sampleBuffer has no image buffer (skip)");
         return;
+    }
 
     // Busy-drop: if encoders are busy and limit reached, skip this frame (disabled when -Q 0)
     if (gMaxInflightUpdates > 0 && gInflight.load(std::memory_order_relaxed) >= gMaxInflightUpdates) {
         // When busy dropping, skip all hashing/dirty work.
+        FBLog(@"drop frame due to inflight=%d >= limit=%d", gInflight.load(std::memory_order_relaxed),
+              gMaxInflightUpdates);
         return;
     }
 
+#if FB_LOG
+    CFAbsoluteTime __tv_tLock0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tLock1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msLock = (__tv_tLock1 - __tv_tLock0) * 1000.0;
+    FBLog(@"lock pixel buffer took %.3f ms", __tv_msLock);
+#endif
+
     uint8_t *base = (uint8_t *)CVPixelBufferGetBaseAddress(pb);
     const size_t srcBPR = (size_t)CVPixelBufferGetBytesPerRow(pb);
     const size_t width = (size_t)CVPixelBufferGetWidth(pb);
@@ -1095,19 +1273,31 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     // Determine rotation and resize framebuffer if orientation implies new dimensions.
     int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tResize0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     maybeResizeFramebufferForRotation(rotQ);
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tResize1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msResize = (__tv_tResize1 - __tv_tResize0) * 1000.0;
+    FBLog(@"maybeResize(rotQ=%d) took %.3f ms (server=%dx%d, src=%zux%zu)", rotQ, __tv_msResize, gWidth, gHeight, width,
+          height);
+#endif
 
     if ((int)width != gWidth || (int)height != gHeight) {
         // With scaling enabled, this is expected; log once for info. Without scaling, warn once.
         static BOOL sLoggedSizeInfoOnce = NO;
         if (!sLoggedSizeInfoOnce) {
+            sLoggedSizeInfoOnce = YES;
             if (gScale != 1.0) {
                 TVLog(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight, gScale);
             } else {
                 TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.", width,
                       height, gWidth, gHeight);
             }
-            sLoggedSizeInfoOnce = YES;
         }
     }
 
@@ -1125,7 +1315,17 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     vImage_Buffer stage = srcBuf; // after rotation
     vImage_Buffer rotBuf = {0};
 
+#if FB_LOG
+    CFTimeInterval __tv_msRotate = 0.0;
+    CFTimeInterval __tv_msScaleOrCopy = 0.0;
+#endif
+
     if (needsRotate) {
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tRot0 = CFAbsoluteTimeGetCurrent();
+#endif
+
         size_t rotW = (rotQ % 2 == 0) ? (size_t)width : (size_t)height;
         size_t rotH = (rotQ % 2 == 0) ? (size_t)height : (size_t)width;
         if (ensureRotateScratch(rotW, rotH) != 0) {
@@ -1159,14 +1359,22 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         if (rerr != kvImageNoError) {
             static BOOL sLoggedRotErrOnce = NO;
             if (!sLoggedRotErrOnce) {
-                TVLog(@"vImageRotate90_ARGB8888 failed: %ld", (long)rerr);
                 sLoggedRotErrOnce = YES;
+                TVLog(@"vImageRotate90_ARGB8888 failed: %ld", (long)rerr);
             }
+
             CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
             return;
         }
 
         stage = rotBuf;
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tRot1 = CFAbsoluteTimeGetCurrent();
+        __tv_msRotate = (__tv_tRot1 - __tv_tRot0) * 1000.0;
+        FBLog(@"rotate %d*90 took %.3f ms (rotW=%zu, rotH=%zu)", rotQ, __tv_msRotate, (size_t)rotBuf.width,
+              (size_t)rotBuf.height);
+#endif
     }
 
     // Scale stage to back buffer (tightly packed)
@@ -1175,27 +1383,84 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                             .width = (vImagePixelCount)gWidth,
                             .rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel};
     if (stage.width == dstBuf.width && stage.height == dstBuf.height && gScale == 1.0) {
-        copyWithStrideTight((uint8_t *)dstBuf.data, (const uint8_t *)stage.data, gWidth, gHeight, stage.rowBytes);
-    } else {
-        if (ensureScaleTemp(stage.width, stage.height, dstBuf.width, dstBuf.height, kvImageHighQualityResampling) !=
-            0) {
-            CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-            return;
-        }
 
-        vImage_Error err = vImageScale_ARGB8888(&stage, &dstBuf, gScaleTemp, kvImageHighQualityResampling);
-        if (err != kvImageNoError) {
-            static BOOL sLoggedVImageErrOnce = NO;
-            if (!sLoggedVImageErrOnce) {
-                TVLog(@"vImageScale_ARGB8888 failed: %ld", (long)err);
-                sLoggedVImageErrOnce = YES;
+#if FB_LOG
+        CFAbsoluteTime __tv_tCopy0 = CFAbsoluteTimeGetCurrent();
+#endif
+
+        copyWithStrideTight((uint8_t *)dstBuf.data, (const uint8_t *)stage.data, gWidth, gHeight, stage.rowBytes);
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tCopy1 = CFAbsoluteTimeGetCurrent();
+        __tv_msScaleOrCopy = (__tv_tCopy1 - __tv_tCopy0) * 1000.0;
+        FBLog(@"copy stage->back (tight) took %.3f ms", __tv_msScaleOrCopy);
+#endif
+
+    } else {
+
+        // Small-diff pad/crop fast path to avoid vImageScale when sizes are close
+        int dW = (int)dstBuf.width - (int)stage.width;
+        int dH = (int)dstBuf.height - (int)stage.height;
+        if (gNoScalePadThresholdPx > 0 && dW <= gNoScalePadThresholdPx && dW >= -gNoScalePadThresholdPx &&
+            dH <= gNoScalePadThresholdPx && dH >= -gNoScalePadThresholdPx) {
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tPad0 = CFAbsoluteTimeGetCurrent();
+#endif
+
+            copyPadOrCropToTight((uint8_t *)dstBuf.data, (int)dstBuf.width, (int)dstBuf.height,
+                                 (const uint8_t *)stage.data, (int)stage.width, (int)stage.height, stage.rowBytes);
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tPad1 = CFAbsoluteTimeGetCurrent();
+            __tv_msScaleOrCopy = (__tv_tPad1 - __tv_tPad0) * 1000.0;
+            FBLog(@"pad/crop copy stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d, thr=%d)", __tv_msScaleOrCopy,
+                  (size_t)stage.width, (size_t)stage.height, gWidth, gHeight, gNoScalePadThresholdPx);
+#endif
+
+        } else {
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tScale0 = CFAbsoluteTimeGetCurrent();
+#endif
+
+            if (ensureScaleTemp(stage.width, stage.height, dstBuf.width, dstBuf.height, kvImageHighQualityResampling) !=
+                0) {
+                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                return;
             }
-            CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-            return;
+
+            vImage_Error err = vImageScale_ARGB8888(&stage, &dstBuf, gScaleTemp, kvImageHighQualityResampling);
+            if (err != kvImageNoError) {
+                static BOOL sLoggedVImageErrOnce = NO;
+                if (!sLoggedVImageErrOnce) {
+                    sLoggedVImageErrOnce = YES;
+                    TVLog(@"vImageScale_ARGB8888 failed: %ld", (long)err);
+                }
+                CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+                return;
+            }
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tScale1 = CFAbsoluteTimeGetCurrent();
+            __tv_msScaleOrCopy = (__tv_tScale1 - __tv_tScale0) * 1000.0;
+            FBLog(@"scale stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d)", __tv_msScaleOrCopy,
+                  (size_t)stage.width, (size_t)stage.height, gWidth, gHeight);
+#endif
         }
     }
 
+#if FB_LOG
+    CFAbsoluteTime __tv_tUnlock0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tUnlock1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msUnlock = (__tv_tUnlock1 - __tv_tUnlock0) * 1000.0;
+    FBLog(@"unlock pixel buffer took %.3f ms", __tv_msUnlock);
+#endif
 
     // If rotation just changed, force a full-screen update and reset dirty state
     // to avoid mixing hashes/pending dirties from the previous orientation.
@@ -1205,6 +1470,10 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             memset(gPendingDirty, 0, gTileCount);
         gHasPending = NO;
 
+#if FB_LOG
+        CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
+#endif
+
         if (gAsyncSwapEnabled) {
             pthread_mutex_t *locked[64];
             size_t lockedCount = 0;
@@ -1213,16 +1482,32 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                 for (size_t i = 0; i < lockedCount; ++i)
                     pthread_mutex_unlock(locked[i]);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"rotationChanged async-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
+
             } else {
                 copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"rotationChanged copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
             }
         } else {
             lockAllClientsBlocking();
             swapBuffers();
             rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
             unlockAllClientsBlocking();
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+            FBLog(@"rotationChanged blocking-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
         }
 
         // Skip dirty detection for this frame after rotation; return early
@@ -1233,11 +1518,23 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         resetCurrTileHashes();
         swapTileHashes();
 
+#if FB_LOG
+        CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
+        FBLog(@"rotationChanged summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
+              @"total=%.3fms",
+              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, (__tv_tEnd - __tv_tStart) * 1000.0);
+#endif
+
         return;
     }
 
     // If dirty detection is disabled, perform a full-screen update
     if (dirtyDisabled) {
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
+#endif
+
         if (gAsyncSwapEnabled) {
             pthread_mutex_t *locked[64];
             size_t lockedCount = 0;
@@ -1246,11 +1543,22 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                 for (size_t i = 0; i < lockedCount; ++i)
                     pthread_mutex_unlock(locked[i]);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"dirtyDisabled async-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
+
             } else {
                 // Whole screen copy fallback (tight -> tight)
                 copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"dirtyDisabled copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
             }
         } else {
             // Blocking swap to avoid tearing
@@ -1258,20 +1566,62 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             swapBuffers();
             rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
             unlockAllClientsBlocking();
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+            FBLog(@"dirtyDisabled blocking-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
         }
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
+        FBLog(@"dirtyDisabled summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms total=%.3fms",
+              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, (__tv_tEnd - __tv_tStart) * 1000.0);
+#endif
+
         return;
     }
 
     // Build dirty rectangles with deferred coalescing window (enabled)
-    // Prepare tile hashes for this frame from the back buffer
-    resetCurrTileHashes();
-    hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
+    // Lightweight hashing to update pending and decide whether to flush.
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tHash0 = CFAbsoluteTimeGetCurrent();
+#endif
+
+    if (gSparseHashDuringDefer && gDeferWindowSec > 0) {
+        hashTiledFromBufferSparse((const uint8_t *)gBackBuffer, gWidth, gHeight,
+                                  (size_t)gWidth * (size_t)gBytesPerPixel, gHashStrideX, gHashStrideY);
+    } else {
+        resetCurrTileHashes();
+        hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
+    }
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tHash1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msHash = (__tv_tHash1 - __tv_tHash0) * 1000.0;
+    FBLog(@"tile hashing took %.3f ms (tiles=%zu, tileSize=%d)%@%@", __tv_msHash, gTileCount, gTileSize,
+          (gSparseHashDuringDefer && gDeferWindowSec > 0) ? @" [sparse]" : @"",
+          gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+#endif
+
     enum { kRectBuf = 1024 };
     DirtyRect rects[kRectBuf];
     int changedTiles = 0;
 
     // Accumulate pending dirty tiles
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tPend0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     accumulatePendingDirty();
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tPend1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msPend = (__tv_tPend1 - __tv_tPend0) * 1000.0;
+    FBLog(@"accumulate pending took %.3f ms (hasPending=%@)", __tv_msPend, gHasPending ? @"YES" : @"NO");
+#endif
 
     // Decide whether to flush now
     BOOL shouldFlush = YES;
@@ -1284,6 +1634,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         } else {
             CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
             shouldFlush = ((now - sDeferStartTime) >= gDeferWindowSec);
+            FBLog(@"defer window elapsed=%.3f ms (threshold=%.3f ms) -> %@", (now - sDeferStartTime) * 1000.0,
+                  gDeferWindowSec * 1000.0, shouldFlush ? @"FLUSH" : @"WAIT");
         }
     }
 
@@ -1292,12 +1644,54 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     BOOL fullScreen = NO;
 
     if (!shouldFlush) {
-        // Still deferring: do not notify clients yet
-        swapTileHashes();
+        // Still deferring: do not notify clients yet; keep previous full-hash baseline.
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
+        FBLog(@"deferred (no flush) summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
+              @"hash=%.3fms total=%.3fms",
+              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash,
+              (__tv_tEnd - __tv_tStart) * 1000.0);
+#endif
+
         return;
     }
 
-    // Promote pending tiles into rects
+    // At flush: recompute full hashes for precise rects
+    {
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tHashFull0 = CFAbsoluteTimeGetCurrent();
+#endif
+
+        if (gParallelHashOnFlush) {
+            // Use number of logical CPUs as thread hint (capped)
+            int threads = (int)[[NSProcessInfo processInfo] processorCount];
+            if (threads < 2)
+                threads = 2;
+            if (threads > 8)
+                threads = 8;
+            hashTiledFromBufferParallel((const uint8_t *)gBackBuffer, gWidth, gHeight,
+                                        (size_t)gWidth * (size_t)gBytesPerPixel, threads);
+        } else {
+            resetCurrTileHashes();
+            hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
+        }
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tHashFull1 = CFAbsoluteTimeGetCurrent();
+        __tv_msHash = (__tv_tHashFull1 - __tv_tHashFull0) * 1000.0;
+        FBLog(@"tile hashing (flush full)%@ took %.3f ms (tiles=%zu, tileSize=%d)%@",
+              gParallelHashOnFlush ? @" [parallel]" : @"", __tv_msHash, gTileCount, gTileSize,
+              gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+#endif
+    }
+
+// Promote pending tiles into rects
+#if FB_LOG
+    CFAbsoluteTime __tv_tRects0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     rectCount = buildRectsFromPending(rects, MIN(gMaxRectsLimit, kRectBuf));
 
     // If anything from this frame is also new dirty not in pending, ensure included
@@ -1339,9 +1733,20 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
         rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
         rectCount = 1;
+
+        FBLog(@"rects exceeded limit -> collapse to bbox");
     }
 
     fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tRects1 = CFAbsoluteTimeGetCurrent();
+    CFTimeInterval __tv_msRects = (__tv_tRects1 - __tv_tRects0) * 1000.0;
+    FBLog(@"build rects took %.3f ms (rects=%d, changedTiles=%d, extraTiles=%d, changedPct=%d%%, fsThresh=%d%%, "
+          @"fullscreen=%@)",
+          __tv_msRects, rectCount, changedTiles, extraTiles, changedPct, gFullscreenThresholdPercent,
+          fullScreen ? @"YES" : @"NO");
+#endif
 
     // Clear pending
     if (gPendingDirty)
@@ -1349,10 +1754,15 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     gHasPending = NO;
 
+#if FB_LOG
+    CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
+#endif
+
     if (gAsyncSwapEnabled) {
         // Try non-blocking swap with fallback to single-buffer copy.
         pthread_mutex_t *locked[64];
         size_t lockedCount = 0;
+
         if (tryLockAllClients(locked, &lockedCount, sizeof(locked) / sizeof(locked[0]))) {
             swapBuffers();
             for (size_t i = 0; i < lockedCount; ++i)
@@ -1362,16 +1772,35 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             } else {
                 markRectsModified(rects, rectCount);
             }
+
+#if FB_LOG
+            CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+            FBLog(@"async-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
+                  fullScreen ? @"fullscreen" : @"partial");
+#endif
+
         } else {
             if (fullScreen) {
                 // Whole screen copy fallback (tight -> tight)
                 copyWithStrideTight((uint8_t *)gFrontBuffer, (uint8_t *)gBackBuffer, gWidth, gHeight,
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"async path copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
+
             } else {
                 // Only copy dirty regions from back to front to reduce tearing and bandwidth
                 copyRectsFromBackToFront(rects, rectCount);
                 markRectsModified(rects, rectCount);
+
+#if FB_LOG
+                CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+                FBLog(@"async path copy(dirty %d rects)+mark took %.3f ms", rectCount,
+                      (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+#endif
             }
         }
     } else {
@@ -1384,11 +1813,26 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             markRectsModified(rects, rectCount);
         }
         unlockAllClientsBlocking();
+
+#if FB_LOG
+        CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
+        FBLog(@"blocking-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
+              fullScreen ? @"fullscreen" : @"partial");
+#endif
     }
 
     // Prepare for next frame: current hashes become previous
     swapTileHashes();
     sLastRotQ = rotQ;
+
+#if FB_LOG
+    CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
+    FBLog(@"frame summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms hash=%.3fms "
+          @"rects=%.3fms total=%.3fms (rectCount=%d, changedPct=%d%%, fullscreen=%@, inflight=%d/%d)",
+          rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash, __tv_msRects,
+          (__tv_tEnd - __tv_tStart) * 1000.0, rectCount, changedPct, fullScreen ? @"YES" : @"NO",
+          gInflight.load(std::memory_order_relaxed), gMaxInflightUpdates);
+#endif
 }
 
 #pragma mark - Event Handlers
@@ -1758,6 +2202,67 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     }
 
     gLastButtonMask = buttonMask;
+}
+
+#pragma mark - Client Handlers
+
+static int gClientCount = 0; // Number of connected clients
+static BOOL gIsCaptureStarted = NO;
+static BOOL gIsClipboardStarted = NO;
+
+static void clientGone(rfbClientPtr cl) {
+    // Decrement client count and stop capture if this was the last client.
+    if (gClientCount > 0)
+        gClientCount--;
+
+    TVLog(@"Client disconnected, active clients=%d", gClientCount);
+
+    if (gIsCaptureStarted && gClientCount == 0) {
+        [[ScreenCapturer sharedCapturer] endCapture];
+        gIsCaptureStarted = NO;
+        TVLog(@"No clients remaining; screen capture stopped.");
+    }
+
+    if (gIsClipboardStarted && gClientCount == 0) {
+        [[ClipboardManager sharedManager] stop];
+        gIsClipboardStarted = NO;
+        TVLog(@"No clients remaining; clipboard listening stopped.");
+    }
+
+    // KeepAlive: disable when no clients remain
+    if (gClientCount == 0) {
+        [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:0];
+        TVLog(@"No clients remaining; KeepAlive stopped.");
+    }
+}
+
+static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
+    cl->clientGoneHook = clientGone;
+    cl->viewOnly = gViewOnly ? TRUE : FALSE;
+
+    gClientCount++;
+    TVLog(@"Client connected, active clients=%d", gClientCount);
+
+    if (!gIsCaptureStarted && gClientCount > 0 && gFrameHandler) {
+        // Start capture when entering non-zero client population.
+        gIsCaptureStarted = YES;
+        [[ScreenCapturer sharedCapturer] startCaptureWithFrameHandler:gFrameHandler];
+        TVLog(@"Screen capture started (clients=%d).", gClientCount);
+    }
+
+    if (gClipboardEnabled && !gIsClipboardStarted && gClientCount > 0) {
+        gIsClipboardStarted = YES;
+        [[ClipboardManager sharedManager] start];
+        TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
+    }
+
+    // KeepAlive: enable when at least one client is connected and interval > 0
+    if (gClientCount > 0 && gKeepAliveSec > 0.0) {
+        [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:gKeepAliveSec];
+        TVLog(@"KeepAlive started with interval (%.3f sec)", gKeepAliveSec);
+    }
+
+    return RFB_CLIENT_ACCEPT;
 }
 
 #pragma mark - Clipboard Extension
