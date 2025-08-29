@@ -27,7 +27,7 @@ Display/Performance:
 - `-s scale`  Output scale factor (`0 < s <= 1`, default: `1.0`; `1` means no scaling)
 - `-F spec`   Frame rate: single `fps`, range `min-max`, or full `min:pref:max`; on iOS 15+ a range is applied, on iOS 14 the max (or preferred) is used
 - `-d sec`    Defer update window in seconds to coalesce changes (`0..0.5`, default: `0.015`)
-- `-Q n`      Max in-flight updates before dropping new frames (`0..8`, default: `1`; `0` disables dropping)
+- `-Q n`      Max in-flight updates before dropping new frames (`0..8`, default: `2`; `0` disables dropping)
 
 Dirty detection:
 

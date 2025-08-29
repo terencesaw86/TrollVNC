@@ -46,7 +46,7 @@ static int gFpsMin = 0;
 static int gFpsPref = 0;
 static int gFpsMax = 0;
 static double gDeferWindowSec = 0.015;      // Coalescing window; 0 disables deferral
-static int gMaxInflightUpdates = 1;         // Max concurrent client encodes; drop frames if >= this
+static int gMaxInflightUpdates = 2;         // Max concurrent client encodes; drop frames if >= this
 static int gTileSize = 32;                  // Tile size for dirty detection (pixels)
 static int gFullscreenThresholdPercent = 0; // If changed tiles exceed this %, update full screen
 static int gMaxRectsLimit = 256;            // Max rects before falling back to bbox/fullscreen
@@ -2370,7 +2370,7 @@ static void sendClipboardToClients(NSString *_Nullable text) {
     rfbSendServerCutTextUTF8(gScreen, (char *)utf8, utf8Len, (char *)latin1, latin1Len);
 }
 
-#pragma mark - Server-side Cursor
+#pragma mark - Server-Side Cursor
 
 NS_INLINE void setupXCursor(rfbScreenInfoPtr screen) {
     int width = 13, height = 11;
