@@ -1,0 +1,8 @@
+"Apply" = "应用";
+"Apply Changes" = "应用更改";
+"Are you sure you want to restart the VNC service?" = "确定要重启 VNC 服务吗？";
+"Cancel" = "取消";
+"Restart" = "重启";
+"Invalid Port" = "端口无效";
+"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP 端口必须在 1024..65535（HTTP 也可为 0 表示禁用）。服务器将回退到默认端口。";
+"OK" = "好的";

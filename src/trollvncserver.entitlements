@@ -40,6 +40,10 @@
 	<true/>
 	<key>com.apple.private.hid.manager.client</key>
 	<true/>
+	<key>com.apple.private.kernel.jetsam</key>
+	<true/>
+	<key>com.apple.private.memorystatus</key>
+	<true/>
 	<key>com.apple.private.security.container-manager</key>
 	<true/>
 	<key>com.apple.private.security.disk-device-access</key>

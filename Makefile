@@ -20,12 +20,15 @@ TOOL_NAME := trollvncserver
 trollvncserver_USE_MODULES := 0
 
 trollvncserver_FILES += src/trollvncserver.mm
+trollvncserver_FILES += src/ClipboardManager.mm
 trollvncserver_FILES += src/ScreenCapturer.mm
 trollvncserver_FILES += src/STHIDEventGenerator.mm
-trollvncserver_FILES += src/ClipboardManager.mm
+trollvncserver_FILES += src/OhMyJetsam.mm
 
 trollvncserver_CFLAGS += -fobjc-arc
+ifeq ($(THEOS_DEVICE_SIMULATOR),)
 trollvncserver_CFLAGS += -march=armv8-a+crc
+endif
 # trollvncserver_CFLAGS += -DFB_LOG=1
 trollvncserver_CCFLAGS += -std=c++20
 
@@ -75,3 +78,7 @@ trollvncserver_CODESIGN_FLAGS += -Ssrc/trollvncserver.entitlements
 endif
 
 include $(THEOS_MAKE_PATH)/tool.mk
+
+SUBPROJECTS += prefs/TrollVNCPrefs
+
+include $(THEOS_MAKE_PATH)/aggregate.mk

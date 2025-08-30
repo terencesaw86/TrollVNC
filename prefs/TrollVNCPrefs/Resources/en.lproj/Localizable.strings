@@ -1,0 +1,8 @@
+"Apply" = "Apply";
+"Apply Changes" = "Apply Changes";
+"Are you sure you want to restart the VNC service?" = "Are you sure you want to restart the VNC service?";
+"Cancel" = "Cancel";
+"Restart" = "Restart";
+"Invalid Port" = "Invalid Port";
+"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.";
+"OK" = "OK";
