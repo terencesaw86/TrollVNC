@@ -81,3 +81,4 @@
 "PEM-encoded X.509 certificate path for TLS. Used by HTTP/WebSocket if both cert and key are set." = "PEM-encoded X.509 certificate path for TLS. Used by HTTP/WebSocket if both cert and key are set.";
 "PEM-encoded private key path matching the certificate." = "PEM-encoded private key path matching the certificate.";
 "Standard: Alt as Option, Super as Command." = "Standard: Alt as Option, Super as Command.";
+"Enabled" = "Enabled";

@@ -50,6 +50,7 @@
 
 #pragma mark - Options
 
+static BOOL gEnabled = YES;
 static int gPort = 5901;
 static NSString *gDesktopName = @"TrollVNC";
 static BOOL gViewOnly = NO;
@@ -341,6 +342,7 @@ static void parseCLI(int argc, const char *argv[]) {
             }
 
             // Booleans
+            NSNumber *enableN = [prefs objectForKey:@"Enabled"]; if ([enableN isKindOfClass:[NSNumber class]]) gEnabled = enableN.boolValue;
             NSNumber *clipN = [prefs objectForKey:@"ClipboardEnabled"]; if ([clipN isKindOfClass:[NSNumber class]]) gClipboardEnabled = clipN.boolValue;
             NSNumber *viewOnlyN = [prefs objectForKey:@"ViewOnly"]; if ([viewOnlyN isKindOfClass:[NSNumber class]]) gViewOnly = viewOnlyN.boolValue;
             NSNumber *orientN = [prefs objectForKey:@"OrientationSync"]; if ([orientN isKindOfClass:[NSNumber class]]) gOrientationSyncEnabled = orientN.boolValue;
@@ -3001,6 +3003,12 @@ static void cleanupAndExit(int code) {
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         parseCLI(argc, argv);
+
+        /* Do nothing but keep the runloop alive */
+        if (!gEnabled) {
+            CFRunLoopRun();
+            return EXIT_SUCCESS;
+        }
 
         setupGeometry();
         setupOrientationObserver();
