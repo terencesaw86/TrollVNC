@@ -290,6 +290,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     void (^startBlock)(void) = ^{
         mDisplayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onDisplayLink:)];
 
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
         if (@available(iOS 15.0, *)) {
             CAFrameRateRange range;
             range.minimum = (mMinFps > 0) ? mMinFps : 0.0;
@@ -297,11 +298,14 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
             range.preferred = (mPreferredFps > 0) ? mPreferredFps : 0.0;
             mDisplayLink.preferredFrameRateRange = range;
         } else {
+#endif
             // iOS 14 fallback: use preferredFramesPerSecond; choose max in the provided range
             NSInteger setFps = (mMaxFps > 0) ? mMaxFps : mPreferredFps;
             if ([mDisplayLink respondsToSelector:@selector(preferredFramesPerSecond)])
                 mDisplayLink.preferredFramesPerSecond = (int)setFps; // 0 uses native/system default
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
         }
+#endif
 
         [mDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     };
@@ -347,6 +351,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     // If display link is already running, update it on main thread
     if (mDisplayLink) {
         void (^applyBlock)(void) = ^{
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
             if (@available(iOS 15.0, *)) {
                 CAFrameRateRange range;
                 range.minimum = (mMinFps > 0) ? mMinFps : 0.0;
@@ -354,10 +359,13 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
                 range.preferred = (mPreferredFps > 0) ? mPreferredFps : 0.0;
                 mDisplayLink.preferredFrameRateRange = range;
             } else {
+#endif
                 // iOS 14 path: only preferredFramesPerSecond is available, use max/preferred
                 NSInteger setFps = (mMaxFps > 0) ? mMaxFps : mPreferredFps;
                 mDisplayLink.preferredFramesPerSecond = (int)setFps; // 0 means system default
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 150000
             }
+#endif
         };
 
         if ([NSThread isMainThread])
