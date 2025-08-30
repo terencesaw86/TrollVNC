@@ -26,6 +26,7 @@ trollvncserver_FILES += src/ClipboardManager.mm
 
 trollvncserver_CFLAGS += -fobjc-arc
 trollvncserver_CFLAGS += -march=armv8-a+crc
+# trollvncserver_CFLAGS += -DFB_LOG=1
 trollvncserver_CCFLAGS += -std=c++20
 
 trollvncserver_CFLAGS += -Iinclude-spi
