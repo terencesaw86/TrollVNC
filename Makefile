@@ -82,3 +82,8 @@ include $(THEOS_MAKE_PATH)/tool.mk
 SUBPROJECTS += prefs/TrollVNCPrefs
 
 include $(THEOS_MAKE_PATH)/aggregate.mk
+
+export THEOS_PACKAGE_SCHEME
+export THEOS_STAGING_DIR
+before-package::
+	@devkit/before-package.sh
