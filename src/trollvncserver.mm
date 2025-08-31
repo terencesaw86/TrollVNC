@@ -3090,6 +3090,11 @@ static void prepareScreenCapturer(void) {
 
 #pragma mark - Main Procedure
 
+static void dropPrivileges(void) {
+    setuid(501);
+    setgid(501);
+}
+
 static void cleanupAndExit(int code) {
     if (gScreen) {
         rfbShutdownServer(gScreen, YES);
@@ -3104,6 +3109,29 @@ static void cleanupAndExit(int code) {
 #ifdef THEBOOTSTRAP
 #define SINGLETON_PARENT_NAME "trollvncmanager"
 #define SINGLETON_MARKER_PATH "/var/mobile/Library/Caches/com.82flex.trollvnc.server.pid"
+
+static void monitorParentProcess(void) {
+    static pid_t ppid = getppid();
+    if (ppid != 1) {
+        static dispatch_source_t source =
+            dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, ppid, DISPATCH_PROC_EXIT | DISPATCH_PROC_SIGNAL,
+                                   dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+
+        dispatch_source_set_event_handler(source, ^{
+            if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
+                dispatch_source_cancel(source);
+                fprintf(stderr, "Parent process %d exited\n", ppid);
+                exit(EXIT_SUCCESS);
+            } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
+                dispatch_source_cancel(source);
+                fprintf(stderr, "Parent process %d is gone\n", ppid);
+                exit(EXIT_SUCCESS);
+            }
+        });
+
+        dispatch_resume(source);
+    }
+}
 
 static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
     int myHandle = open(executable, O_EVTONLY);
@@ -3126,98 +3154,79 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
 
     dispatch_resume(monitorSource);
 }
+
+static void ensureSingleton(const char *argv[]) {
+    if (!argv || !argv[0] || argv[0][0] != '/' || isatty(STDIN_FILENO)) {
+        return;
+    }
+
+    monitorSelfAndRestartIfVnodeDeleted(argv[0]);
+
+    NSString *markerPath = @SINGLETON_MARKER_PATH;
+    const char *cMarkerPath = [markerPath fileSystemRepresentation];
+
+    // Open file for read/write, create if doesn't exist
+    int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
+    if (lockFD == -1) {
+        fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    // Try to acquire an exclusive lock
+    struct flock fl;
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0; // Lock entire file
+
+    if (fcntl(lockFD, F_SETLK, &fl) == -1) {
+        // Lock already held by another process
+        fprintf(stderr, "Another instance is already running\n");
+        close(lockFD);
+        exit(EXIT_FAILURE);
+    }
+
+    // Truncate the file to clear any previous content
+    if (ftruncate(lockFD, 0) == -1) {
+        fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
+        // Continue anyway
+    }
+
+    // Write PID to file
+    pid_t pid = getpid();
+    char pidStr[16];
+    int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
+    if (write(lockFD, pidStr, len) != len) {
+        fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
+        // Continue anyway
+    }
+
+    // Keep the file descriptor open to maintain the lock
+    // It will be automatically closed when the process exits
+}
 #endif
 
 int main(int argc, const char *argv[]) {
 
     /* Drop privileges: this program should run as mobile */
-    setuid(501);
-    setgid(501);
+    dropPrivileges();
 
     @autoreleasepool {
         parseCLI(argc, argv);
+
+#ifdef THEBOOTSTRAP
+        monitorParentProcess();
+        ensureSingleton(argv);
+#endif
+    }
+
+    /* Do nothing but keep the runloop alive */
+    if (!gEnabled) {
+        CFRunLoopRun();
+        return EXIT_SUCCESS;
     }
 
     @autoreleasepool {
-#ifdef THEBOOTSTRAP
-        /* Monitor parent process */
-        static pid_t ppid = getppid();
-        if (ppid != 1) {
-            static dispatch_source_t source =
-                dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, ppid, DISPATCH_PROC_EXIT | DISPATCH_PROC_SIGNAL,
-                                       dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
-
-            dispatch_source_set_event_handler(source, ^{
-                if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
-                    dispatch_source_cancel(source);
-                    fprintf(stderr, "Parent process %d exited\n", ppid);
-                    exit(EXIT_SUCCESS);
-                } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
-                    dispatch_source_cancel(source);
-                    fprintf(stderr, "Parent process %d is gone\n", ppid);
-                    exit(EXIT_SUCCESS);
-                }
-            });
-
-            dispatch_resume(source);
-        }
-#endif
-
-#ifdef THEBOOTSTRAP
-        /* Singleton */
-        if (argv && argv[0] && argv[0][0] == '/') {
-            monitorSelfAndRestartIfVnodeDeleted(argv[0]);
-
-            NSString *markerPath = @SINGLETON_MARKER_PATH;
-            const char *cMarkerPath = [markerPath fileSystemRepresentation];
-
-            // Open file for read/write, create if doesn't exist
-            int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
-            if (lockFD == -1) {
-                fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
-                return EXIT_FAILURE;
-            }
-
-            // Try to acquire an exclusive lock
-            struct flock fl;
-            fl.l_type = F_WRLCK;
-            fl.l_whence = SEEK_SET;
-            fl.l_start = 0;
-            fl.l_len = 0; // Lock entire file
-
-            if (fcntl(lockFD, F_SETLK, &fl) == -1) {
-                // Lock already held by another process
-                fprintf(stderr, "Another instance is already running\n");
-                close(lockFD);
-                return EXIT_FAILURE;
-            }
-
-            // Truncate the file to clear any previous content
-            if (ftruncate(lockFD, 0) == -1) {
-                fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
-                // Continue anyway
-            }
-
-            // Write PID to file
-            pid_t pid = getpid();
-            char pidStr[16];
-            int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
-            if (write(lockFD, pidStr, len) != len) {
-                fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
-                // Continue anyway
-            }
-
-            // Keep the file descriptor open to maintain the lock
-            // It will be automatically closed when the process exits
-        }
-#endif
-
-        /* Do nothing but keep the runloop alive */
-        if (!gEnabled) {
-            CFRunLoopRun();
-            return EXIT_SUCCESS;
-        }
-
         setupGeometry();
         setupOrientationObserver();
 
