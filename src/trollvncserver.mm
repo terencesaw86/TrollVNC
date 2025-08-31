@@ -15,8 +15,6 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include <cstdio>
-#include <unistd.h>
 #if !__has_feature(objc_arc)
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
@@ -25,12 +23,14 @@
 #import <Foundation/Foundation.h>
 
 #import <atomic>
+#import <cstdio>
 #import <cstdlib>
 #import <cstring>
 #import <mach-o/dyld.h>
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
 #import <string>
+#import <unistd.h>
 
 #import "ClipboardManager.h"
 #import "FBSOrientationObserver.h"
