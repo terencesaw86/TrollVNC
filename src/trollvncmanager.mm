@@ -74,57 +74,57 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
 }
 
 int main(int argc, const char *argv[]) {
+    if (!argv || !argv[0] || argv[0][0] != '/') {
+        fprintf(stderr, "This program must be run from an absolute path\n");
+        return EXIT_FAILURE;
+    }
+
+    /* Singleton */
+    monitorSelfAndRestartIfVnodeDeleted(argv[0]);
+
+    NSString *markerPath = @SINGLETON_MARKER_PATH;
+    const char *cMarkerPath = [markerPath fileSystemRepresentation];
+
+    // Open file for read/write, create if doesn't exist
+    int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
+    if (lockFD == -1) {
+        fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    // Try to acquire an exclusive lock
+    struct flock fl;
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0; // Lock entire file
+
+    if (fcntl(lockFD, F_SETLK, &fl) == -1) {
+        // Lock already held by another process
+        fprintf(stderr, "Another instance is already running\n");
+        close(lockFD);
+        return EXIT_FAILURE;
+    }
+
+    // Truncate the file to clear any previous content
+    if (ftruncate(lockFD, 0) == -1) {
+        fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
+        // Continue anyway
+    }
+
+    // Write PID to file
+    pid_t pid = getpid();
+    char pidStr[16];
+    int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
+    if (write(lockFD, pidStr, len) != len) {
+        fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
+        // Continue anyway
+    }
+
+    // Keep the file descriptor open to maintain the lock
+    // It will be automatically closed when the process exits
+
     @autoreleasepool {
-        if (!argv || !argv[0] || argv[0][0] != '/') {
-            fprintf(stderr, "This program must be run from an absolute path\n");
-            return EXIT_FAILURE;
-        }
-
-        /* Singleton */
-        monitorSelfAndRestartIfVnodeDeleted(argv[0]);
-
-        NSString *markerPath = @SINGLETON_MARKER_PATH;
-        const char *cMarkerPath = [markerPath fileSystemRepresentation];
-
-        // Open file for read/write, create if doesn't exist
-        int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
-        if (lockFD == -1) {
-            fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
-            return EXIT_FAILURE;
-        }
-
-        // Try to acquire an exclusive lock
-        struct flock fl;
-        fl.l_type = F_WRLCK;
-        fl.l_whence = SEEK_SET;
-        fl.l_start = 0;
-        fl.l_len = 0; // Lock entire file
-
-        if (fcntl(lockFD, F_SETLK, &fl) == -1) {
-            // Lock already held by another process
-            fprintf(stderr, "Another instance is already running\n");
-            close(lockFD);
-            return EXIT_FAILURE;
-        }
-
-        // Truncate the file to clear any previous content
-        if (ftruncate(lockFD, 0) == -1) {
-            fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
-            // Continue anyway
-        }
-
-        // Write PID to file
-        pid_t pid = getpid();
-        char pidStr[16];
-        int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
-        if (write(lockFD, pidStr, len) != len) {
-            fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
-            // Continue anyway
-        }
-
-        // Keep the file descriptor open to maintain the lock
-        // It will be automatically closed when the process exits
-
         NSString *executablePath = [NSString stringWithUTF8String:argv[0]];
         executablePath = [executablePath stringByDeletingLastPathComponent];
         executablePath = [executablePath stringByAppendingPathComponent:@"trollvncserver"];
