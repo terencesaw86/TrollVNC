@@ -179,7 +179,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 - (BOOL)renderDisplayToScreenSurface:(IOSurfaceRef)dstSurface {
 #if TARGET_OS_SIMULATOR
     CARenderServerRenderDisplay(0, CFSTR("LCD"), dstSurface, 0, 0);
-    return YES; // Assume always changed
+    return YES; // Assume always changed: dirty detection does not work for simulator
 #else
     CFRunLoopRef runLoop = CFRunLoopGetMain();
 
