@@ -23,6 +23,7 @@
 #import <string.h>
 #import <sys/sysctl.h>
 
+#import "StripedTextTableViewController.h"
 #import "TVNCRootListController.h"
 
 // Minimal process enumeration to restart VNC service
@@ -102,10 +103,11 @@ static inline void TVNCRestartVNCService(void) {
 // Add Apply button in nav bar
 - (void)viewDidLoad {
     [super viewDidLoad];
-    UIBarButtonItem *applyItem = [[UIBarButtonItem alloc] initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
-                                                                  style:UIBarButtonItemStyleDone
-                                                                 target:self
-                                                                 action:@selector(applyChanges)];
+    UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
+        initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
+                style:UIBarButtonItemStyleDone
+               target:self
+               action:@selector(applyChanges)];
     applyItem.tintColor = [UIColor systemRedColor];
     self.navigationItem.rightBarButtonItem = applyItem;
 }
@@ -122,10 +124,14 @@ static inline void TVNCRestartVNCService(void) {
     PSSpecifier *httpPortSpec = nil;
     for (PSSpecifier *sp in [self specifiers]) {
         NSString *key = [sp propertyForKey:@"key"];
-        if (!key) continue;
-        if (!portSpec && [key isEqualToString:@"Port"]) portSpec = sp;
-        else if (!httpPortSpec && [key isEqualToString:@"HttpPort"]) httpPortSpec = sp;
-        if (portSpec && httpPortSpec) break;
+        if (!key)
+            continue;
+        if (!portSpec && [key isEqualToString:@"Port"])
+            portSpec = sp;
+        else if (!httpPortSpec && [key isEqualToString:@"HttpPort"])
+            httpPortSpec = sp;
+        if (portSpec && httpPortSpec)
+            break;
     }
 
     id portVal = portSpec ? [self readPreferenceValue:portSpec] : nil;
@@ -145,16 +151,21 @@ static inline void TVNCRestartVNCService(void) {
     BOOL httpInvalid = (httpPort != 0 && (httpPort < 1024 || httpPort > 65535));
     if (portInvalid || httpInvalid) {
         NSString *t = NSLocalizedStringFromTableInBundle(@"Invalid Port", @"Localizable", self.bundle, nil);
-        NSString *msg = NSLocalizedStringFromTableInBundle(@"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.", @"Localizable", self.bundle, nil);
+        NSString *msg = NSLocalizedStringFromTableInBundle(
+            @"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.",
+            @"Localizable", self.bundle, nil);
         NSString *ok = NSLocalizedStringFromTableInBundle(@"OK", @"Localizable", self.bundle, nil);
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:t message:msg preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:t
+                                                                       message:msg
+                                                                preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:ok style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
         return; // do not restart now
     }
 
     NSString *title = NSLocalizedStringFromTableInBundle(@"Apply Changes", @"Localizable", self.bundle, nil);
-    NSString *message = NSLocalizedStringFromTableInBundle(@"Are you sure you want to restart the VNC service?", @"Localizable", self.bundle, nil);
+    NSString *message = NSLocalizedStringFromTableInBundle(@"Are you sure you want to restart the VNC service?",
+                                                           @"Localizable", self.bundle, nil);
     NSString *cancel = NSLocalizedStringFromTableInBundle(@"Cancel", @"Localizable", self.bundle, nil);
     NSString *restart = NSLocalizedStringFromTableInBundle(@"Restart", @"Localizable", self.bundle, nil);
 
@@ -171,6 +182,65 @@ static inline void TVNCRestartVNCService(void) {
                                                 [weakSelf.view endEditing:YES];
                                             }]];
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+- (void)viewLogs {
+    NSString *rootPath = [self.bundle bundlePath];
+    do {
+        if ([rootPath hasSuffix:@"/var/jb"] || [[rootPath lastPathComponent] hasPrefix:@".jbroot-"]) {
+            // Found the jailbreak root
+            break;
+        }
+        if ([rootPath isEqualToString:@"/"] || !rootPath.length) {
+            // Reached the root without finding jailbreak root
+            break;
+        }
+        rootPath = [rootPath stringByDeletingLastPathComponent];
+    } while (YES);
+
+    NSString *logsPath = [rootPath stringByAppendingPathComponent:@"tmp/trollvnc-stderr.log"];
+    NSLog(@"XXLogs path: %@", logsPath);
+
+    StripedTextTableViewController *logsVC = [[StripedTextTableViewController alloc] initWithPath:logsPath];
+
+    [logsVC setAutoReload:YES];
+    [logsVC setMaximumNumberOfRows:1000];
+    [logsVC setMaximumNumberOfLines:20];
+    [logsVC setReversed:YES];
+    [logsVC setAllowDismissal:YES];
+    [logsVC setAllowMultiline:YES];
+    [logsVC setAllowTrash:NO];
+    [logsVC setAllowSearch:YES];
+    [logsVC setAllowShare:YES];
+    [logsVC setPullToReload:YES];
+    [logsVC setTapToCopy:YES];
+    [logsVC setPressToCopy:YES];
+    [logsVC setPreserveEmptyLines:NO];
+    [logsVC setRemoveDuplicates:NO];
+
+    // 31/08/2025 01:24:10 Listening for VNC connections on TCP port 5901
+    // or 2025-08-31 23:06:28.541 trollvncserver[52389:7798813]
+#if DEBUG
+    NSRegularExpression *rowRegex = [NSRegularExpression
+        regularExpressionWithPattern:
+            @"^(\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2} |\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) "
+                             options:0
+                               error:nil];
+#else
+    NSRegularExpression *rowRegex =
+        [NSRegularExpression regularExpressionWithPattern:@"^\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2} "
+                                                  options:0
+                                                    error:nil];
+#endif
+
+    [logsVC setRowPrefixRegularExpression:rowRegex];
+    [logsVC setModalInPresentation:YES];
+    [logsVC setTitle:NSLocalizedStringFromTableInBundle(@"View Logs", @"Localizable", self.bundle, nil)];
+    [logsVC setLocalizationBundle:self.bundle];
+    [logsVC setLocalizationTableName:@"Localizable"];
+
+    UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:logsVC];
+    [self presentViewController:navController animated:YES completion:nil];
 }
 
 - (void)support {

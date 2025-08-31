@@ -1,4 +1,4 @@
-export PACKAGE_VERSION := 1.2
+export PACKAGE_VERSION := 1.3
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 ARCHS := arm64 x86_64

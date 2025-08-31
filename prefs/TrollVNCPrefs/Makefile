@@ -7,6 +7,7 @@ include $(THEOS)/makefiles/common.mk
 BUNDLE_NAME := TrollVNCPrefs
 
 TrollVNCPrefs_FILES += TVNCRootListController.m
+TrollVNCPrefs_FILES += StripedTextTableViewController.m
 TrollVNCPrefs_CFLAGS += -fobjc-arc
 
 TrollVNCPrefs_FRAMEWORKS += UIKit

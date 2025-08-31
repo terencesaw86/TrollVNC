@@ -6,3 +6,10 @@
 "Invalid Port" = "端口无效";
 "TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP 端口必须在 1024..65535（HTTP 也可为 0 表示禁用）。服务器将回退到默认端口。";
 "OK" = "好的";
+"View Logs" = "查看日志";
+"Cannot parse text with UTF-8 encoding: “%@”." = "无法解析 UTF-8 编码的文本：“%@”。";
+"The content of text file “%@” is empty." = "文本文件 “%@” 的内容为空。";
+"Confirm" = "确认";
+"Do you want to clear this log file “%@”?" = "你想要清空此日志文件 “%@” 吗？";
+"%@ rows not loaded" = "%@ 行未加载";
+"Copy" = "拷贝";

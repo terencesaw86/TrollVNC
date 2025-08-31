@@ -82,3 +82,4 @@
 "PEM-encoded private key path matching the certificate." = "PEM-encoded private key path matching the certificate.";
 "Standard: Alt as Option, Super as Command." = "Standard: Alt as Option, Super as Command.";
 "Enabled" = "Enabled";
+"View Logs" = "View Logs";

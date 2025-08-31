@@ -6,3 +6,10 @@
 "Invalid Port" = "Invalid Port";
 "TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.";
 "OK" = "OK";
+"View Logs" = "View Logs";
+"Cannot parse text with UTF-8 encoding: “%@”." = "Cannot parse text with UTF-8 encoding: “%@”.";
+"The content of text file “%@” is empty." = "The content of text file “%@” is empty.";
+"Confirm" = "Confirm";
+"Do you want to clear this log file “%@”?" = "Do you want to clear this log file “%@”?";
+"%@ rows not loaded" = "%@ rows not loaded";
+"Copy" = "Copy";

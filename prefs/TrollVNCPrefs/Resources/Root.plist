@@ -687,6 +687,14 @@
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
+			<string>View Logs</string>
+			<key>action</key>
+			<string>viewLogs</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
 			<string>View Source Code</string>
 			<key>action</key>
 			<string>source</string>

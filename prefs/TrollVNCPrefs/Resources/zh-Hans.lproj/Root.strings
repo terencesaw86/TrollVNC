@@ -84,3 +84,4 @@
 "PEM-encoded private key path matching the certificate." = "与证书匹配的 PEM 编码私钥路径。";
 "Standard: Alt as Option, Super as Command." = "标准：Alt 作为 Option，Super 作为 Command。";
 "Enabled" = "启用";
+"View Logs" = "查看日志";

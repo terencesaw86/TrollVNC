@@ -247,7 +247,7 @@ static void parseCLI(int argc, const char *argv[]) {
 
             // Numbers
             NSNumber *portN = [prefs objectForKey:@"Port"]; 
-            if ([portN isKindOfClass:[NSNumber class]]) { 
+            if ([portN isKindOfClass:[NSNumber class]] || [portN isKindOfClass:[NSString class]]) { 
                 int v = portN.intValue; 
                 if (v < 1024 || v > 65535) { 
                     // Privileged or invalid -> fallback to default 5901
@@ -329,7 +329,7 @@ static void parseCLI(int argc, const char *argv[]) {
             }
 
             NSNumber *httpPortN = [prefs objectForKey:@"HttpPort"]; 
-            if ([httpPortN isKindOfClass:[NSNumber class]]) { 
+            if ([httpPortN isKindOfClass:[NSNumber class]] || [httpPortN isKindOfClass:[NSString class]]) { 
                 int v = httpPortN.intValue; 
                 if (v == 0) {
                     gHttpPort = 0; // disabled
