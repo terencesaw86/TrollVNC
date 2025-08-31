@@ -17,7 +17,7 @@ GO_EASY_ON_ME := 1
 
 include $(THEOS)/makefiles/common.mk
 
-TOOL_NAME := trollvncserver
+TOOL_NAME += trollvncserver
 
 trollvncserver_USE_MODULES := 0
 
@@ -31,8 +31,12 @@ trollvncserver_CFLAGS += -fobjc-arc
 ifeq ($(THEOS_DEVICE_SIMULATOR),)
 trollvncserver_CFLAGS += -march=armv8-a+crc
 endif
-# trollvncserver_CFLAGS += -DFB_LOG=1
 trollvncserver_CCFLAGS += -std=c++20
+
+# trollvncserver_CFLAGS += -DFB_LOG=1
+ifeq ($(THEBOOTSTRAP),1)
+trollvncserver_CFLAGS += -DTHEBOOTSTRAP=1
+endif
 
 trollvncserver_CFLAGS += -Iinclude-spi
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
@@ -77,6 +81,21 @@ ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 trollvncserver_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncserver-simulator.entitlements
 else
 trollvncserver_CODESIGN_FLAGS += -Ssrc/trollvncserver.entitlements
+endif
+
+ifeq ($(THEBOOTSTRAP),1)
+TOOL_NAME += trollvncmanager
+
+trollvncmanager_FILES += src/trollvncmanager.mm
+trollvncmanager_FILES += src/TRWatchDog.mm
+trollvncmanager_FILES += src/TaskProcess+ObjC.swift
+trollvncmanager_FILES += src/OhMyJetsam.mm
+
+trollvncmanager_CFLAGS += -fobjc-arc
+trollvncmanager_CFLAGS += -Iinclude-spi
+
+trollvncmanager_FRAMEWORKS += Foundation
+trollvncmanager_CODESIGN_FLAGS += -Ssrc/trollvncmanager.entitlements
 endif
 
 include $(THEOS_MAKE_PATH)/tool.mk

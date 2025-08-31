@@ -231,129 +231,200 @@ static void parseCLI(int argc, const char *argv[]) {
     // com.82flex.trollvnc and initializes runtime options accordingly.
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-daemon") == 0) {
-            NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.82flex.trollvnc"];
+            NSDictionary *prefs =
+                [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.82flex.trollvnc"];
             if (!prefs) {
                 TVLog(@"-daemon: no preferences found for domain com.82flex.trollvnc");
                 return;
             }
 
             // Strings
-            NSString *desktopName = [prefs objectForKey:@"DesktopName"]; 
+            NSString *desktopName = [prefs objectForKey:@"DesktopName"];
             if ([desktopName isKindOfClass:[NSString class]] && desktopName.length > 0) {
-                gDesktopName = desktopName; 
+                gDesktopName = desktopName;
             } else if (desktopName) {
                 TVLog(@"-daemon: DesktopName is empty; using default '%@'", gDesktopName);
             }
 
             // Numbers
-            NSNumber *portN = [prefs objectForKey:@"Port"]; 
-            if ([portN isKindOfClass:[NSNumber class]] || [portN isKindOfClass:[NSString class]]) { 
-                int v = portN.intValue; 
-                if (v < 1024 || v > 65535) { 
+            NSNumber *portN = [prefs objectForKey:@"Port"];
+            if ([portN isKindOfClass:[NSNumber class]] || [portN isKindOfClass:[NSString class]]) {
+                int v = portN.intValue;
+                if (v < 1024 || v > 65535) {
                     // Privileged or invalid -> fallback to default 5901
                     TVLog(@"-daemon: invalid TCP Port=%d; using default 5901", v);
-                    gPort = 5901; 
+                    gPort = 5901;
                 } else {
-                    gPort = v; 
+                    gPort = v;
                 }
             }
 
-            NSNumber *keepAliveN = [prefs objectForKey:@"KeepAliveSec"]; 
+            NSNumber *keepAliveN = [prefs objectForKey:@"KeepAliveSec"];
             if ([keepAliveN isKindOfClass:[NSNumber class]]) {
-                double v = keepAliveN.doubleValue; 
-                if (v < 0.0) { TVLog(@"-daemon: KeepAliveSec < 0; set to 0"); v = 0.0; }
-                else if (v > 0.0 && v < 15.0) { TVLog(@"-daemon: KeepAliveSec < 15; treated as 0 (off)"); v = 0.0; }
-                else if (v > 300.0) { TVLog(@"-daemon: KeepAliveSec > 300; clamped to 300"); v = 300.0; }
-                gKeepAliveSec = v; 
+                double v = keepAliveN.doubleValue;
+                if (v < 0.0) {
+                    TVLog(@"-daemon: KeepAliveSec < 0; set to 0");
+                    v = 0.0;
+                } else if (v > 0.0 && v < 15.0) {
+                    TVLog(@"-daemon: KeepAliveSec < 15; treated as 0 (off)");
+                    v = 0.0;
+                } else if (v > 300.0) {
+                    TVLog(@"-daemon: KeepAliveSec > 300; clamped to 300");
+                    v = 300.0;
+                }
+                gKeepAliveSec = v;
             }
 
-            NSNumber *scaleN = [prefs objectForKey:@"Scale"]; 
-            if ([scaleN isKindOfClass:[NSNumber class]]) { 
-                double v = scaleN.doubleValue; 
-                if (v <= 0.0 || v > 1.0) { TVLog(@"-daemon: invalid Scale=%.3f; clamped to [0.1..1.0]", v); }
-                if (v < 0.1) v = 0.1; if (v > 1.0) v = 1.0; 
-                gScale = v; 
+            NSNumber *scaleN = [prefs objectForKey:@"Scale"];
+            if ([scaleN isKindOfClass:[NSNumber class]]) {
+                double v = scaleN.doubleValue;
+                if (v <= 0.0 || v > 1.0) {
+                    TVLog(@"-daemon: invalid Scale=%.3f; clamped to [0.1..1.0]", v);
+                }
+                if (v < 0.1)
+                    v = 0.1;
+                if (v > 1.0)
+                    v = 1.0;
+                gScale = v;
             }
 
-            NSNumber *deferN = [prefs objectForKey:@"DeferWindowSec"]; 
-            if ([deferN isKindOfClass:[NSNumber class]]) { 
-                double v = deferN.doubleValue; 
-                if (v < 0.0) { TVLog(@"-daemon: DeferWindowSec < 0; set to 0"); v = 0.0; }
-                if (v > 0.5) { TVLog(@"-daemon: DeferWindowSec > 0.5; clamped to 0.5"); v = 0.5; }
-                gDeferWindowSec = v; 
+            NSNumber *deferN = [prefs objectForKey:@"DeferWindowSec"];
+            if ([deferN isKindOfClass:[NSNumber class]]) {
+                double v = deferN.doubleValue;
+                if (v < 0.0) {
+                    TVLog(@"-daemon: DeferWindowSec < 0; set to 0");
+                    v = 0.0;
+                }
+                if (v > 0.5) {
+                    TVLog(@"-daemon: DeferWindowSec > 0.5; clamped to 0.5");
+                    v = 0.5;
+                }
+                gDeferWindowSec = v;
             }
 
-            NSNumber *maxInflightN = [prefs objectForKey:@"MaxInflight"]; 
-            if ([maxInflightN isKindOfClass:[NSNumber class]]) { 
-                int v = maxInflightN.intValue; 
-                if (v < 0) { TVLog(@"-daemon: MaxInflight < 0; set to 0"); v = 0; }
-                if (v > 8) { TVLog(@"-daemon: MaxInflight > 8; clamped to 8"); v = 8; }
-                gMaxInflightUpdates = v; 
+            NSNumber *maxInflightN = [prefs objectForKey:@"MaxInflight"];
+            if ([maxInflightN isKindOfClass:[NSNumber class]]) {
+                int v = maxInflightN.intValue;
+                if (v < 0) {
+                    TVLog(@"-daemon: MaxInflight < 0; set to 0");
+                    v = 0;
+                }
+                if (v > 8) {
+                    TVLog(@"-daemon: MaxInflight > 8; clamped to 8");
+                    v = 8;
+                }
+                gMaxInflightUpdates = v;
             }
 
-            NSNumber *tileSizeN = [prefs objectForKey:@"TileSize"]; 
-            if ([tileSizeN isKindOfClass:[NSNumber class]]) { 
-                int v = tileSizeN.intValue; 
-                if (v < 8) { TVLog(@"-daemon: TileSize < 8; set to 8"); v = 8; }
-                if (v > 128) { TVLog(@"-daemon: TileSize > 128; clamped to 128"); v = 128; }
-                gTileSize = v; 
+            NSNumber *tileSizeN = [prefs objectForKey:@"TileSize"];
+            if ([tileSizeN isKindOfClass:[NSNumber class]]) {
+                int v = tileSizeN.intValue;
+                if (v < 8) {
+                    TVLog(@"-daemon: TileSize < 8; set to 8");
+                    v = 8;
+                }
+                if (v > 128) {
+                    TVLog(@"-daemon: TileSize > 128; clamped to 128");
+                    v = 128;
+                }
+                gTileSize = v;
             }
 
-            NSNumber *fullThreshN = [prefs objectForKey:@"FullscreenThresholdPercent"]; 
-            if ([fullThreshN isKindOfClass:[NSNumber class]]) { 
-                int v = fullThreshN.intValue; 
-                if (v < 0) { TVLog(@"-daemon: FullscreenThresholdPercent < 0; set to 0"); v = 0; }
-                if (v > 100) { TVLog(@"-daemon: FullscreenThresholdPercent > 100; clamped to 100"); v = 100; }
-                gFullscreenThresholdPercent = v; 
+            NSNumber *fullThreshN = [prefs objectForKey:@"FullscreenThresholdPercent"];
+            if ([fullThreshN isKindOfClass:[NSNumber class]]) {
+                int v = fullThreshN.intValue;
+                if (v < 0) {
+                    TVLog(@"-daemon: FullscreenThresholdPercent < 0; set to 0");
+                    v = 0;
+                }
+                if (v > 100) {
+                    TVLog(@"-daemon: FullscreenThresholdPercent > 100; clamped to 100");
+                    v = 100;
+                }
+                gFullscreenThresholdPercent = v;
             }
 
-            NSNumber *maxRectsN = [prefs objectForKey:@"MaxRects"]; 
-            if ([maxRectsN isKindOfClass:[NSNumber class]]) { 
-                int v = maxRectsN.intValue; 
-                if (v < 1) { TVLog(@"-daemon: MaxRects < 1; set to 1"); v = 1; }
-                if (v > 4096) { TVLog(@"-daemon: MaxRects > 4096; clamped to 4096"); v = 4096; }
-                gMaxRectsLimit = v; 
+            NSNumber *maxRectsN = [prefs objectForKey:@"MaxRects"];
+            if ([maxRectsN isKindOfClass:[NSNumber class]]) {
+                int v = maxRectsN.intValue;
+                if (v < 1) {
+                    TVLog(@"-daemon: MaxRects < 1; set to 1");
+                    v = 1;
+                }
+                if (v > 4096) {
+                    TVLog(@"-daemon: MaxRects > 4096; clamped to 4096");
+                    v = 4096;
+                }
+                gMaxRectsLimit = v;
             }
 
-            NSNumber *wheelPxN = [prefs objectForKey:@"WheelStepPx"]; 
-            if ([wheelPxN isKindOfClass:[NSNumber class]]) { 
-                double v = wheelPxN.doubleValue; 
+            NSNumber *wheelPxN = [prefs objectForKey:@"WheelStepPx"];
+            if ([wheelPxN isKindOfClass:[NSNumber class]]) {
+                double v = wheelPxN.doubleValue;
                 if (v == 0.0) {
-                    gWheelStepPx = 0.0; gWheelMaxStepPx = 0.0; TVLog(@"-daemon: Wheel emulation disabled (step=0)");
+                    gWheelStepPx = 0.0;
+                    gWheelMaxStepPx = 0.0;
+                    TVLog(@"-daemon: Wheel emulation disabled (step=0)");
                 } else {
-                    if (v <= 4.0) { TVLog(@"-daemon: WheelStepPx <= 4; raised to 5"); v = 5.0; }
-                    if (v > 1000.0) { TVLog(@"-daemon: WheelStepPx > 1000; clamped to 1000"); v = 1000.0; }
-                    gWheelStepPx = v; 
-                    gWheelMaxStepPx = fmax(2.0 * gWheelStepPx, 96.0) * 1.0; 
+                    if (v <= 4.0) {
+                        TVLog(@"-daemon: WheelStepPx <= 4; raised to 5");
+                        v = 5.0;
+                    }
+                    if (v > 1000.0) {
+                        TVLog(@"-daemon: WheelStepPx > 1000; clamped to 1000");
+                        v = 1000.0;
+                    }
+                    gWheelStepPx = v;
+                    gWheelMaxStepPx = fmax(2.0 * gWheelStepPx, 96.0) * 1.0;
                 }
             }
 
-            NSNumber *httpPortN = [prefs objectForKey:@"HttpPort"]; 
-            if ([httpPortN isKindOfClass:[NSNumber class]] || [httpPortN isKindOfClass:[NSString class]]) { 
-                int v = httpPortN.intValue; 
+            NSNumber *httpPortN = [prefs objectForKey:@"HttpPort"];
+            if ([httpPortN isKindOfClass:[NSNumber class]] || [httpPortN isKindOfClass:[NSString class]]) {
+                int v = httpPortN.intValue;
                 if (v == 0) {
                     gHttpPort = 0; // disabled
                 } else if (v < 0 || v > 65535 || v < 1024) {
                     TVLog(@"-daemon: invalid HTTP Port=%d; using default 0 (disabled)", v);
-                    gHttpPort = 0; 
+                    gHttpPort = 0;
                 } else {
-                    gHttpPort = v; 
+                    gHttpPort = v;
                 }
             }
 
             // Booleans
-            NSNumber *enableN = [prefs objectForKey:@"Enabled"]; if ([enableN isKindOfClass:[NSNumber class]]) gEnabled = enableN.boolValue;
-            NSNumber *clipN = [prefs objectForKey:@"ClipboardEnabled"]; if ([clipN isKindOfClass:[NSNumber class]]) gClipboardEnabled = clipN.boolValue;
-            NSNumber *viewOnlyN = [prefs objectForKey:@"ViewOnly"]; if ([viewOnlyN isKindOfClass:[NSNumber class]]) gViewOnly = viewOnlyN.boolValue;
-            NSNumber *orientN = [prefs objectForKey:@"OrientationSync"]; if ([orientN isKindOfClass:[NSNumber class]]) gOrientationSyncEnabled = orientN.boolValue;
-            NSNumber *naturalN = [prefs objectForKey:@"NaturalScroll"]; if ([naturalN isKindOfClass:[NSNumber class]]) gWheelNaturalDir = naturalN.boolValue;
-            NSNumber *cursorN = [prefs objectForKey:@"ServerCursor"]; if ([cursorN isKindOfClass:[NSNumber class]]) gCursorEnabled = cursorN.boolValue;
-            NSNumber *asyncSwapN = [prefs objectForKey:@"AsyncSwap"]; if ([asyncSwapN isKindOfClass:[NSNumber class]]) gAsyncSwapEnabled = asyncSwapN.boolValue;
-            NSNumber *keyLogN = [prefs objectForKey:@"KeyLogging"]; if ([keyLogN isKindOfClass:[NSNumber class]]) gKeyEventLogging = keyLogN.boolValue;
+            NSNumber *enableN = [prefs objectForKey:@"Enabled"];
+            if ([enableN isKindOfClass:[NSNumber class]])
+                gEnabled = enableN.boolValue;
+            NSNumber *clipN = [prefs objectForKey:@"ClipboardEnabled"];
+            if ([clipN isKindOfClass:[NSNumber class]])
+                gClipboardEnabled = clipN.boolValue;
+            NSNumber *viewOnlyN = [prefs objectForKey:@"ViewOnly"];
+            if ([viewOnlyN isKindOfClass:[NSNumber class]])
+                gViewOnly = viewOnlyN.boolValue;
+            NSNumber *orientN = [prefs objectForKey:@"OrientationSync"];
+            if ([orientN isKindOfClass:[NSNumber class]])
+                gOrientationSyncEnabled = orientN.boolValue;
+            NSNumber *naturalN = [prefs objectForKey:@"NaturalScroll"];
+            if ([naturalN isKindOfClass:[NSNumber class]])
+                gWheelNaturalDir = naturalN.boolValue;
+            NSNumber *cursorN = [prefs objectForKey:@"ServerCursor"];
+            if ([cursorN isKindOfClass:[NSNumber class]])
+                gCursorEnabled = cursorN.boolValue;
+            NSNumber *asyncSwapN = [prefs objectForKey:@"AsyncSwap"];
+            if ([asyncSwapN isKindOfClass:[NSNumber class]])
+                gAsyncSwapEnabled = asyncSwapN.boolValue;
+            NSNumber *keyLogN = [prefs objectForKey:@"KeyLogging"];
+            if ([keyLogN isKindOfClass:[NSNumber class]])
+                gKeyEventLogging = keyLogN.boolValue;
 
             // Modifier mapping
-            NSString *modMap = [prefs objectForKey:@"ModifierMap"]; if ([modMap isKindOfClass:[NSString class]]) {
-                if ([modMap isEqualToString:@"altcmd"]) gModMapScheme = 1; else gModMapScheme = 0;
+            NSString *modMap = [prefs objectForKey:@"ModifierMap"];
+            if ([modMap isKindOfClass:[NSString class]]) {
+                if ([modMap isEqualToString:@"altcmd"])
+                    gModMapScheme = 1;
+                else
+                    gModMapScheme = 0;
             }
 
             // Frame rate spec (validate and normalize)
@@ -370,26 +441,49 @@ static void parseCLI(int argc, const char *argv[]) {
                     if (colon2) {
                         long b = strtol(p2, NULL, 10);
                         long c = strtol(colon2 + 1, NULL, 10);
-                        minV = (int)a; prefV = (int)b; maxV = (int)c;
+                        minV = (int)a;
+                        prefV = (int)b;
+                        maxV = (int)c;
                     }
                 } else if (dash) {
                     long a = strtol(spec, NULL, 10);
                     long b = strtol(dash + 1, NULL, 10);
-                    minV = (int)a; prefV = (int)b; maxV = (int)b;
+                    minV = (int)a;
+                    prefV = (int)b;
+                    maxV = (int)b;
                 } else {
                     long v = strtol(spec, NULL, 10);
-                    minV = (int)v; prefV = (int)v; maxV = (int)v;
+                    minV = (int)v;
+                    prefV = (int)v;
+                    maxV = (int)v;
                 }
                 // Normalize & validate: allow 0..240 (0 = unspecified)
-                if (minV < 0) minV = 0; if (minV > 240) minV = 240;
-                if (prefV < 0) prefV = 0; if (prefV > 240) prefV = 240;
-                if (maxV < 0) maxV = 0; if (maxV > 240) maxV = 240;
-                if (minV > 0 && maxV > 0 && minV > maxV) { int tmp = minV; minV = maxV; maxV = tmp; }
-                if (prefV > 0) {
-                    if (minV > 0 && prefV < minV) prefV = minV;
-                    if (maxV > 0 && prefV > maxV) prefV = maxV;
+                if (minV < 0)
+                    minV = 0;
+                if (minV > 240)
+                    minV = 240;
+                if (prefV < 0)
+                    prefV = 0;
+                if (prefV > 240)
+                    prefV = 240;
+                if (maxV < 0)
+                    maxV = 0;
+                if (maxV > 240)
+                    maxV = 240;
+                if (minV > 0 && maxV > 0 && minV > maxV) {
+                    int tmp = minV;
+                    minV = maxV;
+                    maxV = tmp;
                 }
-                gFpsMin = minV; gFpsPref = prefV; gFpsMax = maxV;
+                if (prefV > 0) {
+                    if (minV > 0 && prefV < minV)
+                        prefV = minV;
+                    if (maxV > 0 && prefV > maxV)
+                        prefV = maxV;
+                }
+                gFpsMin = minV;
+                gFpsPref = prefV;
+                gFpsMax = maxV;
             }
 
             // Wheel tuning (advanced)
@@ -399,65 +493,72 @@ static void parseCLI(int argc, const char *argv[]) {
             }
 
             // HTTP dir override and SSL (require absolute paths)
-            NSString *httpDir = [prefs objectForKey:@"HttpDir"]; 
+            NSString *httpDir = [prefs objectForKey:@"HttpDir"];
             if ([httpDir isKindOfClass:[NSString class]] && httpDir.length > 0) {
                 if (![httpDir hasPrefix:@"/"]) {
                     TVLog(@"-daemon: HttpDir must be absolute: %@ (ignored)", httpDir);
                 } else {
-                    if (gHttpDirOverride) { free(gHttpDirOverride); gHttpDirOverride = NULL; }
+                    if (gHttpDirOverride) {
+                        free(gHttpDirOverride);
+                        gHttpDirOverride = NULL;
+                    }
                     gHttpDirOverride = strdup(httpDir.fileSystemRepresentation);
                 }
             }
-            NSString *sslCert = [prefs objectForKey:@"SslCertFile"]; 
+            NSString *sslCert = [prefs objectForKey:@"SslCertFile"];
             if ([sslCert isKindOfClass:[NSString class]] && sslCert.length > 0) {
                 if (![sslCert hasPrefix:@"/"]) {
                     TVLog(@"-daemon: SslCertFile must be absolute: %@ (ignored)", sslCert);
                 } else {
-                    if (gSslCertPath) { free(gSslCertPath); gSslCertPath = NULL; }
+                    if (gSslCertPath) {
+                        free(gSslCertPath);
+                        gSslCertPath = NULL;
+                    }
                     gSslCertPath = strdup(sslCert.fileSystemRepresentation);
                 }
             }
-            NSString *sslKey = [prefs objectForKey:@"SslKeyFile"]; 
+            NSString *sslKey = [prefs objectForKey:@"SslKeyFile"];
             if ([sslKey isKindOfClass:[NSString class]] && sslKey.length > 0) {
                 if (![sslKey hasPrefix:@"/"]) {
                     TVLog(@"-daemon: SslKeyFile must be absolute: %@ (ignored)", sslKey);
                 } else {
-                    if (gSslKeyPath) { free(gSslKeyPath); gSslKeyPath = NULL; }
+                    if (gSslKeyPath) {
+                        free(gSslKeyPath);
+                        gSslKeyPath = NULL;
+                    }
                     gSslKeyPath = strdup(sslKey.fileSystemRepresentation);
                 }
             }
 
             // Passwords via environment (leveraging existing setupRfbClassicAuthentication).
             // Classic VNC uses only first 8 chars; truncate here for clarity.
-            NSString *fullPwd = [prefs objectForKey:@"FullPassword"]; 
+            NSString *fullPwd = [prefs objectForKey:@"FullPassword"];
             BOOL hasFullPwd = NO, hasViewPwd = NO;
             if ([fullPwd isKindOfClass:[NSString class]]) {
                 NSString *trunc = (fullPwd.length > 8) ? [fullPwd substringToIndex:8] : fullPwd;
                 setenv("TROLLVNC_PASSWORD", trunc.UTF8String ?: "", 1);
                 hasFullPwd = (trunc.length > 0);
             }
-            NSString *viewPwd = [prefs objectForKey:@"ViewOnlyPassword"]; 
+            NSString *viewPwd = [prefs objectForKey:@"ViewOnlyPassword"];
             if ([viewPwd isKindOfClass:[NSString class]]) {
                 NSString *trunc = (viewPwd.length > 8) ? [viewPwd substringToIndex:8] : viewPwd;
                 setenv("TROLLVNC_VIEWONLY_PASSWORD", trunc.UTF8String ?: "", 1);
                 hasViewPwd = (trunc.length > 0);
             }
 
-        // Single-line summary of effective configuration with password flags (8-char classic VNC)
-        TVLog(@"-daemon: cfg name='%@' port=%d http=%d viewOnly=%@ clip=%@ keepAlive=%.0fs scale=%.2f fps=%d:%d:%d defer=%.3f inflight=%d tile=%d full%%=%d rects=%d async=%@ cursor=%@ orient=%@ keylog=%@ wheel=%.1f natural=%@ mod=%s auth(full=%@,view=%@,8char) dir=%s cert=%s key=%s",
-            gDesktopName, gPort, gHttpPort,
-            gViewOnly ? @"YES" : @"NO", gClipboardEnabled ? @"YES" : @"NO",
-            gKeepAliveSec, gScale, gFpsMin, gFpsPref, gFpsMax,
-            gDeferWindowSec, gMaxInflightUpdates, gTileSize, gFullscreenThresholdPercent, gMaxRectsLimit,
-            gAsyncSwapEnabled ? @"YES" : @"NO", gCursorEnabled ? @"YES" : @"NO",
-            gOrientationSyncEnabled ? @"YES" : @"NO", gKeyEventLogging ? @"YES" : @"NO",
-            gWheelStepPx, gWheelNaturalDir ? @"YES" : @"NO",
-            (gModMapScheme == 1) ? "altcmd" : "std",
-            hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off",
-            gHttpDirOverride ? gHttpDirOverride : "(null)",
-            gSslCertPath ? gSslCertPath : "(null)",
-            gSslKeyPath ? gSslKeyPath : "(null)");
-        TVLog(@"-daemon: preferences applied (domain=com.82flex.trollvnc)");
+            // Single-line summary of effective configuration with password flags (8-char classic VNC)
+            TVLog(@"-daemon: cfg name='%@' port=%d http=%d viewOnly=%@ clip=%@ keepAlive=%.0fs scale=%.2f fps=%d:%d:%d "
+                  @"defer=%.3f inflight=%d tile=%d full%%=%d rects=%d async=%@ cursor=%@ orient=%@ keylog=%@ "
+                  @"wheel=%.1f natural=%@ mod=%s auth(full=%@,view=%@,8char) dir=%s cert=%s key=%s",
+                  gDesktopName, gPort, gHttpPort, gViewOnly ? @"YES" : @"NO", gClipboardEnabled ? @"YES" : @"NO",
+                  gKeepAliveSec, gScale, gFpsMin, gFpsPref, gFpsMax, gDeferWindowSec, gMaxInflightUpdates, gTileSize,
+                  gFullscreenThresholdPercent, gMaxRectsLimit, gAsyncSwapEnabled ? @"YES" : @"NO",
+                  gCursorEnabled ? @"YES" : @"NO", gOrientationSyncEnabled ? @"YES" : @"NO",
+                  gKeyEventLogging ? @"YES" : @"NO", gWheelStepPx, gWheelNaturalDir ? @"YES" : @"NO",
+                  (gModMapScheme == 1) ? "altcmd" : "std", hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off",
+                  gHttpDirOverride ? gHttpDirOverride : "(null)", gSslCertPath ? gSslCertPath : "(null)",
+                  gSslKeyPath ? gSslKeyPath : "(null)");
+            TVLog(@"-daemon: preferences applied (domain=com.82flex.trollvnc)");
             return; // done
         }
     }
@@ -3000,9 +3101,116 @@ static void cleanupAndExit(int code) {
     exit(code);
 }
 
+#ifdef THEBOOTSTRAP
+#define SINGLETON_PARENT_NAME "trollvncmanager"
+#define SINGLETON_MARKER_PATH "/var/mobile/Library/Caches/com.82flex.trollvnc.server.pid"
+
+static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
+    int myHandle = open(executable, O_EVTONLY);
+    if (myHandle <= 0) {
+        return;
+    }
+
+    static unsigned long monitorMask = DISPATCH_VNODE_DELETE;
+    static dispatch_source_t monitorSource;
+    monitorSource =
+        dispatch_source_create(DISPATCH_SOURCE_TYPE_VNODE, myHandle, monitorMask, dispatch_get_main_queue());
+
+    dispatch_source_set_event_handler(monitorSource, ^{
+        unsigned long flags = dispatch_source_get_data(monitorSource);
+        if (flags & DISPATCH_VNODE_DELETE) {
+            dispatch_source_cancel(monitorSource);
+            exit(EXIT_SUCCESS);
+        }
+    });
+
+    dispatch_resume(monitorSource);
+}
+#endif
+
 int main(int argc, const char *argv[]) {
+
+    /* Drop privileges: this program should run as mobile */
+    setuid(501);
+    setgid(501);
+
     @autoreleasepool {
         parseCLI(argc, argv);
+    }
+
+    @autoreleasepool {
+#ifdef THEBOOTSTRAP
+        /* Monitor parent process */
+        static pid_t ppid = getppid();
+        if (ppid != 1) {
+            static dispatch_source_t source =
+                dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, ppid, DISPATCH_PROC_EXIT | DISPATCH_PROC_SIGNAL,
+                                       dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+
+            dispatch_source_set_event_handler(source, ^{
+                if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
+                    dispatch_source_cancel(source);
+                    fprintf(stderr, "Parent process %d exited\n", ppid);
+                    exit(EXIT_SUCCESS);
+                } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
+                    dispatch_source_cancel(source);
+                    fprintf(stderr, "Parent process %d is gone\n", ppid);
+                    exit(EXIT_SUCCESS);
+                }
+            });
+
+            dispatch_resume(source);
+        }
+#endif
+
+#ifdef THEBOOTSTRAP
+        /* Singleton */
+        if (argv && argv[0] && argv[0][0] == '/') {
+            monitorSelfAndRestartIfVnodeDeleted(argv[0]);
+
+            NSString *markerPath = @SINGLETON_MARKER_PATH;
+            const char *cMarkerPath = [markerPath fileSystemRepresentation];
+
+            // Open file for read/write, create if doesn't exist
+            int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
+            if (lockFD == -1) {
+                fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
+                return EXIT_FAILURE;
+            }
+
+            // Try to acquire an exclusive lock
+            struct flock fl;
+            fl.l_type = F_WRLCK;
+            fl.l_whence = SEEK_SET;
+            fl.l_start = 0;
+            fl.l_len = 0; // Lock entire file
+
+            if (fcntl(lockFD, F_SETLK, &fl) == -1) {
+                // Lock already held by another process
+                fprintf(stderr, "Another instance is already running\n");
+                close(lockFD);
+                return EXIT_FAILURE;
+            }
+
+            // Truncate the file to clear any previous content
+            if (ftruncate(lockFD, 0) == -1) {
+                fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
+                // Continue anyway
+            }
+
+            // Write PID to file
+            pid_t pid = getpid();
+            char pidStr[16];
+            int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
+            if (write(lockFD, pidStr, len) != len) {
+                fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
+                // Continue anyway
+            }
+
+            // Keep the file descriptor open to maintain the lock
+            // It will be automatically closed when the process exits
+        }
+#endif
 
         /* Do nothing but keep the runloop alive */
         if (!gEnabled) {
