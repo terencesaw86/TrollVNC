@@ -15,6 +15,8 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include <cstdio>
+#include <unistd.h>
 #if !__has_feature(objc_arc)
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
@@ -3111,26 +3113,33 @@ static void cleanupAndExit(int code) {
 #define SINGLETON_MARKER_PATH "/var/mobile/Library/Caches/com.82flex.trollvnc.server.pid"
 
 static void monitorParentProcess(void) {
-    static pid_t ppid = getppid();
-    if (ppid != 1) {
-        static dispatch_source_t source =
-            dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, ppid, DISPATCH_PROC_EXIT | DISPATCH_PROC_SIGNAL,
-                                   dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
-
-        dispatch_source_set_event_handler(source, ^{
-            if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
-                dispatch_source_cancel(source);
-                fprintf(stderr, "Parent process %d exited\n", ppid);
-                exit(EXIT_SUCCESS);
-            } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
-                dispatch_source_cancel(source);
-                fprintf(stderr, "Parent process %d is gone\n", ppid);
-                exit(EXIT_SUCCESS);
-            }
-        });
-
-        dispatch_resume(source);
+    if (isatty(STDIN_FILENO)) {
+        fprintf(stderr, "Running in interactive mode, not monitoring parent process\n");
+        return;
     }
+
+    static pid_t ppid = getppid();
+    if (ppid == 1) {
+        return;
+    }
+
+    static dispatch_source_t source =
+        dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, ppid, DISPATCH_PROC_EXIT | DISPATCH_PROC_SIGNAL,
+                               dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0));
+
+    dispatch_source_set_event_handler(source, ^{
+        if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
+            dispatch_source_cancel(source);
+            fprintf(stderr, "Parent process %d exited\n", ppid);
+            exit(EXIT_SUCCESS);
+        } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
+            dispatch_source_cancel(source);
+            fprintf(stderr, "Parent process %d is gone\n", ppid);
+            exit(EXIT_SUCCESS);
+        }
+    });
+
+    dispatch_resume(source);
 }
 
 static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
@@ -3156,7 +3165,12 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
 }
 
 static void ensureSingleton(const char *argv[]) {
-    if (!argv || !argv[0] || argv[0][0] != '/' || isatty(STDIN_FILENO)) {
+    if (isatty(STDIN_FILENO)) {
+        fprintf(stderr, "Running in interactive mode, not enforcing singleton\n");
+        return;
+    }
+
+    if (!argv || !argv[0] || argv[0][0] != '/') {
         return;
     }
 
