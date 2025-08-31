@@ -28,6 +28,7 @@ trollvncserver_FILES += src/STHIDEventGenerator.mm
 trollvncserver_FILES += src/OhMyJetsam.mm
 
 trollvncserver_CFLAGS += -fobjc-arc
+trollvncserver_CFLAGS += -Wno-unused-but-set-variable
 ifeq ($(THEOS_DEVICE_SIMULATOR),)
 trollvncserver_CFLAGS += -march=armv8-a+crc
 endif
