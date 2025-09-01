@@ -99,6 +99,7 @@ static inline void TVNCRestartVNCService(void) {
 
 @implementation TVNCRootListController
 
+#ifdef THEBOOTSTRAP
 @synthesize bundle = _bundle;
 
 - (NSBundle *)bundle {
@@ -107,6 +108,7 @@ static inline void TVNCRestartVNCService(void) {
     }
     return _bundle;
 }
+#endif
 
 - (NSArray *)specifiers {
     if (!_specifiers) {
@@ -133,6 +135,9 @@ static inline void TVNCRestartVNCService(void) {
     [[UISwitch appearanceWhenContainedInInstancesOfClasses:@[
         [self class],
     ]] setOnTintColor:_primaryColor];
+    [[UISlider appearanceWhenContainedInInstancesOfClasses:@[
+        [self class],
+    ]] setMinimumTrackTintColor:_primaryColor];
 
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
         initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)

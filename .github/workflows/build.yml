@@ -16,7 +16,7 @@ jobs:
     
     strategy:
       matrix:
-        scheme: ['', 'rootless', 'roothide']
+        scheme: ['', 'rootless', 'roothide', 'bootstrap']
     
     steps:
     - name: Checkout repository
@@ -68,7 +68,11 @@ jobs:
         
         # Copy packages
         if [ -d "packages" ]; then
-          cp -r packages/* artifacts/packages-${{ matrix.scheme || 'default' }}/
+          if [ "${{ matrix.scheme }}" == "bootstrap" ]; then
+            cp -r packages/*.tipa artifacts/packages-${{ matrix.scheme || 'default' }}/
+          else
+            cp -r packages/*.deb artifacts/packages-${{ matrix.scheme || 'default' }}/
+          fi
         fi
         
     - name: Upload dSYM artifacts
@@ -119,8 +123,9 @@ jobs:
           
           This release contains packages built with:
           - Default scheme
-          - Rootless scheme  
-          - Roothide scheme
+          - Rootless scheme
+          - RootHide scheme
+          - Bootstrap (TrollStore)
           
           Built on: ${{ github.sha }}
         files: release-packages/**/*
