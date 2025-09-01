@@ -16,7 +16,7 @@ jobs:
     
     strategy:
       matrix:
-        scheme: ['', 'rootless', 'roothide', 'bootstrap']
+        scheme: ['default', 'rootless', 'roothide', 'bootstrap']
     
     steps:
     - name: Checkout repository
@@ -50,44 +50,44 @@ jobs:
       with:
         xcode-version: '16.2'
         
-    - name: Build package (${{ matrix.scheme || 'default' }})
+    - name: Build package (${{ matrix.scheme }})
       run: |
         export THEOS=$GITHUB_WORKSPACE/theos-roothide
-        source devkit/${{ matrix.scheme || 'default' }}.sh
+        source devkit/${{ matrix.scheme }}.sh
         FINALPACKAGE=1 gmake clean package
         
     - name: Prepare artifacts
       run: |
         # Create directories for artifacts
-        mkdir -p artifacts/dsym-${{ matrix.scheme || 'default' }}
-        mkdir -p artifacts/packages-${{ matrix.scheme || 'default' }}
+        mkdir -p artifacts/dsym-${{ matrix.scheme }}
+        mkdir -p artifacts/packages-${{ matrix.scheme }}
         
         # Copy dSYM files
         if [ -d ".theos/obj" ]; then
-          find .theos/obj -name "*.dSYM" -exec cp -r {} artifacts/dsym-${{ matrix.scheme || 'default' }}/ \;
+          find .theos/obj -name "*.dSYM" -exec cp -r {} artifacts/dsym-${{ matrix.scheme }}/ \;
         fi
         
         # Copy packages
         if [ -d "packages" ]; then
           if [ "${{ matrix.scheme }}" == "bootstrap" ]; then
-            cp -r packages/*.tipa artifacts/packages-${{ matrix.scheme || 'default' }}/
+            cp -r packages/*.tipa artifacts/packages-${{ matrix.scheme }}/
           else
-            cp -r packages/*.deb artifacts/packages-${{ matrix.scheme || 'default' }}/
+            cp -r packages/*.deb artifacts/packages-${{ matrix.scheme }}/
           fi
         fi
         
     - name: Upload dSYM artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: dsym-${{ matrix.scheme || 'default' }}
-        path: artifacts/dsym-${{ matrix.scheme || 'default' }}
+        name: dsym-${{ matrix.scheme }}
+        path: artifacts/dsym-${{ matrix.scheme }}
         if-no-files-found: warn
         
     - name: Upload package artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: packages-${{ matrix.scheme || 'default' }}
-        path: artifacts/packages-${{ matrix.scheme || 'default' }}
+        name: packages-${{ matrix.scheme }}
+        path: artifacts/packages-${{ matrix.scheme }}
         if-no-files-found: warn
 
   release:
