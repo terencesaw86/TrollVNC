@@ -19,7 +19,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSNotificationName const TVNCServiceStatusDidChangeNotification;
+
 @interface TVNCServiceCoordinator : NSObject
+
+@property(nonatomic, assign, getter=isServiceRunning) BOOL serviceRunning;
 
 + (instancetype)sharedCoordinator;
 - (void)registerServiceMonitor;

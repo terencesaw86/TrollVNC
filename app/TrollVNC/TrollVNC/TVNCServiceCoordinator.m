@@ -25,6 +25,8 @@
 
 #define SERVICE_PORT 46751
 
+NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceStatusDidChangeNotification";
+
 @interface TVNCServiceCoordinator ()
 @property(nonatomic, strong) NSTimer *checkTimer;
 @end
@@ -58,6 +60,8 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
+        _checkTimer = nil;
+        _serviceRunning = NO;
     }
     return self;
 }
@@ -74,6 +78,10 @@
                                                   repeats:YES];
 }
 
+- (BOOL)isServiceRunning {
+    return _serviceRunning;
+}
+
 #pragma mark - Private Methods
 
 - (void)checkTimerFired:(NSTimer *_Nullable)timer {
@@ -81,12 +89,17 @@
 }
 
 - (void)ensureServiceRunning {
-    if (![self isServiceRunning]) {
+    BOOL running = [self _isServiceRunning];
+    if (!running) {
         [self spawnService];
+    }
+    if (_serviceRunning != running) {
+        _serviceRunning = running;
+        [[NSNotificationCenter defaultCenter] postNotificationName:TVNCServiceStatusDidChangeNotification object:self];
     }
 }
 
-- (BOOL)isServiceRunning {
+- (BOOL)_isServiceRunning {
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         return NO;
