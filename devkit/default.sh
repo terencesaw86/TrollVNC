@@ -4,6 +4,9 @@ THEOS="$HOME/theos"
 if [ ! -d "$THEOS" ]; then
   THEOS="$GITHUB_WORKSPACE/theos"
 fi
+if [ ! -d "$THEOS" ]; then
+  THEOS="$GITHUB_WORKSPACE/theos-roothide"
+fi
 
 export THEOS
 export THEOS_PACKAGE_SCHEME=

@@ -1,4 +1,4 @@
-name: Build TrollVNC JB
+name: Build TrollVNC
 
 on:
   push:
@@ -52,7 +52,6 @@ jobs:
         
     - name: Build package (${{ matrix.scheme }})
       run: |
-        export THEOS=$GITHUB_WORKSPACE/theos-roothide
         source devkit/${{ matrix.scheme }}.sh
         FINALPACKAGE=1 gmake clean package
         
