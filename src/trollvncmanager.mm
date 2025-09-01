@@ -25,6 +25,7 @@
 #import <spawn.h>
 #import <stdlib.h>
 #import <sys/proc_info.h>
+#import <unistd.h>
 
 #import "TRWatchDog.h"
 #import "libproc.h"
@@ -86,7 +87,7 @@ int main(int argc, const char *argv[]) {
     const char *cMarkerPath = [markerPath fileSystemRepresentation];
 
     // Open file for read/write, create if doesn't exist
-    int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
+    static int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
     if (lockFD == -1) {
         fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
         return EXIT_FAILURE;
@@ -123,6 +124,7 @@ int main(int argc, const char *argv[]) {
 
     // Keep the file descriptor open to maintain the lock
     // It will be automatically closed when the process exits
+    fchown(lockFD, 501, 501);
 
     @autoreleasepool {
         NSString *executablePath = [NSString stringWithUTF8String:argv[0]];
