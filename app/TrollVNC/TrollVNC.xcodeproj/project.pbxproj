@@ -6,36 +6,61 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		615360AA2E65BEFD00643E64 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 615360A92E65BEFD00643E64 /* Main.storyboard */; };
+		61C756672E65B72E00B2B371 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 61C756662E65B72E00B2B371 /* NetworkExtension.framework */; };
+		61C756B82E65BDAC00B2B371 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 61C7569B2E65BDAC00B2B371 /* Assets.xcassets */; };
+		61C756BE2E65BDAC00B2B371 /* Preferences.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 61C756A82E65BDAC00B2B371 /* Preferences.tbd */; };
+		61C756BF2E65BDAC00B2B371 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C7569A2E65BDAC00B2B371 /* AppDelegate.m */; };
+		61C756C02E65BDAC00B2B371 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756A22E65BDAC00B2B371 /* main.m */; };
+		61C756C12E65BDAC00B2B371 /* SceneDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756AA2E65BDAC00B2B371 /* SceneDelegate.m */; };
+		61C756C22E65BDAC00B2B371 /* StripedTextTableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756AC2E65BDAC00B2B371 /* StripedTextTableViewController.m */; };
+		61C756C32E65BDAC00B2B371 /* TaskProcess+ObjC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C756AD2E65BDAC00B2B371 /* TaskProcess+ObjC.swift */; };
+		61C756C42E65BDAC00B2B371 /* TVNCHotspotManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756B02E65BDAC00B2B371 /* TVNCHotspotManager.m */; };
+		61C756C52E65BDAC00B2B371 /* TVNCRootListController.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756B22E65BDAC00B2B371 /* TVNCRootListController.m */; };
+		61C756C62E65BDAC00B2B371 /* TVNCServiceCoordinator.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756B42E65BDAC00B2B371 /* TVNCServiceCoordinator.m */; };
+		61C756C72E65BDAC00B2B371 /* TVNCViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756B62E65BDAC00B2B371 /* TVNCViewController.m */; };
+		61C756CE2E65BE6F00B2B371 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 61C756CD2E65BE6F00B2B371 /* LaunchScreen.storyboard */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		61535F572E6590A100643E64 /* TrollVNC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrollVNC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		615360A82E65BEFD00643E64 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
+		615360AC2E65BF0000643E64 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Main.strings; sourceTree = "<group>"; };
+		615360AE2E65BF0000643E64 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
+		61C756662E65B72E00B2B371 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
+		61C756992E65BDAC00B2B371 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
+		61C7569A2E65BDAC00B2B371 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
+		61C7569B2E65BDAC00B2B371 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		61C7569C2E65BDAC00B2B371 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		61C756A22E65BDAC00B2B371 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		61C756A82E65BDAC00B2B371 /* Preferences.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; path = Preferences.tbd; sourceTree = "<group>"; };
+		61C756A92E65BDAC00B2B371 /* SceneDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDelegate.h; sourceTree = "<group>"; };
+		61C756AA2E65BDAC00B2B371 /* SceneDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SceneDelegate.m; sourceTree = "<group>"; };
+		61C756AB2E65BDAC00B2B371 /* StripedTextTableViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = StripedTextTableViewController.h; sourceTree = "<group>"; };
+		61C756AC2E65BDAC00B2B371 /* StripedTextTableViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = StripedTextTableViewController.m; sourceTree = "<group>"; };
+		61C756AD2E65BDAC00B2B371 /* TaskProcess+ObjC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TaskProcess+ObjC.swift"; sourceTree = "<group>"; };
+		61C756AE2E65BDAC00B2B371 /* TrollVNC.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TrollVNC.entitlements; sourceTree = "<group>"; };
+		61C756AF2E65BDAC00B2B371 /* TVNCHotspotManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCHotspotManager.h; sourceTree = "<group>"; };
+		61C756B02E65BDAC00B2B371 /* TVNCHotspotManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCHotspotManager.m; sourceTree = "<group>"; };
+		61C756B12E65BDAC00B2B371 /* TVNCRootListController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCRootListController.h; sourceTree = "<group>"; };
+		61C756B22E65BDAC00B2B371 /* TVNCRootListController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCRootListController.m; sourceTree = "<group>"; };
+		61C756B32E65BDAC00B2B371 /* TVNCServiceCoordinator.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCServiceCoordinator.h; sourceTree = "<group>"; };
+		61C756B42E65BDAC00B2B371 /* TVNCServiceCoordinator.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCServiceCoordinator.m; sourceTree = "<group>"; };
+		61C756B52E65BDAC00B2B371 /* TVNCViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCViewController.h; sourceTree = "<group>"; };
+		61C756B62E65BDAC00B2B371 /* TVNCViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCViewController.m; sourceTree = "<group>"; };
+		61C756D42E65BE9100B2B371 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		61C756D62E65BEA900B2B371 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/LaunchScreen.strings; sourceTree = "<group>"; };
+		61C756D82E65BEA900B2B371 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/LaunchScreen.strings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		61535F6E2E6590A100643E64 /* Exceptions for "TrollVNC" folder in "TrollVNC" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 61535F562E6590A100643E64 /* TrollVNC */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		61535F592E6590A100643E64 /* TrollVNC */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				61535F6E2E6590A100643E64 /* Exceptions for "TrollVNC" folder in "TrollVNC" target */,
-			);
-			path = TrollVNC;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		61535F542E6590A100643E64 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61C756672E65B72E00B2B371 /* NetworkExtension.framework in Frameworks */,
+				61C756BE2E65BDAC00B2B371 /* Preferences.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -45,7 +70,8 @@
 		61535F4E2E6590A100643E64 = {
 			isa = PBXGroup;
 			children = (
-				61535F592E6590A100643E64 /* TrollVNC */,
+				61C756B72E65BDAC00B2B371 /* TrollVNC */,
+				61C756652E65B72E00B2B371 /* Frameworks */,
 				61535F582E6590A100643E64 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -56,6 +82,43 @@
 				61535F572E6590A100643E64 /* TrollVNC.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		61C756652E65B72E00B2B371 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				61C756662E65B72E00B2B371 /* NetworkExtension.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		61C756B72E65BDAC00B2B371 /* TrollVNC */ = {
+			isa = PBXGroup;
+			children = (
+				61C756992E65BDAC00B2B371 /* AppDelegate.h */,
+				61C7569A2E65BDAC00B2B371 /* AppDelegate.m */,
+				61C7569B2E65BDAC00B2B371 /* Assets.xcassets */,
+				61C7569C2E65BDAC00B2B371 /* Info.plist */,
+				61C756CD2E65BE6F00B2B371 /* LaunchScreen.storyboard */,
+				61C756A22E65BDAC00B2B371 /* main.m */,
+				615360A92E65BEFD00643E64 /* Main.storyboard */,
+				61C756A82E65BDAC00B2B371 /* Preferences.tbd */,
+				61C756A92E65BDAC00B2B371 /* SceneDelegate.h */,
+				61C756AA2E65BDAC00B2B371 /* SceneDelegate.m */,
+				61C756AB2E65BDAC00B2B371 /* StripedTextTableViewController.h */,
+				61C756AC2E65BDAC00B2B371 /* StripedTextTableViewController.m */,
+				61C756AD2E65BDAC00B2B371 /* TaskProcess+ObjC.swift */,
+				61C756AE2E65BDAC00B2B371 /* TrollVNC.entitlements */,
+				61C756AF2E65BDAC00B2B371 /* TVNCHotspotManager.h */,
+				61C756B02E65BDAC00B2B371 /* TVNCHotspotManager.m */,
+				61C756B12E65BDAC00B2B371 /* TVNCRootListController.h */,
+				61C756B22E65BDAC00B2B371 /* TVNCRootListController.m */,
+				61C756B32E65BDAC00B2B371 /* TVNCServiceCoordinator.h */,
+				61C756B42E65BDAC00B2B371 /* TVNCServiceCoordinator.m */,
+				61C756B52E65BDAC00B2B371 /* TVNCViewController.h */,
+				61C756B62E65BDAC00B2B371 /* TVNCViewController.m */,
+			);
+			path = TrollVNC;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -73,9 +136,6 @@
 			buildRules = (
 			);
 			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				61535F592E6590A100643E64 /* TrollVNC */,
 			);
 			name = TrollVNC;
 			packageProductDependencies = (
@@ -103,8 +163,8 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
-				Base,
 				"zh-Hans",
+				Base,
 			);
 			mainGroup = 61535F4E2E6590A100643E64;
 			minimizedProjectReferenceProxies = 1;
@@ -123,6 +183,9 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				615360AA2E65BEFD00643E64 /* Main.storyboard in Resources */,
+				61C756CE2E65BE6F00B2B371 /* LaunchScreen.storyboard in Resources */,
+				61C756B82E65BDAC00B2B371 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -154,10 +217,42 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61C756BF2E65BDAC00B2B371 /* AppDelegate.m in Sources */,
+				61C756C02E65BDAC00B2B371 /* main.m in Sources */,
+				61C756C12E65BDAC00B2B371 /* SceneDelegate.m in Sources */,
+				61C756C22E65BDAC00B2B371 /* StripedTextTableViewController.m in Sources */,
+				61C756C32E65BDAC00B2B371 /* TaskProcess+ObjC.swift in Sources */,
+				61C756C42E65BDAC00B2B371 /* TVNCHotspotManager.m in Sources */,
+				61C756C52E65BDAC00B2B371 /* TVNCRootListController.m in Sources */,
+				61C756C62E65BDAC00B2B371 /* TVNCServiceCoordinator.m in Sources */,
+				61C756C72E65BDAC00B2B371 /* TVNCViewController.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		615360A92E65BEFD00643E64 /* Main.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				615360A82E65BEFD00643E64 /* Base */,
+				615360AC2E65BF0000643E64 /* en */,
+				615360AE2E65BF0000643E64 /* zh-Hans */,
+			);
+			name = Main.storyboard;
+			sourceTree = "<group>";
+		};
+		61C756CD2E65BE6F00B2B371 /* LaunchScreen.storyboard */ = {
+			isa = PBXVariantGroup;
+			children = (
+				61C756D42E65BE9100B2B371 /* Base */,
+				61C756D62E65BEA900B2B371 /* en */,
+				61C756D82E65BEA900B2B371 /* zh-Hans */,
+			);
+			name = LaunchScreen.storyboard;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		61535F702E6590A100643E64 /* Debug */ = {

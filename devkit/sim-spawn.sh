@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$(dirname "$0")"/.. || exit 1
+
 SIMULATOR_IDS=$(xcrun simctl list devices available | grep -E Booted | sed "s/^[ \t]*//" | tr " " "\n")
 
 REAL_SIMULATOR_ID=
