@@ -3099,8 +3099,17 @@ static void prepareScreenCapturer(void) {
 #pragma mark - Main Procedure
 
 static void dropPrivileges(void) {
-    setuid(501);
-    setgid(501);
+    int rc;
+    rc = setuid(501);
+    if (rc != 0) {
+        fprintf(stderr, "Failed to setuid(501): %d\n", rc);
+        exit(EXIT_FAILURE);
+    }
+    rc = setgid(501);
+    if (rc != 0) {
+        fprintf(stderr, "Failed to setgid(501): %d\n", rc);
+        exit(EXIT_FAILURE);
+    }
 }
 
 static void cleanupAndExit(int code) {
