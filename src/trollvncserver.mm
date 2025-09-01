@@ -158,6 +158,73 @@ static void printUsageAndExit(const char *prog) {
     exit(EXIT_SUCCESS);
 }
 
+static void parseWheelOptions(const char *spec) {
+    if (!spec)
+        return;
+    char *dup = strdup(spec);
+    if (!dup)
+        return;
+    char *saveptr = NULL;
+    for (char *tok = strtok_r(dup, ",", &saveptr); tok; tok = strtok_r(NULL, ",", &saveptr)) {
+        char *eq = strchr(tok, '=');
+        if (!eq)
+            continue;
+        *eq = '\0';
+        const char *key = tok;
+        const char *val = eq + 1;
+        double d = strtod(val, NULL);
+        if (strcmp(key, "step") == 0) {
+            if (d > 0)
+                gWheelStepPx = d;
+            TVLog(@"Wheel tuning: step=%g", gWheelStepPx);
+        } else if (strcmp(key, "coalesce") == 0) {
+            if (d >= 0 && d <= 0.5)
+                gWheelCoalesceSec = d;
+            TVLog(@"Wheel tuning: coalesce=%g", gWheelCoalesceSec);
+        } else if (strcmp(key, "max") == 0) {
+            if (d > 0)
+                gWheelMaxStepPx = d;
+            TVLog(@"Wheel tuning: max=%g", gWheelMaxStepPx);
+        } else if (strcmp(key, "clamp") == 0) {
+            if (d >= 1.0 && d <= 10.0)
+                gWheelAbsClampFactor = d;
+            TVLog(@"Wheel tuning: clamp=%g", gWheelAbsClampFactor);
+        } else if (strcmp(key, "amp") == 0) {
+            if (d >= 0.0 && d <= 5.0)
+                gWheelAmpCoeff = d;
+            TVLog(@"Wheel tuning: amp=%g", gWheelAmpCoeff);
+        } else if (strcmp(key, "cap") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelAmpCap = d;
+            TVLog(@"Wheel tuning: cap=%g", gWheelAmpCap);
+        } else if (strcmp(key, "minratio") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelMinTakeRatio = d;
+            TVLog(@"Wheel tuning: minratio=%g", gWheelMinTakeRatio);
+        } else if (strcmp(key, "durbase") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurBase = d;
+            TVLog(@"Wheel tuning: durbase=%g", gWheelDurBase);
+        } else if (strcmp(key, "durk") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurK = d;
+            TVLog(@"Wheel tuning: durk=%g", gWheelDurK);
+        } else if (strcmp(key, "durmin") == 0) {
+            if (d >= 0.0 && d <= 1.0)
+                gWheelDurMin = d;
+            TVLog(@"Wheel tuning: durmin=%g", gWheelDurMin);
+        } else if (strcmp(key, "durmax") == 0) {
+            if (d >= 0.0 && d <= 2.0)
+                gWheelDurMax = d;
+            TVLog(@"Wheel tuning: durmax=%g", gWheelDurMax);
+        } else if (strcmp(key, "natural") == 0) {
+            gWheelNaturalDir = (d != 0.0);
+            TVLog(@"Wheel tuning: natural=%@", gWheelNaturalDir ? @"YES" : @"NO");
+        }
+    }
+    free(dup);
+}
+
 static void parseDaemonOptions(void) {
     NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.82flex.trollvnc"];
     if (!prefs) {
@@ -485,73 +552,6 @@ static void parseDaemonOptions(void) {
           hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off", gHttpDirOverride ? gHttpDirOverride : "(null)",
           gSslCertPath ? gSslCertPath : "(null)", gSslKeyPath ? gSslKeyPath : "(null)");
     TVLog(@"-daemon: preferences applied (domain=com.82flex.trollvnc)");
-}
-
-static void parseWheelOptions(const char *spec) {
-    if (!spec)
-        return;
-    char *dup = strdup(spec);
-    if (!dup)
-        return;
-    char *saveptr = NULL;
-    for (char *tok = strtok_r(dup, ",", &saveptr); tok; tok = strtok_r(NULL, ",", &saveptr)) {
-        char *eq = strchr(tok, '=');
-        if (!eq)
-            continue;
-        *eq = '\0';
-        const char *key = tok;
-        const char *val = eq + 1;
-        double d = strtod(val, NULL);
-        if (strcmp(key, "step") == 0) {
-            if (d > 0)
-                gWheelStepPx = d;
-            TVLog(@"Wheel tuning: step=%g", gWheelStepPx);
-        } else if (strcmp(key, "coalesce") == 0) {
-            if (d >= 0 && d <= 0.5)
-                gWheelCoalesceSec = d;
-            TVLog(@"Wheel tuning: coalesce=%g", gWheelCoalesceSec);
-        } else if (strcmp(key, "max") == 0) {
-            if (d > 0)
-                gWheelMaxStepPx = d;
-            TVLog(@"Wheel tuning: max=%g", gWheelMaxStepPx);
-        } else if (strcmp(key, "clamp") == 0) {
-            if (d >= 1.0 && d <= 10.0)
-                gWheelAbsClampFactor = d;
-            TVLog(@"Wheel tuning: clamp=%g", gWheelAbsClampFactor);
-        } else if (strcmp(key, "amp") == 0) {
-            if (d >= 0.0 && d <= 5.0)
-                gWheelAmpCoeff = d;
-            TVLog(@"Wheel tuning: amp=%g", gWheelAmpCoeff);
-        } else if (strcmp(key, "cap") == 0) {
-            if (d >= 0.0 && d <= 2.0)
-                gWheelAmpCap = d;
-            TVLog(@"Wheel tuning: cap=%g", gWheelAmpCap);
-        } else if (strcmp(key, "minratio") == 0) {
-            if (d >= 0.0 && d <= 2.0)
-                gWheelMinTakeRatio = d;
-            TVLog(@"Wheel tuning: minratio=%g", gWheelMinTakeRatio);
-        } else if (strcmp(key, "durbase") == 0) {
-            if (d >= 0.0 && d <= 1.0)
-                gWheelDurBase = d;
-            TVLog(@"Wheel tuning: durbase=%g", gWheelDurBase);
-        } else if (strcmp(key, "durk") == 0) {
-            if (d >= 0.0 && d <= 1.0)
-                gWheelDurK = d;
-            TVLog(@"Wheel tuning: durk=%g", gWheelDurK);
-        } else if (strcmp(key, "durmin") == 0) {
-            if (d >= 0.0 && d <= 1.0)
-                gWheelDurMin = d;
-            TVLog(@"Wheel tuning: durmin=%g", gWheelDurMin);
-        } else if (strcmp(key, "durmax") == 0) {
-            if (d >= 0.0 && d <= 2.0)
-                gWheelDurMax = d;
-            TVLog(@"Wheel tuning: durmax=%g", gWheelDurMax);
-        } else if (strcmp(key, "natural") == 0) {
-            gWheelNaturalDir = (d != 0.0);
-            TVLog(@"Wheel tuning: natural=%@", gWheelNaturalDir ? @"YES" : @"NO");
-        }
-    }
-    free(dup);
 }
 
 static void parseCLI(int argc, const char *argv[]) {
