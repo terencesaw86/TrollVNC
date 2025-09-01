@@ -135,6 +135,11 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -e file   Path to SSL certificate file\n");
     fprintf(stderr, "  -k file   Path to SSL private key file\n\n");
 
+#if DEBUG
+    fprintf(stderr, "Logging:\n");
+    fprintf(stderr, "  -V        Enable verbose logging\n\n");
+#endif
+
     fprintf(stderr, "Help:\n");
     fprintf(stderr, "  -h        Show this help message\n\n");
 
@@ -907,7 +912,7 @@ static void *gFrontBuffer = NULL; // Exposed to VNC clients via gScreen->frameBu
 static void *gBackBuffer = NULL;  // We render into this and then swap
 
 // Hash algorithm selection (auto: prefer CRC32 on ARM with hardware support)
-#if FB_LOG
+#if DEBUG
 #if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
 static const BOOL gUseCRC32Hash = YES;
 #else
@@ -1591,7 +1596,7 @@ NS_INLINE void unlockAllClientsBlocking(void) {
 
 static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
-#if FB_LOG
+#if DEBUG
     // Perf: overall start timestamp
     CFAbsoluteTime __tv_tStart = CFAbsoluteTimeGetCurrent();
 #endif
@@ -1610,13 +1615,13 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         return;
     }
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tLock0 = CFAbsoluteTimeGetCurrent();
 #endif
 
     CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tLock1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msLock = (__tv_tLock1 - __tv_tLock0) * 1000.0;
     TVLogVerbose(@"lock pixel buffer took %.3f ms", __tv_msLock);
@@ -1630,13 +1635,13 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     // Determine rotation and resize framebuffer if orientation implies new dimensions.
     int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tResize0 = CFAbsoluteTimeGetCurrent();
 #endif
 
     maybeResizeFramebufferForRotation(rotQ);
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tResize1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msResize = (__tv_tResize1 - __tv_tResize0) * 1000.0;
     TVLogVerbose(@"maybeResize(rotQ=%d) took %.3f ms (server=%dx%d, src=%zux%zu)", rotQ, __tv_msResize, gWidth, gHeight,
@@ -1671,14 +1676,14 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     vImage_Buffer stage = srcBuf; // after rotation
     vImage_Buffer rotBuf = {0};
 
-#if FB_LOG
+#if DEBUG
     CFTimeInterval __tv_msRotate = 0.0;
     CFTimeInterval __tv_msScaleOrCopy = 0.0;
 #endif
 
     if (needsRotate) {
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tRot0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -1725,7 +1730,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
         stage = rotBuf;
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tRot1 = CFAbsoluteTimeGetCurrent();
         __tv_msRotate = (__tv_tRot1 - __tv_tRot0) * 1000.0;
         TVLogVerbose(@"rotate %d*90 took %.3f ms (rotW=%zu, rotH=%zu)", rotQ, __tv_msRotate, (size_t)rotBuf.width,
@@ -1740,13 +1745,13 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                             .rowBytes = (size_t)gWidth * (size_t)gBytesPerPixel};
     if (stage.width == dstBuf.width && stage.height == dstBuf.height && gScale == 1.0) {
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tCopy0 = CFAbsoluteTimeGetCurrent();
 #endif
 
         copyWithStrideTight((uint8_t *)dstBuf.data, (const uint8_t *)stage.data, gWidth, gHeight, stage.rowBytes);
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tCopy1 = CFAbsoluteTimeGetCurrent();
         __tv_msScaleOrCopy = (__tv_tCopy1 - __tv_tCopy0) * 1000.0;
         TVLogVerbose(@"copy stage->back (tight) took %.3f ms", __tv_msScaleOrCopy);
@@ -1760,14 +1765,14 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         if (gNoScalePadThresholdPx > 0 && dW <= gNoScalePadThresholdPx && dW >= -gNoScalePadThresholdPx &&
             dH <= gNoScalePadThresholdPx && dH >= -gNoScalePadThresholdPx) {
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tPad0 = CFAbsoluteTimeGetCurrent();
 #endif
 
             copyPadOrCropToTight((uint8_t *)dstBuf.data, (int)dstBuf.width, (int)dstBuf.height,
                                  (const uint8_t *)stage.data, (int)stage.width, (int)stage.height, stage.rowBytes);
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tPad1 = CFAbsoluteTimeGetCurrent();
             __tv_msScaleOrCopy = (__tv_tPad1 - __tv_tPad0) * 1000.0;
             TVLogVerbose(@"pad/crop copy stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d, thr=%d)",
@@ -1777,7 +1782,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
         } else {
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tScale0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -1798,7 +1803,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                 return;
             }
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tScale1 = CFAbsoluteTimeGetCurrent();
             __tv_msScaleOrCopy = (__tv_tScale1 - __tv_tScale0) * 1000.0;
             TVLogVerbose(@"scale stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d)", __tv_msScaleOrCopy,
@@ -1807,13 +1812,13 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         }
     }
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tUnlock0 = CFAbsoluteTimeGetCurrent();
 #endif
 
     CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tUnlock1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msUnlock = (__tv_tUnlock1 - __tv_tUnlock0) * 1000.0;
     TVLogVerbose(@"unlock pixel buffer took %.3f ms", __tv_msUnlock);
@@ -1827,7 +1832,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             memset(gPendingDirty, 0, gTileCount);
         gHasPending = NO;
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -1840,7 +1845,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                     pthread_mutex_unlock(locked[i]);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"rotationChanged async-swap+mark fullscreen took %.3f ms",
                              (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
@@ -1851,7 +1856,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"rotationChanged copy(fullscreen)+mark took %.3f ms",
                              (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
@@ -1863,7 +1868,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
             unlockAllClientsBlocking();
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
             TVLogVerbose(@"rotationChanged blocking-swap+mark fullscreen took %.3f ms",
                          (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
@@ -1878,7 +1883,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         resetCurrTileHashes();
         swapTileHashes();
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
         TVLogVerbose(@"rotationChanged summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
                      @"total=%.3fms",
@@ -1892,7 +1897,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     // If dirty detection is disabled, perform a full-screen update
     if (dirtyDisabled) {
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -1905,7 +1910,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                     pthread_mutex_unlock(locked[i]);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"dirtyDisabled async-swap+mark fullscreen took %.3f ms",
                              (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
@@ -1917,7 +1922,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"dirtyDisabled copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
@@ -1929,14 +1934,14 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
             unlockAllClientsBlocking();
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
             TVLogVerbose(@"dirtyDisabled blocking-swap+mark fullscreen took %.3f ms",
                          (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
         }
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
         TVLogVerbose(
             @"dirtyDisabled summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms total=%.3fms",
@@ -1949,7 +1954,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     // Build dirty rectangles with deferred coalescing window (enabled)
     // Lightweight hashing to update pending and decide whether to flush.
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tHash0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -1961,7 +1966,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
     }
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tHash1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msHash = (__tv_tHash1 - __tv_tHash0) * 1000.0;
     TVLogVerbose(@"tile hashing took %.3f ms (tiles=%zu, tileSize=%d)%@%@", __tv_msHash, gTileCount, gTileSize,
@@ -1975,13 +1980,13 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     // Accumulate pending dirty tiles
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tPend0 = CFAbsoluteTimeGetCurrent();
 #endif
 
     accumulatePendingDirty();
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tPend1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msPend = (__tv_tPend1 - __tv_tPend0) * 1000.0;
     TVLogVerbose(@"accumulate pending took %.3f ms (hasPending=%@)", __tv_msPend, gHasPending ? @"YES" : @"NO");
@@ -2010,7 +2015,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     if (!shouldFlush) {
         // Still deferring: do not notify clients yet; keep previous full-hash baseline.
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
         TVLogVerbose(@"deferred (no flush) summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
                      @"hash=%.3fms total=%.3fms",
@@ -2024,7 +2029,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     // At flush: recompute full hashes for precise rects
     {
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tHashFull0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -2042,7 +2047,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
         }
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tHashFull1 = CFAbsoluteTimeGetCurrent();
         __tv_msHash = (__tv_tHashFull1 - __tv_tHashFull0) * 1000.0;
         TVLogVerbose(@"tile hashing (flush full)%@ took %.3f ms (tiles=%zu, tileSize=%d)%@",
@@ -2052,7 +2057,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     }
 
 // Promote pending tiles into rects
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tRects0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -2103,7 +2108,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tRects1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msRects = (__tv_tRects1 - __tv_tRects0) * 1000.0;
     TVLogVerbose(@"build rects took %.3f ms (rects=%d, changedTiles=%d, extraTiles=%d, changedPct=%d%%, fsThresh=%d%%, "
@@ -2118,7 +2123,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     gHasPending = NO;
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tSwap0 = CFAbsoluteTimeGetCurrent();
 #endif
 
@@ -2137,7 +2142,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                 markRectsModified(rects, rectCount);
             }
 
-#if FB_LOG
+#if DEBUG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
             TVLogVerbose(@"async-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
                          fullScreen ? @"fullscreen" : @"partial");
@@ -2150,7 +2155,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                                     (size_t)gWidth * (size_t)gBytesPerPixel);
                 rfbMarkRectAsModified(gScreen, 0, 0, gWidth, gHeight);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"async path copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
@@ -2160,7 +2165,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
                 copyRectsFromBackToFront(rects, rectCount);
                 markRectsModified(rects, rectCount);
 
-#if FB_LOG
+#if DEBUG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
                 TVLogVerbose(@"async path copy(dirty %d rects)+mark took %.3f ms", rectCount,
                              (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
@@ -2178,7 +2183,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         }
         unlockAllClientsBlocking();
 
-#if FB_LOG
+#if DEBUG
         CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
         TVLogVerbose(@"blocking-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
                      fullScreen ? @"fullscreen" : @"partial");
@@ -2189,7 +2194,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     swapTileHashes();
     sLastRotQ = rotQ;
 
-#if FB_LOG
+#if DEBUG
     CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
     TVLogVerbose(@"frame summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms hash=%.3fms "
                  @"rects=%.3fms total=%.3fms (rectCount=%d, changedPct=%d%%, fullscreen=%@, inflight=%d/%d)",

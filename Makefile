@@ -34,7 +34,6 @@ trollvncserver_CFLAGS += -march=armv8-a+crc
 endif
 trollvncserver_CCFLAGS += -std=c++20
 
-# trollvncserver_CFLAGS += -DFB_LOG=1
 ifeq ($(THEBOOTSTRAP),1)
 trollvncserver_CFLAGS += -DTHEBOOTSTRAP=1
 endif

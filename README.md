@@ -34,7 +34,7 @@ Dirty detection:
 - `-t size`   Tile size for dirty-detection in pixels (`8..128`, default: `32`)
 - `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `0`; `0` disables dirty detection entirely)
 - `-R max`    Max dirty rects before collapsing to a bounding box (default: `256`)
-- `-a`        Enable non-blocking swap (may cause tearing). Default off.
+- `-a`        Enable non-blocking swap (may cause tearing).
 
 Scroll/Input:
 
@@ -51,14 +51,14 @@ Cursor & Rotation:
 
 HTTP/WebSockets:
 
-- `-H port`  Enable built-in HTTP server on port (`0` disables; default `0`)
-- `-D path`  Absolute path for HTTP document root
-- `-e file`  Path to SSL certificate file
-- `-k file`  Path to SSL private key file
+- `-H port`   Enable built-in HTTP server on port (`0` disables; default `0`)
+- `-D path`   Absolute path for HTTP document root
+- `-e file`   Path to SSL certificate file
+- `-k file`   Path to SSL private key file
 
 Logging:
 
-- `-V`        Enable verbose logging (default: `off`)
+- `-V`        Enable verbose logging (debug only)
 
 Help:
 
