@@ -14,3 +14,5 @@
 "%@ rows not loaded" = "%@ rows not loaded";
 "Copy" = "Copy";
 "Launching" = "Launching";
+"Current IP Address: %@" = "Current IP Address: %@";
+"unavailable" = "unavailable";

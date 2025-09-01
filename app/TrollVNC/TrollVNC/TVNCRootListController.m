@@ -22,6 +22,9 @@
 #import <stdlib.h>
 #import <string.h>
 #import <sys/sysctl.h>
+#import <ifaddrs.h>
+#import <arpa/inet.h>
+#import <net/if.h>
 
 #import "StripedTextTableViewController.h"
 #import "TVNCRootListController.h"
@@ -89,6 +92,46 @@ static inline void TVNCRestartVNCService(void) {
             kill(pid, SIGTERM);
         }
     });
+}
+
+// Resolve current IPv4/IPv6 address of interface en0 (Wi‑Fi). Prefer IPv4 if available.
+static inline NSString *TVNCGetEn0IPAddress(void) {
+    struct ifaddrs *ifaList = NULL;
+    if (getifaddrs(&ifaList) != 0 || !ifaList) return nil;
+
+    NSString *ipv4 = nil;
+    NSString *ipv6 = nil;
+    for (struct ifaddrs *ifa = ifaList; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || !ifa->ifa_name) continue;
+        if (strcmp(ifa->ifa_name, "en0") != 0) continue;
+        if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK)) continue;
+
+        sa_family_t fam = ifa->ifa_addr->sa_family;
+        char buf[INET6_ADDRSTRLEN] = {0};
+        if (fam == AF_INET) {
+            const struct sockaddr_in *sin = (const struct sockaddr_in *)ifa->ifa_addr;
+            if (inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf))) {
+                ipv4 = [NSString stringWithUTF8String:buf];
+            }
+        } else if (fam == AF_INET6) {
+            const struct sockaddr_in6 *sin6 = (const struct sockaddr_in6 *)ifa->ifa_addr;
+            // Skip link-local addresses (fe80::) if possible
+            if (IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr)) {
+                char tmp[INET6_ADDRSTRLEN] = {0};
+                if (inet_ntop(AF_INET6, &sin6->sin6_addr, tmp, sizeof(tmp))) {
+                    // Keep as fallback only if no other IPv6 found later
+                    if (!ipv6) ipv6 = [NSString stringWithUTF8String:tmp];
+                }
+            } else {
+                char tmp[INET6_ADDRSTRLEN] = {0};
+                if (inet_ntop(AF_INET6, &sin6->sin6_addr, tmp, sizeof(tmp))) {
+                    ipv6 = [NSString stringWithUTF8String:tmp];
+                }
+            }
+        }
+    }
+    freeifaddrs(ifaList);
+    return ipv4 ?: ipv6; // prefer IPv4
 }
 
 @interface TVNCRootListController ()
@@ -202,11 +245,17 @@ static inline void TVNCRestartVNCService(void) {
     NSString *title = NSLocalizedStringFromTableInBundle(@"Apply Changes", @"Localizable", self.bundle, nil);
     NSString *message = NSLocalizedStringFromTableInBundle(@"Are you sure you want to restart the VNC service?",
                                                            @"Localizable", self.bundle, nil);
+    // Append current en0 IP on a second line, if available
+    NSString *ip = TVNCGetEn0IPAddress();
+    NSString *ipUnavailable = NSLocalizedStringFromTableInBundle(@"unavailable", @"Localizable", self.bundle, nil);
+    NSString *ipFormat = NSLocalizedStringFromTableInBundle(@"Current IP Address: %@", @"Localizable", self.bundle, nil);
+    NSString *ipLine = [NSString stringWithFormat:ipFormat, (ip.length ? ip : ipUnavailable)];
+    NSString *fullMessage = [NSString stringWithFormat:@"%@\n%@", message, ipLine];
     NSString *cancel = NSLocalizedStringFromTableInBundle(@"Cancel", @"Localizable", self.bundle, nil);
     NSString *restart = NSLocalizedStringFromTableInBundle(@"Restart", @"Localizable", self.bundle, nil);
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
-                                                                   message:message
+                                                                   message:fullMessage
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:cancel style:UIAlertActionStyleCancel handler:nil]];
     __weak typeof(self) weakSelf = self;

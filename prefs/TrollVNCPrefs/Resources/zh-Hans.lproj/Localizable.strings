@@ -14,3 +14,5 @@
 "%@ rows not loaded" = "%@ 行未加载";
 "Copy" = "拷贝";
 "Launching" = "启动中";
+"Current IP Address: %@" = "当前 IP 地址：%@";
+"unavailable" = "不可用";
