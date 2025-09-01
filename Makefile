@@ -107,6 +107,10 @@ include $(THEOS_MAKE_PATH)/tool.mk
 
 SUBPROJECTS += prefs/TrollVNCPrefs
 
+ifeq ($(THEBOOTSTRAP),1)
+SUBPROJECTS += app/TrollVNC
+endif
+
 include $(THEOS_MAKE_PATH)/aggregate.mk
 
 export THEOS_PACKAGE_SCHEME
