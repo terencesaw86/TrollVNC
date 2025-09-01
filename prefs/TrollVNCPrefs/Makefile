@@ -8,7 +8,10 @@ BUNDLE_NAME := TrollVNCPrefs
 
 TrollVNCPrefs_FILES += TVNCRootListController.m
 TrollVNCPrefs_FILES += StripedTextTableViewController.m
+
 TrollVNCPrefs_CFLAGS += -fobjc-arc
+TrollVNCPrefs_CFLAGS += -DPACKAGE_VERSION=\"$(PACKAGE_VERSION)\"
+TrollVNCPrefs_CFLAGS += -DTHEOS_PACKAGE_SCHEME=\"$(THEOS_PACKAGE_SCHEME)\"
 
 TrollVNCPrefs_FRAMEWORKS += UIKit
 TrollVNCPrefs_PRIVATE_FRAMEWORKS += Preferences

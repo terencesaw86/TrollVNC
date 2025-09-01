@@ -1,4 +1,5 @@
 export PACKAGE_VERSION := 1.4
+export THEOS_PACKAGE_SCHEME
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 ARCHS := arm64 x86_64
@@ -33,6 +34,13 @@ ifeq ($(THEOS_DEVICE_SIMULATOR),)
 trollvncserver_CFLAGS += -march=armv8-a+crc
 endif
 trollvncserver_CCFLAGS += -std=c++20
+
+trollvncserver_CFLAGS += -DPACKAGE_VERSION=\"$(PACKAGE_VERSION)\"
+ifeq ($(THEOS_PACKAGE_SCHEME),)
+trollvncserver_CFLAGS += -DTHEOS_PACKAGE_SCHEME=\"legacy\"
+else
+trollvncserver_CFLAGS += -DTHEOS_PACKAGE_SCHEME=\"$(THEOS_PACKAGE_SCHEME)\"
+endif
 
 ifeq ($(THEBOOTSTRAP),1)
 trollvncserver_CFLAGS += -DTHEBOOTSTRAP=1

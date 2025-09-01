@@ -95,7 +95,17 @@ static inline void TVNCRestartVNCService(void) {
 
 - (NSArray *)specifiers {
     if (!_specifiers) {
-        _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        NSMutableArray<PSSpecifier *> *specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        PSSpecifier *firstGroup = [specifiers firstObject];
+        NSString *packageScheme = @THEOS_PACKAGE_SCHEME;
+        if (!packageScheme.length) {
+            packageScheme = @"legacy";
+        }
+        [firstGroup setProperty:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
+                                                               @"TrollVNC (%@) v%@", @"Localizable", self.bundle, nil),
+                                                           packageScheme, @PACKAGE_VERSION]
+                         forKey:@"footerText"];
+        _specifiers = specifiers;
     }
     return _specifiers;
 }

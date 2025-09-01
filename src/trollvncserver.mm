@@ -93,6 +93,7 @@ static char *gSslKeyPath = NULL;
 
 static void printUsageAndExit(const char *prog) {
     // Compact, grouped usage for quick reference. See README for detailed explanations.
+    fprintf(stderr, "TrollVNC (%s) v%s\n", THEOS_PACKAGE_SCHEME, PACKAGE_VERSION);
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");
@@ -3166,12 +3167,17 @@ static void setupRfbLogging(void) { rfbLog = rfbErr = rfbCustomLog; }
 #pragma mark - Main Procedure
 
 static void dropPrivileges(void) {
+    if (isatty(STDIN_FILENO)) {
+        return;
+    }
+
     int rc;
     rc = setuid(501);
     if (rc != 0) {
         fprintf(stderr, "Failed to setuid(501): %d\n", rc);
         exit(EXIT_FAILURE);
     }
+
     rc = setgid(501);
     if (rc != 0) {
         fprintf(stderr, "Failed to setgid(501): %d\n", rc);
@@ -3196,7 +3202,6 @@ static void cleanupAndExit(int code) {
 
 static void monitorParentProcess(void) {
     if (isatty(STDIN_FILENO)) {
-        fprintf(stderr, "Running in interactive mode, not monitoring parent process\n");
         return;
     }
 
@@ -3248,7 +3253,6 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
 
 static void ensureSingleton(const char *argv[]) {
     if (isatty(STDIN_FILENO)) {
-        fprintf(stderr, "Running in interactive mode, not enforcing singleton\n");
         return;
     }
 
