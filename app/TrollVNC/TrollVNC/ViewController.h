@@ -5,8 +5,8 @@
 //  Created by 82Flex on 9/1/25.
 //
 
-#import <UIKit/UIKit.h>
+#import <Preferences/PSRootController.h>
 
-@interface ViewController : UIViewController
+@interface ViewController : PSRootController
 
 @end

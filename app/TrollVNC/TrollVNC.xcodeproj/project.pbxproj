@@ -170,6 +170,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"THEOS_PACKAGE_SCHEME=\\\"bootstrap\\\"",
+					"PACKAGE_VERSION=\\\"1.0\\\"",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrollVNC/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = TrollVNC;
@@ -184,6 +189,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TrollVNC",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.82flex.TrollVNC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -192,6 +201,10 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = (
+					$THEOS/include,
+					$THEOS/vendor/include,
+				);
 				TARGETED_DEVICE_FAMILY = "1,2";
 				THEOS = $HOME/theos;
 			};
@@ -207,6 +220,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_PREPROCESSOR_DEFINITIONS = "THEOS_PACKAGE_SCHEME=\\\"bootstrap\\\"";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrollVNC/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = TrollVNC;
@@ -221,6 +235,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/TrollVNC",
+				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.82flex.TrollVNC;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -229,6 +247,10 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SYSTEM_HEADER_SEARCH_PATHS = (
+					$THEOS/include,
+					$THEOS/vendor/include,
+				);
 				TARGETED_DEVICE_FAMILY = "1,2";
 				THEOS = $HOME/theos;
 			};
