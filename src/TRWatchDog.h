@@ -64,6 +64,15 @@ typedef NS_ENUM(NSInteger, TRWatchDogState) {
 /// Working directory
 @property(nonatomic, copy) NSString *workingDirectory;
 
+/// Standard input file path
+@property(nonatomic, copy) NSString *standardInputPath;
+
+/// Standard output file path
+@property(nonatomic, copy) NSString *standardOutputPath;
+
+/// Standard error file path
+@property(nonatomic, copy) NSString *standardErrorPath;
+
 /// User name
 @property(nonatomic, copy) NSString *userName;
 

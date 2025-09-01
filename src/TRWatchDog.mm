@@ -20,10 +20,15 @@
 #endif
 
 #import <Foundation/Foundation.h>
+#import <errno.h>
+#import <fcntl.h>
 #import <grp.h>
 #import <pwd.h>
 #import <signal.h>
 #import <stdint.h>
+#import <string.h>
+#import <sys/stat.h>
+#import <unistd.h>
 
 #import "Logging.h"
 #import "TRWatchDog.h"
@@ -349,6 +354,110 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         TVLog(@TAG "[%@] throttling restart, need to wait %.1fs more (%.1fs since last start)", self.label ?: @"<nil>",
               self.throttleInterval - timeSinceLastStart, timeSinceLastStart);
         [self _transitionToState:TRWatchDogStateThrottled];
+    }
+}
+
+#pragma mark - Standard Streams Configuration
+
+- (void)_configureStandardStreamsForTask:(TRTask *)task {
+    dispatch_assert_queue(self.stateQueue);
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    // Determine desired ownership if userName/groupName are provided
+    BOOL hasUser = (self.userName && self.userName.length > 0);
+    BOOL hasGroup = (self.groupName && self.groupName.length > 0);
+
+    uid_t desiredUID = hasUser ? (uid_t)task.userIdentifier : (uid_t)getuid();
+    gid_t desiredGID = hasGroup ? (gid_t)task.groupIdentifier : (gid_t)getgid();
+
+    // Helper block to ensure a file exists (create empty if missing)
+    BOOL (^ensureFileExists)(NSString *) = ^BOOL(NSString *path) {
+        if (!path || path.length == 0) {
+            return NO;
+        }
+        BOOL isDir = NO;
+        BOOL exists = [fm fileExistsAtPath:path isDirectory:&isDir];
+        if (exists && isDir) {
+            TVLog(@TAG "[%@] path is a directory, expected file: %@", self.label ?: @"<nil>", path);
+            return NO;
+        }
+        if (!exists) {
+            // Try create empty file
+            NSString *parent = [path stringByDeletingLastPathComponent];
+            if (parent.length > 0) {
+                BOOL parentIsDir = NO;
+                if (![fm fileExistsAtPath:parent isDirectory:&parentIsDir] || !parentIsDir) {
+                    // Parent dir not present, don't attempt to create directories implicitly
+                    TVLog(@TAG "[%@] parent directory missing for path: %@", self.label ?: @"<nil>", path);
+                    // Still attempt createFileAtPath (will fail if parent missing)
+                }
+            }
+            if (![fm createFileAtPath:path contents:nil attributes:nil]) {
+                TVLog(@TAG "[%@] failed to create file at path: %@", self.label ?: @"<nil>", path);
+                return NO;
+            }
+            // Adjust ownership if requested
+            if (hasUser || hasGroup) {
+                if (chown([path fileSystemRepresentation], desiredUID, desiredGID) != 0) {
+                    TVLog(@TAG "[%@] failed to chown %@ to uid:%u gid:%u, errno=%d (%s)", self.label ?: @"<nil>", path,
+                          (unsigned)desiredUID, (unsigned)desiredGID, errno, strerror(errno));
+                } else {
+                    TVLog(@TAG "[%@] set ownership for %@ to uid:%u gid:%u", self.label ?: @"<nil>", path,
+                          (unsigned)desiredUID, (unsigned)desiredGID);
+                }
+            }
+        }
+        return YES;
+    };
+
+    // standardInput: ensure file and open for reading
+    if (self.standardInputPath && self.standardInputPath.length > 0) {
+        if (ensureFileExists(self.standardInputPath)) {
+            NSFileHandle *inHandle = [NSFileHandle fileHandleForReadingAtPath:self.standardInputPath];
+            if (inHandle) {
+                task.standardInput = inHandle;
+                TVLog(@TAG "[%@] configured standardInput: %@", self.label ?: @"<nil>", self.standardInputPath);
+            } else {
+                TVLog(@TAG "[%@] failed to open standardInput for reading: %@", self.label ?: @"<nil>",
+                      self.standardInputPath);
+            }
+        }
+    }
+
+    // Helper to open a file for append writing using low-level open()
+    NSFileHandle * (^openAppendHandle)(NSString *) = ^NSFileHandle *(NSString *path) {
+        int fd = open([path fileSystemRepresentation], O_WRONLY | O_CREAT | O_APPEND, (mode_t)0644);
+        if (fd == -1) {
+            TVLog(@TAG "[%@] failed to open for append: %@, errno=%d (%s)", self.label ?: @"<nil>", path, errno,
+                  strerror(errno));
+            return (NSFileHandle *)nil;
+        }
+        return [[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];
+    };
+
+    // standardOutput: ensure file and open append
+    if (self.standardOutputPath && self.standardOutputPath.length > 0) {
+        if (ensureFileExists(self.standardOutputPath)) {
+            NSFileHandle *outHandle = openAppendHandle(self.standardOutputPath);
+            if (outHandle) {
+                task.standardOutput = outHandle;
+                TVLog(@TAG "[%@] configured standardOutput (append): %@", self.label ?: @"<nil>",
+                      self.standardOutputPath);
+            }
+        }
+    }
+
+    // standardError: ensure file and open append
+    if (self.standardErrorPath && self.standardErrorPath.length > 0) {
+        if (ensureFileExists(self.standardErrorPath)) {
+            NSFileHandle *errHandle = openAppendHandle(self.standardErrorPath);
+            if (errHandle) {
+                task.standardError = errHandle;
+                TVLog(@TAG "[%@] configured standardError (append): %@", self.label ?: @"<nil>",
+                      self.standardErrorPath);
+            }
+        }
     }
 }
 
@@ -704,6 +813,9 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         task.processGroupIdentifier = self.processGroupIdentifier;
         TVLog(@TAG "[%@] setting process group identifier: %d", self.label, self.processGroupIdentifier);
     }
+
+    // Configure standard IO if paths are provided
+    [self _configureStandardStreamsForTask:task];
 
     // Set task termination handler
     __weak TRWatchDog *weakSelf = self;

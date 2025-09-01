@@ -21,10 +21,14 @@
 
 #import <Foundation/Foundation.h>
 
+#import <arpa/inet.h>
+#import <fcntl.h>
+#import <netinet/in.h>
 #import <notify.h>
 #import <spawn.h>
 #import <stdlib.h>
 #import <sys/proc_info.h>
+#import <sys/socket.h>
 #import <unistd.h>
 
 #import "Logging.h"
@@ -76,6 +80,89 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
     });
 
     dispatch_resume(monitorSource);
+}
+
+// Open a local IPv4 TCP listener on 127.0.0.1:port that accepts and
+// immediately closes connections (no response). This lets clients detect
+// the service by a successful connect without any protocol exchange.
+static void openLocalDummyService(uint16_t port) {
+    static int sListenFD = -1;
+    static dispatch_source_t sAcceptSource = nil;
+    if (sListenFD != -1 || sAcceptSource) {
+        return; // already set up
+    }
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        fprintf(stderr, "[dummy-listener] socket() failed: %s\n", strerror(errno));
+        return;
+    }
+
+    int yes = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
+    // Non-blocking for accept loop
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags != -1)
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
+        fprintf(stderr, "[dummy-listener] inet_pton failed\n");
+        close(fd);
+        return;
+    }
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        fprintf(stderr, "[dummy-listener] bind(127.0.0.1:%u) failed: %s\n", (unsigned)port, strerror(errno));
+        close(fd);
+        return;
+    }
+
+    if (listen(fd, SOMAXCONN) < 0) {
+        fprintf(stderr, "[dummy-listener] listen() failed: %s\n", strerror(errno));
+        close(fd);
+        return;
+    }
+
+    sListenFD = fd;
+    sAcceptSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, dispatch_get_main_queue());
+    if (!sAcceptSource) {
+        close(fd);
+        sListenFD = -1;
+        return;
+    }
+
+    dispatch_source_set_event_handler(sAcceptSource, ^{
+        while (1) {
+            struct sockaddr_storage clientAddr;
+            socklen_t clientLen = sizeof(clientAddr);
+            int cfd = accept(fd, (struct sockaddr *)&clientAddr, &clientLen);
+            if (cfd < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                    break;
+                }
+                // Unexpected error; break to avoid busy loop
+                break;
+            }
+            // Immediately close; no response needed
+            close(cfd);
+        }
+    });
+
+    dispatch_source_set_cancel_handler(sAcceptSource, ^{
+        if (sListenFD != -1) {
+            close(sListenFD);
+            sListenFD = -1;
+        }
+    });
+
+    dispatch_resume(sAcceptSource);
+    fprintf(stderr, "[dummy-listener] listening on 127.0.0.1:%u\n", (unsigned)port);
 }
 
 int main(int argc, const char *argv[]) {
@@ -146,6 +233,25 @@ int main(int argc, const char *argv[]) {
         [gWatchDog setEnvironmentVariables:[[NSProcessInfo processInfo] environment]];
         [gWatchDog setWorkingDirectory:[[NSFileManager defaultManager] currentDirectoryPath]];
 
+        NSString *rootPath = executablePath;
+        do {
+            if ([rootPath hasSuffix:@"/var/jb"] || [[rootPath lastPathComponent] hasPrefix:@".jbroot-"]) {
+                // Found the jailbreak root
+                break;
+            }
+            if ([rootPath isEqualToString:@"/"] || !rootPath.length) {
+                // Reached the root without finding jailbreak root
+                break;
+            }
+            rootPath = [rootPath stringByDeletingLastPathComponent];
+        } while (YES);
+
+        NSString *stdoutPath = [rootPath stringByAppendingPathComponent:@"tmp/trollvnc-stdout.log"];
+        NSString *stderrPath = [rootPath stringByAppendingPathComponent:@"tmp/trollvnc-stderr.log"];
+
+        [gWatchDog setStandardOutputPath:stdoutPath];
+        [gWatchDog setStandardErrorPath:stderrPath];
+
         BOOL isOwnedByRoot = NO;
         struct stat sb;
         if (stat([executablePath fileSystemRepresentation], &sb) == 0) {
@@ -206,8 +312,11 @@ int main(int argc, const char *argv[]) {
         sigaction(SIGTERM, &act, &oldact);
     }
 
-    CFRunLoopRun();
+    // Open a passive local probe port for clients to detect availability.
+    // IPv4 127.0.0.1:46751, no response; accept and close.
+    openLocalDummyService(46751);
 
+    CFRunLoopRun();
     @autoreleasepool {
         pid_t child = [gWatchDog processIdentifier];
         [gWatchDog stop];

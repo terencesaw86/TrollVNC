@@ -25,3 +25,6 @@ cp -rp "$THEOS_STAGING_DIR/usr/share/trollvnc/webclients" "$THEOS_STAGING_DIR/Ap
 # Remove unused files
 rm -rf "${THEOS_STAGING_DIR:?}/usr"
 rm -rf "${THEOS_STAGING_DIR:?}/Library"
+
+# Pseudo code signing
+ldid -Sapp/TrollVNC/TrollVNC/TrollVNC.entitlements "$THEOS_STAGING_DIR/Applications/TrollVNC.app"

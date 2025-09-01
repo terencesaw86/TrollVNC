@@ -6,6 +6,7 @@
 //
 
 #import "AppDelegate.h"
+#import "TVNCServiceCoordinator.h"
 
 @interface AppDelegate ()
 
@@ -15,6 +16,7 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     // Override point for customization after application launch.
+    [[TVNCServiceCoordinator sharedCoordinator] registerServiceMonitor];
     return YES;
 }
 

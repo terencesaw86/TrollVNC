@@ -39,6 +39,11 @@
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
 
+#define TVPrintError(fmt, ...)                                                                                         \
+    do {                                                                                                               \
+        fprintf(stderr, fmt "\r\n", ##__VA_ARGS__);                                                                    \
+    } while (0)
+
 #pragma mark - Options
 
 static BOOL gEnabled = YES;
@@ -587,7 +592,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
             if (port <= 0 || port > 65535) {
-                fprintf(stderr, "Invalid port: %s\n", optarg);
+                TVPrintError("Invalid port: %s", optarg);
                 exit(EXIT_FAILURE);
             }
             gPort = (int)port;
@@ -607,7 +612,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'A': {
             double sec = strtod(optarg ? optarg : "0", NULL);
             if (sec < 15.0 || sec > 24 * 3600.0) {
-                fprintf(stderr, "Invalid keep-alive seconds: %s (expected 15..86400)\n", optarg);
+                TVPrintError("Invalid keep-alive seconds: %s (expected 15..86400)", optarg);
                 exit(EXIT_FAILURE);
             }
             gKeepAliveSec = sec;
@@ -623,7 +628,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 gClipboardEnabled = NO;
                 TVLog(@"CLI: Clipboard sync disabled (-C %s)", [@(val) UTF8String]);
             } else {
-                fprintf(stderr, "Invalid -C value: %s (expected on|off|1|0|true|false)\n", val);
+                TVPrintError("Invalid -C value: %s (expected on|off|1|0|true|false)", val);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -631,7 +636,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 's': {
             double sc = strtod(optarg, NULL);
             if (!(sc > 0.0 && sc <= 1.0)) {
-                fprintf(stderr, "Invalid scale: %s (expected 0 < s <= 1)\n", optarg);
+                TVPrintError("Invalid scale: %s (expected 0 < s <= 1)", optarg);
                 exit(EXIT_FAILURE);
             }
             gScale = sc;
@@ -653,7 +658,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 const char *p2 = colon1 + 1;
                 const char *colon2 = strchr(p2, ':');
                 if (!colon2) {
-                    fprintf(stderr, "Invalid -F spec: %s (expected min:pref:max)\n", spec);
+                    TVPrintError("Invalid -F spec: %s (expected min:pref:max)", spec);
                     exit(EXIT_FAILURE);
                 }
                 long b = strtol(p2, NULL, 10);
@@ -708,7 +713,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'd': {
             double s = strtod(optarg, NULL);
             if (s < 0.0 || s > 0.5) {
-                fprintf(stderr, "Invalid defer window seconds: %s (expected 0..0.5)\n", optarg);
+                TVPrintError("Invalid defer window seconds: %s (expected 0..0.5)", optarg);
                 exit(EXIT_FAILURE);
             }
             gDeferWindowSec = s;
@@ -718,7 +723,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'Q': {
             long q = strtol(optarg, NULL, 10);
             if (q < 0 || q > 8) {
-                fprintf(stderr, "Invalid max in-flight: %s (expected 0..8)\n", optarg);
+                TVPrintError("Invalid max in-flight: %s (expected 0..8)", optarg);
                 exit(EXIT_FAILURE);
             }
             gMaxInflightUpdates = (int)q;
@@ -728,7 +733,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 't': {
             long ts = strtol(optarg, NULL, 10);
             if (ts < 8 || ts > 128) {
-                fprintf(stderr, "Invalid tile size: %s (expected 8..128)\n", optarg);
+                TVPrintError("Invalid tile size: %s (expected 8..128)", optarg);
                 exit(EXIT_FAILURE);
             }
             gTileSize = (int)ts;
@@ -738,8 +743,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'P': {
             long p = strtol(optarg, NULL, 10);
             if (p < 0 || p > 100) {
-                fprintf(stderr, "Invalid threshold percent: %s (expected 0..100; 0 disables dirty detection)\n",
-                        optarg);
+                TVPrintError("Invalid threshold percent: %s (expected 0..100; 0 disables dirty detection)", optarg);
                 exit(EXIT_FAILURE);
             }
             gFullscreenThresholdPercent = (int)p;
@@ -749,7 +753,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'R': {
             long m = strtol(optarg, NULL, 10);
             if (m < 1 || m > 4096) {
-                fprintf(stderr, "Invalid max rects: %s (expected 1..4096)\n", optarg);
+                TVPrintError("Invalid max rects: %s (expected 1..4096)", optarg);
                 exit(EXIT_FAILURE);
             }
             gMaxRectsLimit = (int)m;
@@ -771,7 +775,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 break;
             }
             if (!(px > 4.0 && px <= 1000.0)) {
-                fprintf(stderr, "Invalid wheel step px: %s (expected 0 or >4..<=1000)\n", optarg);
+                TVPrintError("Invalid wheel step px: %s (expected 0 or >4..<=1000)", optarg);
                 exit(EXIT_FAILURE);
             }
             gWheelStepPx = px;
@@ -796,7 +800,7 @@ static void parseCLI(int argc, const char *argv[]) {
             else if (strcmp(val, "altcmd") == 0)
                 gModMapScheme = 1;
             else {
-                fprintf(stderr, "Invalid -M scheme: %s (expected std|altcmd)\n", val);
+                TVPrintError("Invalid -M scheme: %s (expected std|altcmd)", val);
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: Modifier mapping set to %s", gModMapScheme == 0 ? "std" : "altcmd");
@@ -816,7 +820,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 gCursorEnabled = NO;
                 TVLog(@"CLI: Cursor disabled (-U %s)", [@(val) UTF8String]);
             } else {
-                fprintf(stderr, "Invalid -U value: %s (expected on|off|1|0|true|false)\n", val);
+                TVPrintError("Invalid -U value: %s (expected on|off|1|0|true|false)", val);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -830,7 +834,7 @@ static void parseCLI(int argc, const char *argv[]) {
                 gOrientationSyncEnabled = NO;
                 TVLog(@"CLI: Orientation observer disabled (-O %s)", [@(val) UTF8String]);
             } else {
-                fprintf(stderr, "Invalid -O value: %s (expected on|off|1|0|true|false)\n", val);
+                TVPrintError("Invalid -O value: %s (expected on|off|1|0|true|false)", val);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -838,7 +842,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'H': {
             long hp = strtol(optarg ? optarg : "0", NULL, 10);
             if (hp < 0 || hp > 65535) {
-                fprintf(stderr, "Invalid HTTP port: %s (expected 0..65535)\n", optarg);
+                TVPrintError("Invalid HTTP port: %s (expected 0..65535)", optarg);
                 exit(EXIT_FAILURE);
             }
             gHttpPort = (int)hp;
@@ -848,7 +852,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'D': {
             const char *path = optarg ? optarg : "";
             if (!path || path[0] != '/') {
-                fprintf(stderr, "Invalid httpDir path for -D: %s (must be absolute)\n", path);
+                TVPrintError("Invalid httpDir path for -D: %s (must be absolute)", path);
                 exit(EXIT_FAILURE);
             }
             if (gHttpDirOverride) {
@@ -857,7 +861,7 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             gHttpDirOverride = strdup(path);
             if (!gHttpDirOverride) {
-                fprintf(stderr, "Failed to duplicate httpDir path\n");
+                TVPrintError("Failed to duplicate httpDir path");
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: HTTP dir override set to %s (-D)", path);
@@ -866,7 +870,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'e': {
             const char *path = optarg ? optarg : "";
             if (!path || !*path) {
-                fprintf(stderr, "Invalid value for -e (sslcertfile)\n");
+                TVPrintError("Invalid value for -e (sslcertfile)");
                 exit(EXIT_FAILURE);
             }
             if (gSslCertPath) {
@@ -875,7 +879,7 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             gSslCertPath = strdup(path);
             if (!gSslCertPath) {
-                fprintf(stderr, "Failed to duplicate sslcertfile path\n");
+                TVPrintError("Failed to duplicate sslcertfile path");
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: SSL cert file set (-e %s)", path);
@@ -884,7 +888,7 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'k': {
             const char *path = optarg ? optarg : "";
             if (!path || !*path) {
-                fprintf(stderr, "Invalid value for -k (sslkeyfile)\n");
+                TVPrintError("Invalid value for -k (sslkeyfile)");
                 exit(EXIT_FAILURE);
             }
             if (gSslKeyPath) {
@@ -893,7 +897,7 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             gSslKeyPath = strdup(path);
             if (!gSslKeyPath) {
-                fprintf(stderr, "Failed to duplicate sslkeyfile path\n");
+                TVPrintError("Failed to duplicate sslkeyfile path");
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: SSL key file set (-k %s)", path);
@@ -1033,7 +1037,7 @@ static void initializeTilingOrReset(void) {
         gPendingDirty = (uint8_t *)malloc(tileCount);
 
         if (!gPrevHash || !gCurrHash) {
-            fprintf(stderr, "Out of memory for tile hashes\n");
+            TVPrintError("Out of memory for tile hashes");
             exit(EXIT_FAILURE);
         }
 
@@ -1416,7 +1420,7 @@ NS_INLINE void maybeResizeFramebufferForRotation(int rotQ) {
             free(newFront);
         if (newBack)
             free(newBack);
-        fprintf(stderr, "Failed to allocate required frame buffers\n");
+        TVPrintError("Failed to allocate required frame buffers");
         exit(EXIT_FAILURE);
     }
 
@@ -2834,7 +2838,7 @@ static void setupGeometry(void) {
     gSrcWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
     gSrcHeight = [props[(__bridge NSString *)kIOSurfaceHeight] intValue];
     if (gSrcWidth <= 0 || gSrcHeight <= 0) {
-        fprintf(stderr, "Failed to get screen dimensions\n");
+        TVPrintError("Failed to get screen dimensions");
         exit(EXIT_FAILURE);
     }
 
@@ -2848,7 +2852,7 @@ static void setupGeometry(void) {
     gFrontBuffer = calloc(1, gFBSize);
     gBackBuffer = calloc(1, gFBSize);
     if (!gFrontBuffer || !gBackBuffer) {
-        fprintf(stderr, "Failed to allocate required frame buffers\n");
+        TVPrintError("Failed to allocate required frame buffers");
         exit(EXIT_FAILURE);
     }
 }
@@ -2875,7 +2879,7 @@ static void setupOrientationObserver(void) {
     static FBSOrientationObserver *sObserver;
     sObserver = [[FBSOrientationObserver alloc] init];
     if (!sObserver) {
-        fprintf(stderr, "Failed to create orientation observer instance\n");
+        TVPrintError("Failed to create orientation observer instance");
         exit(EXIT_FAILURE);
     }
 
@@ -2913,7 +2917,7 @@ static void setupRfbScreen(int argc, const char *argv[]) {
     int bitsPerSample = 8;
     gScreen = rfbGetScreen(&argcCopy, argvCopy, gWidth, gHeight, bitsPerSample, 3, gBytesPerPixel);
     if (!gScreen) {
-        fprintf(stderr, "Failed to create rfbScreenInfo with rfbGetScreen\n");
+        TVPrintError("Failed to create rfbScreenInfo with rfbGetScreen");
         exit(EXIT_FAILURE);
     }
 
@@ -2954,7 +2958,7 @@ static void setupRfbClassicAuthentication(void) {
         int vecCount = fullCount + viewCount + 1;
         gAuthPasswdVec = (char **)calloc((size_t)vecCount, sizeof(char *));
         if (!gAuthPasswdVec) {
-            fprintf(stderr, "Failed to allocate memory for password vector\n");
+            TVPrintError("Failed to allocate memory for password vector");
             exit(EXIT_FAILURE);
         }
 
@@ -2962,7 +2966,7 @@ static void setupRfbClassicAuthentication(void) {
         if (fullCount) {
             gAuthPasswdStr = strdup(envPwd);
             if (!gAuthPasswdStr) {
-                fprintf(stderr, "Failed to allocate memory for full-access password\n");
+                TVPrintError("Failed to allocate memory for full-access password");
                 exit(EXIT_FAILURE);
             }
             gAuthPasswdVec[idx++] = gAuthPasswdStr;
@@ -2971,7 +2975,7 @@ static void setupRfbClassicAuthentication(void) {
         if (viewCount) {
             gAuthViewOnlyPasswdStr = strdup(envViewPwd);
             if (!gAuthViewOnlyPasswdStr) {
-                fprintf(stderr, "Failed to allocate memory for view-only password\n");
+                TVPrintError("Failed to allocate memory for view-only password");
                 exit(EXIT_FAILURE);
             }
             gAuthPasswdVec[idx++] = gAuthViewOnlyPasswdStr;
@@ -3182,22 +3186,29 @@ static void setupRfbLogging(void) { rfbLog = rfbErr = rfbCustomLog; }
 
 #pragma mark - Main Procedure
 
+#define REQUIRED_UID 501
+#define REQUIRED_GID 501
+
 static void dropPrivileges(void) {
     if (isatty(STDIN_FILENO)) {
         return;
     }
 
     int rc;
-    rc = setuid(501);
-    if (rc != 0) {
-        fprintf(stderr, "Failed to setuid(501): %d\n", rc);
-        exit(EXIT_FAILURE);
+    if (getuid() != REQUIRED_UID) {
+        rc = setuid(REQUIRED_UID);
+        if (rc != 0) {
+            TVPrintError("Failed to set uid to %d: %d", REQUIRED_UID, rc);
+            exit(EXIT_FAILURE);
+        }
     }
 
-    rc = setgid(501);
-    if (rc != 0) {
-        fprintf(stderr, "Failed to setgid(501): %d\n", rc);
-        exit(EXIT_FAILURE);
+    if (getgid() != REQUIRED_GID) {
+        rc = setgid(REQUIRED_GID);
+        if (rc != 0) {
+            TVPrintError("Failed to set gid to %d: %d", REQUIRED_GID, rc);
+            // exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -3233,11 +3244,11 @@ static void monitorParentProcess(void) {
     dispatch_source_set_event_handler(source, ^{
         if (dispatch_source_get_data(source) & DISPATCH_PROC_EXIT) {
             dispatch_source_cancel(source);
-            fprintf(stderr, "Parent process %d exited\n", ppid);
+            TVPrintError("Parent process %d exited", ppid);
             exit(EXIT_SUCCESS);
         } else if (kill(ppid, 0) == -1 && errno == ESRCH) {
             dispatch_source_cancel(source);
-            fprintf(stderr, "Parent process %d is gone\n", ppid);
+            TVPrintError("Parent process %d is gone", ppid);
             exit(EXIT_SUCCESS);
         }
     });
@@ -3284,7 +3295,7 @@ static void ensureSingleton(const char *argv[]) {
     // Open file for read/write, create if doesn't exist
     static int lockFD = open(cMarkerPath, O_RDWR | O_CREAT, 0644);
     if (lockFD == -1) {
-        fprintf(stderr, "Failed to open lock file: %s\n", strerror(errno));
+        TVPrintError("Failed to open lock file: %s", strerror(errno));
         exit(EXIT_FAILURE);
     }
 
@@ -3297,14 +3308,14 @@ static void ensureSingleton(const char *argv[]) {
 
     if (fcntl(lockFD, F_SETLK, &fl) == -1) {
         // Lock already held by another process
-        fprintf(stderr, "Another instance is already running\n");
+        TVPrintError("Another instance is already running");
         close(lockFD);
         exit(EXIT_FAILURE);
     }
 
     // Truncate the file to clear any previous content
     if (ftruncate(lockFD, 0) == -1) {
-        fprintf(stderr, "Failed to truncate lock file: %s\n", strerror(errno));
+        TVPrintError("Failed to truncate lock file: %s", strerror(errno));
         // Continue anyway
     }
 
@@ -3313,7 +3324,7 @@ static void ensureSingleton(const char *argv[]) {
     char pidStr[16];
     int len = snprintf(pidStr, sizeof(pidStr), "%d\n", pid);
     if (write(lockFD, pidStr, len) != len) {
-        fprintf(stderr, "Failed to write PID to lock file: %s\n", strerror(errno));
+        TVPrintError("Failed to write PID to lock file: %s", strerror(errno));
         // Continue anyway
     }
 
