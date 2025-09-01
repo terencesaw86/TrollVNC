@@ -85,3 +85,5 @@
 "Standard: Alt as Option, Super as Command." = "标准：Alt 作为 Option，Super 作为 Command。";
 "Enabled" = "启用";
 "View Logs" = "查看日志";
+"Enable Auto-Discovery" = "启用自动发现";
+"Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting." = "通过 Bonjour 在局域网发布 VNC 服务（_rfb._tcp），便于兼容客户端自动发现；启用内置 HTTP 时也会发布 _http._tcp。关闭以禁用广播。";

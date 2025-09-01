@@ -652,7 +652,29 @@
 			<true/>
 		</dict>
 
-		<!-- 26) Log Keyboard Events (debug) -->
+		<!-- 26) Bonjour / Auto-Discovery -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
+			<string>Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>BonjourEnabled</string>
+			<key>label</key>
+			<string>Enable Auto-Discovery</string>
+			<key>default</key>
+			<true/>
+		</dict>
+
+		<!-- 27) Log Keyboard Events (debug) -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>

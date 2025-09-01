@@ -96,6 +96,9 @@ static char *gHttpDirOverride = NULL;
 static char *gSslCertPath = NULL;
 static char *gSslKeyPath = NULL;
 
+// Bonjour / mDNS Auto-Discovery
+static BOOL gBonjourEnabled = YES; // publish _rfb._tcp (and optional _http._tcp)
+
 /* clangd behavior workarounds */
 #define STRINGIFY(x) #x
 #define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
@@ -156,6 +159,9 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -D path   Absolute path for HTTP document root\n");
     fprintf(stderr, "  -e file   Path to SSL certificate file\n");
     fprintf(stderr, "  -k file   Path to SSL private key file\n\n");
+
+    fprintf(stderr, "Bonjour/mDNS:\n");
+    fprintf(stderr, "  -B on|off Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
 
 #if DEBUG
     fprintf(stderr, "Logging:\n");
@@ -427,6 +433,9 @@ static void parseDaemonOptions(void) {
     NSNumber *keyLogN = [prefs objectForKey:@"KeyLogging"];
     if ([keyLogN isKindOfClass:[NSNumber class]])
         gKeyEventLogging = keyLogN.boolValue;
+    NSNumber *bonjourN = [prefs objectForKey:@"BonjourEnabled"];
+    if ([bonjourN isKindOfClass:[NSNumber class]])
+        gBonjourEnabled = bonjourN.boolValue;
 
     // Modifier mapping
     NSString *modMap = [prefs objectForKey:@"ModifierMap"];
@@ -559,14 +568,15 @@ static void parseDaemonOptions(void) {
     // Single-line summary of effective configuration with password flags (8-char classic VNC)
     TVLog(@"-daemon: cfg name='%@' port=%d http=%d viewOnly=%@ clip=%@ keepAlive=%.0fs scale=%.2f fps=%d:%d:%d "
           @"defer=%.3f inflight=%d tile=%d full%%=%d rects=%d async=%@ cursor=%@ orient=%@ keylog=%@ "
-          @"wheel=%.1f natural=%@ mod=%s auth(full=%@,view=%@,8char) dir=%s cert=%s key=%s",
+          @"wheel=%.1f natural=%@ mod=%s bonjour=%@ auth(full=%@,view=%@,8char) dir=%s cert=%s key=%s",
           gDesktopName, gPort, gHttpPort, gViewOnly ? @"YES" : @"NO", gClipboardEnabled ? @"YES" : @"NO", gKeepAliveSec,
           gScale, gFpsMin, gFpsPref, gFpsMax, gDeferWindowSec, gMaxInflightUpdates, gTileSize,
           gFullscreenThresholdPercent, gMaxRectsLimit, gAsyncSwapEnabled ? @"YES" : @"NO",
           gCursorEnabled ? @"YES" : @"NO", gOrientationSyncEnabled ? @"YES" : @"NO", gKeyEventLogging ? @"YES" : @"NO",
           gWheelStepPx, gWheelNaturalDir ? @"YES" : @"NO", (gModMapScheme == 1) ? "altcmd" : "std",
-          hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off", gHttpDirOverride ? gHttpDirOverride : "(null)",
-          gSslCertPath ? gSslCertPath : "(null)", gSslKeyPath ? gSslKeyPath : "(null)");
+          gBonjourEnabled ? @"on" : @"off", hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off",
+          gHttpDirOverride ? gHttpDirOverride : "(null)", gSslCertPath ? gSslCertPath : "(null)",
+          gSslKeyPath ? gSslKeyPath : "(null)");
     TVLog(@"-daemon: preferences applied (domain=com.82flex.trollvnc)");
 }
 
@@ -586,7 +596,7 @@ static void parseCLI(int argc, const char *argv[]) {
     }
 
     int opt;
-    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:Vh";
+    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:Vh";
     while ((opt = getopt(argc, (char *const *)argv, optstr)) != -1) {
         switch (opt) {
         case 'p': {
@@ -901,6 +911,20 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: SSL key file set (-k %s)", path);
+            break;
+        }
+        case 'B': {
+            const char *val = optarg ? optarg : "on";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gBonjourEnabled = YES;
+                TVLog(@"CLI: Bonjour advertisement enabled (-B %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gBonjourEnabled = NO;
+                TVLog(@"CLI: Bonjour advertisement disabled (-B %s)", [@(val) UTF8String]);
+            } else {
+                TVPrintError("Invalid -B value: %s (expected on|off|1|0|true|false)", val);
+                exit(EXIT_FAILURE);
+            }
             break;
         }
         case 'V': {
@@ -2594,6 +2618,125 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     gLastButtonMask = buttonMask;
 }
 
+#pragma mark - Bonjour (mDNS) Advertisement
+
+static NSNetService *gBonjourService = nil;     // VNC service (_rfb._tcp.)
+static NSNetService *gBonjourHttpService = nil; // Optional HTTP service (_http._tcp.)
+
+@interface TVBonjourDelegate : NSObject <NSNetServiceDelegate>
+@end
+
+@implementation TVBonjourDelegate
+- (void)netServiceDidPublish:(NSNetService *)sender {
+    TVLog(@"Bonjour: published %@.%@:%ld", sender.name, sender.type, (long)sender.port);
+}
+- (void)netService:(NSNetService *)sender didNotPublish:(NSDictionary<NSString *, NSNumber *> *)errorDict {
+    TVLog(@"Bonjour: failed to publish %@.%@ (err=%@)", sender.name, sender.type, errorDict);
+}
+- (void)netServiceDidStop:(NSNetService *)sender {
+    TVLog(@"Bonjour: stopped %@.%@", sender.name, sender.type);
+}
+@end
+
+static TVBonjourDelegate *gBonjourDelegate = nil;
+
+static NSData *bonjourTXTRecord(void) {
+    // Minimal helpful metadata for clients
+    // Keys kept short; values ASCII per convention
+    NSMutableDictionary<NSString *, NSData *> *txt = [NSMutableDictionary dictionary];
+    // Name
+    if (gDesktopName.length > 0) {
+        txt[@"vn"] = [gDesktopName dataUsingEncoding:NSUTF8StringEncoding];
+    }
+    // View-only flag
+    txt[@"vo"] = [[NSString stringWithFormat:@"%d", gViewOnly ? 1 : 0] dataUsingEncoding:NSASCIIStringEncoding];
+    // HTTP availability
+    txt[@"hp"] = [[NSString stringWithFormat:@"%d", gHttpPort] dataUsingEncoding:NSASCIIStringEncoding];
+    // FPS pref (if provided)
+    if (gFpsMin || gFpsPref || gFpsMax) {
+        NSString *fps = [NSString stringWithFormat:@"%d:%d:%d", gFpsMin, gFpsPref, gFpsMax];
+        txt[@"fps"] = [fps dataUsingEncoding:NSASCIIStringEncoding];
+    }
+    return [NSNetService dataFromTXTRecordDictionary:txt];
+}
+
+static void refreshBonjourTXTRecord(void) {
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            refreshBonjourTXTRecord();
+        });
+        return;
+    }
+    if (!gBonjourService)
+        return;
+    [gBonjourService setTXTRecordData:bonjourTXTRecord()];
+}
+
+static void stopBonjour(void) {
+    // NSNetService expects interactions on a runloop thread (prefer main).
+    if (![NSThread isMainThread]) {
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            stopBonjour();
+        });
+        return;
+    }
+    if (gBonjourService) {
+        [gBonjourService stop];
+        gBonjourService = nil;
+    }
+    if (gBonjourHttpService) {
+        [gBonjourHttpService stop];
+        gBonjourHttpService = nil;
+    }
+}
+
+static void startBonjour(void) {
+    // NSNetService expects interactions on a runloop thread (prefer main).
+    if (![NSThread isMainThread]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            startBonjour();
+        });
+        return;
+    }
+    if (!gBonjourEnabled) {
+        TVLog(@"Bonjour: disabled");
+        return;
+    }
+
+    if (!gBonjourDelegate)
+        gBonjourDelegate = [TVBonjourDelegate new];
+
+    // Publish VNC service: _rfb._tcp. on gPort
+    if (!gBonjourService) {
+        gBonjourService = [[NSNetService alloc] initWithDomain:@"local."
+                                                          type:@"_rfb._tcp."
+                                                          name:gDesktopName
+                                                          port:gPort];
+        gBonjourService.delegate = gBonjourDelegate;
+        [gBonjourService setTXTRecordData:bonjourTXTRecord()];
+        [gBonjourService publish];
+    } else {
+        [gBonjourService stop];
+        gBonjourService = nil;
+        startBonjour();
+        return;
+    }
+
+    // Optionally publish HTTP service when enabled
+    if (gHttpPort > 0) {
+        if (gBonjourHttpService) {
+            [gBonjourHttpService stop];
+            gBonjourHttpService = nil;
+        }
+        gBonjourHttpService = [[NSNetService alloc] initWithDomain:@"local."
+                                                              type:@"_http._tcp."
+                                                              name:gDesktopName
+                                                              port:gHttpPort];
+        gBonjourHttpService.delegate = gBonjourDelegate;
+        [gBonjourHttpService publish];
+    }
+}
+
 #pragma mark - Client Handlers
 
 static int gClientCount = 0; // Number of connected clients
@@ -2624,6 +2767,9 @@ static void clientGone(rfbClientPtr cl) {
         [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:0];
         TVLog(@"No clients remaining; KeepAlive stopped.");
     }
+
+    // Update TXT with possibly changed state (e.g., viewOnly unaffected, but keep consistent)
+    refreshBonjourTXTRecord();
 }
 
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
@@ -2651,6 +2797,9 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:gKeepAliveSec];
         TVLog(@"KeepAlive started with interval (%.3f sec)", gKeepAliveSec);
     }
+
+    // Update TXT (e.g., potential dynamic flags in future)
+    refreshBonjourTXTRecord();
 
     return RFB_CLIENT_ACCEPT;
 }
@@ -3085,6 +3234,9 @@ static void initializeAndRunRfbServer(void) {
 
     // Run VNC in background thread
     rfbRunEventLoop(gScreen, 40000, TRUE);
+
+    // Start Bonjour advertisement after server is ready
+    startBonjour();
 }
 
 static void handleSignal(int signum) {
@@ -3223,6 +3375,8 @@ static void cleanupAndExit(int code) {
         rfbScreenCleanup(gScreen);
         gScreen = NULL;
     }
+
+    stopBonjour();
 
     // There’s no need to free other resources because we’re going to exit the process. Yay!
     exit(code);
