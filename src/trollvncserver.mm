@@ -2834,7 +2834,7 @@ static void setupGeometry(void) {
     gSrcWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
     gSrcHeight = [props[(__bridge NSString *)kIOSurfaceHeight] intValue];
     if (gSrcWidth <= 0 || gSrcHeight <= 0) {
-        fprintf(stderr, "Failed to get screen dimensions from IOMobileFramebuffer\n");
+        fprintf(stderr, "Failed to get screen dimensions\n");
         exit(EXIT_FAILURE);
     }
 

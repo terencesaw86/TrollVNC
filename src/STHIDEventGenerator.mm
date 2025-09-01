@@ -24,9 +24,9 @@
 #import <objc/runtime.h>
 
 #import "IOKitSPI.h"
-#import "IOMobileFramebufferSPI.h"
 #import "Logging.h"
 #import "STHIDEventGenerator.h"
+#import "UIScreen+Private.h"
 
 static const NSTimeInterval fingerLiftDelay = 0.05;
 static const NSTimeInterval multiTapInterval = 0.15;
@@ -159,14 +159,7 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     if (!self)
         return nil;
 
-#if TARGET_OS_SIMULATOR
-    _physicalScreenSize = [[UIScreen mainScreen] nativeBounds].size;
-#else
-    static IOMobileFramebufferRef framebufferConnection = NULL;
-    IOMobileFramebufferGetMainDisplay(&framebufferConnection);
-    IOMobileFramebufferGetDisplaySize(framebufferConnection, &_physicalScreenSize);
-#endif
-
+    _physicalScreenSize = [[UIScreen mainScreen] _unjailedReferenceBoundsInPixels].size;
     dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL,
                                                                          QOS_CLASS_USER_INTERACTIVE, 0);
     _hidEventQueue = dispatch_queue_create("com.82flex.trollvnc.hid-events", attr);

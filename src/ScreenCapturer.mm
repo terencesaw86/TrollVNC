@@ -26,13 +26,10 @@
 #import <mach/mach.h>
 
 #import "IOKitSPI.h"
-#import "IOMobileFramebufferSPI.h"
 #import "IOSurfaceSPI.h"
 #import "Logging.h"
 #import "ScreenCapturer.h"
-
-typedef IOReturn IOMobileFramebufferReturn;
-typedef void *IOMobileFramebufferRef;
+#import "UIScreen+Private.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,32 +75,10 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         return nil;
 
     int width, height;
-    CGSize screenSize = CGSizeZero;
-
-#if TARGET_OS_SIMULATOR
-    CGRect bounds = [[UIScreen mainScreen] bounds];
-    CGFloat scale = [[UIScreen mainScreen] scale];
-    screenSize = CGSizeMake(round(bounds.size.width * scale), round(bounds.size.height * scale));
-
-    // Setup the width and height of the framebuffer for the device
-    if ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPhone) {
-        // iPhone frame buffer is Portrait
-        width = screenSize.width;
-        height = screenSize.height;
-    } else {
-        // iPad frame buffer is Landscape
-        width = screenSize.height;
-        height = screenSize.width;
-    }
-#else
-    static IOMobileFramebufferRef framebufferConnection = NULL;
-
-    IOMobileFramebufferGetMainDisplay(&framebufferConnection);
-    IOMobileFramebufferGetDisplaySize(framebufferConnection, &screenSize);
+    CGSize screenSize = [[UIScreen mainScreen] _unjailedReferenceBoundsInPixels].size;
 
     width = (int)round(screenSize.width);
     height = (int)round(screenSize.height);
-#endif
 
     // Pixel format for Alpha, Red, Green and Blue
     unsigned pixelFormat = 0x42475241; // 'ARGB'

@@ -81,9 +81,6 @@ trollvncserver_FRAMEWORKS += QuartzCore
 trollvncserver_FRAMEWORKS += UIKit
 
 trollvncserver_PRIVATE_FRAMEWORKS += FrontBoardServices
-ifeq ($(THEOS_DEVICE_SIMULATOR),)
-trollvncserver_PRIVATE_FRAMEWORKS += IOMobileFramebuffer
-endif
 
 ifeq ($(THEOS_DEVICE_SIMULATOR),1)
 trollvncserver_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncserver-simulator.entitlements
