@@ -92,7 +92,7 @@
 			<key>label</key>
 			<string></string>
 			<key>footerText</key>
-			<string>Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC uses only the first 8 characters.</string>
+			<string>Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -112,7 +112,7 @@
 			<key>label</key>
 			<string></string>
 			<key>footerText</key>
-			<string>Set a password for view-only access (no input). Classic VNC uses only the first 8 characters.</string>
+			<string>Set a password for view-only access (no input). Classic VNC authentication uses only the first 8 characters.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

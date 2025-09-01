@@ -77,9 +77,9 @@
 "Serve the built-in web VNC client on this port. 0 disables." = "在该端口提供内置 noVNC 客户端。设为 0 关闭。";
 "Absolute path to static web client files. Leave empty to use built-in assets." = "静态 Web 客户端文件的绝对路径。留空使用内置资源。";
 "Set a VNC password for full control. Leaving empty disables authentication (not recommended)." = "设置具有完全控制权限的 VNC 密码。留空将关闭认证（不推荐）。";
-"Set a password for view-only access (no input)." = "设置仅查看访问的密码（禁止输入）。";
-"Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC uses only the first 8 characters." = "设置具有完全控制权限的 VNC 密码。留空将关闭认证（不推荐）。经典 VNC 仅使用前 8 个字符。";
-"Set a password for view-only access (no input). Classic VNC uses only the first 8 characters." = "设置仅查看访问的密码（禁止输入）。经典 VNC 仅使用前 8 个字符。";
+"Set a password for view-only access (no input)." = "设置仅查看访问的密码（无控制权限）。";
+"Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters." = "设置具有完全控制权限的 VNC 密码。留空将关闭认证（不推荐）。经典 VNC 认证方式仅使用前 8 个字符。";
+"Set a password for view-only access (no input). Classic VNC authentication uses only the first 8 characters." = "设置仅查看访问的密码（无控制权限）。经典 VNC 认证方式仅使用前 8 个字符。";
 "PEM-encoded X.509 certificate path for TLS. Used by HTTP/WebSocket if both cert and key are set." = "用于 TLS 的 PEM 编码 X.509 证书路径。若同时设置证书与私钥，将使用安全 WebSockets。";
 "PEM-encoded private key path matching the certificate." = "与证书匹配的 PEM 编码私钥路径。";
 "Standard: Alt as Option, Super as Command." = "标准：Alt 作为 Option，Super 作为 Command。";

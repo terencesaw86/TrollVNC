@@ -76,8 +76,8 @@
 "Rotate the shared display to follow device orientation changes." = "Rotate the shared display to follow device orientation changes.";
 "Serve the built-in web VNC client on this port. 0 disables." = "Serve the built-in web VNC client on this port. 0 disables.";
 "Absolute path to static web client files. Leave empty to use built-in assets." = "Absolute path to static web client files. Leave empty to use built-in assets.";
-"Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC uses only the first 8 characters." = "Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC uses only the first 8 characters.";
-"Set a password for view-only access (no input). Classic VNC uses only the first 8 characters." = "Set a password for view-only access (no input). Classic VNC uses only the first 8 characters.";
+"Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters." = "Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters.";
+"Set a password for view-only access (no input). Classic VNC authentication uses only the first 8 characters." = "Set a password for view-only access (no input). Classic VNC authentication uses only the first 8 characters.";
 "PEM-encoded X.509 certificate path for TLS. Used by HTTP/WebSocket if both cert and key are set." = "PEM-encoded X.509 certificate path for TLS. Used by HTTP/WebSocket if both cert and key are set.";
 "PEM-encoded private key path matching the certificate." = "PEM-encoded private key path matching the certificate.";
 "Standard: Alt as Option, Super as Command." = "Standard: Alt as Option, Super as Command.";

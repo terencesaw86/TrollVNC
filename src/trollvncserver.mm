@@ -541,7 +541,7 @@ static void parseDaemonOptions(void) {
     }
 
     // Passwords via environment (leveraging existing setupRfbClassicAuthentication).
-    // Classic VNC uses only first 8 chars; truncate here for clarity.
+    // Classic VNC authentication uses only first 8 chars; truncate here for clarity.
     NSString *fullPwd = [prefs objectForKey:@"FullPassword"];
     BOOL hasFullPwd = NO, hasViewPwd = NO;
     if ([fullPwd isKindOfClass:[NSString class]]) {
