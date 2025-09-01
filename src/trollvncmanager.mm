@@ -27,10 +27,14 @@
 #import <sys/proc_info.h>
 #import <unistd.h>
 
+#import "Logging.h"
 #import "TRWatchDog.h"
 #import "libproc.h"
 
 #define SINGLETON_MARKER_PATH "/var/mobile/Library/Caches/com.82flex.trollvnc.manager.pid"
+
+BOOL tvncLoggingEnabled = YES;
+BOOL tvncVerboseLoggingEnabled = NO;
 
 static TRWatchDog *gWatchDog = nil;
 

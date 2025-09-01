@@ -19,19 +19,14 @@
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
 
-#import "STHIDEventGenerator.h"
-#import "IOKitSPI.h"
-#import "IOMobileFramebufferSPI.h"
-
 #import <UIKit/UIKit.h>
 #import <mach/mach_time.h>
 #import <objc/runtime.h>
 
-#if DEBUG
-#define STLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define STLog(...)
-#endif
+#import "IOKitSPI.h"
+#import "IOMobileFramebufferSPI.h"
+#import "Logging.h"
+#import "STHIDEventGenerator.h"
 
 static const NSTimeInterval fingerLiftDelay = 0.05;
 static const NSTimeInterval multiTapInterval = 0.15;
@@ -217,7 +212,7 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     // Fire-and-forget on background to avoid blocking main thread with nanosleep
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_BACKGROUND, 0), ^{
         [self hardwareUnlock];
-        STLog(@"KeepAlive!");
+        TVLog(@"KeepAlive!");
     });
 }
 

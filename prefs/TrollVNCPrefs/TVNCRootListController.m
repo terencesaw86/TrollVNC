@@ -218,22 +218,13 @@ static inline void TVNCRestartVNCService(void) {
     [logsVC setPreserveEmptyLines:NO];
     [logsVC setRemoveDuplicates:NO];
 
-    // 31/08/2025 01:24:10 Listening for VNC connections on TCP port 5901
-    // or 2025-08-31 23:06:28.541 trollvncserver[52389:7798813]
-#if DEBUG
-    NSRegularExpression *rowRegex = [NSRegularExpression
-        regularExpressionWithPattern:
-            @"^(\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2} |\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) "
-                             options:0
-                               error:nil];
-#else
     NSRegularExpression *rowRegex =
-        [NSRegularExpression regularExpressionWithPattern:@"^\\d{2}/\\d{2}/\\d{4} \\d{2}:\\d{2}:\\d{2} "
+        [NSRegularExpression regularExpressionWithPattern:@"^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\b"
                                                   options:0
                                                     error:nil];
-#endif
 
     [logsVC setRowPrefixRegularExpression:rowRegex];
+    [logsVC setRowSeparator:@"\r\n"];
     [logsVC setModalInPresentation:YES];
     [logsVC setTitle:NSLocalizedStringFromTableInBundle(@"View Logs", @"Localizable", self.bundle, nil)];
     [logsVC setLocalizationBundle:self.bundle];

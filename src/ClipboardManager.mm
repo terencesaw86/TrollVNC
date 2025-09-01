@@ -19,15 +19,11 @@
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
 
-#import "ClipboardManager.h"
 #import <UIKit/UIKit.h>
 #import <notify.h>
 
-#if DEBUG
-#define CMLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define CMLog(...)
-#endif
+#import "ClipboardManager.h"
+#import "Logging.h"
 
 static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.notify.changed";
 
@@ -68,12 +64,12 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
 - (void)start {
     if (self.started) {
-        CMLog("start called but already started");
+        TVLog("start called but already started");
         return;
     }
 
     self.started = YES;
-    CMLog("Starting clipboard monitoring");
+    TVLog("Starting clipboard monitoring");
 
     // Register Darwin notification for pasteboard changes
     __weak __typeof(self) weakSelf = self;
@@ -88,32 +84,32 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
     if (status == NOTIFY_STATUS_OK) {
         self.notifyToken = token;
-        CMLog("Registered for pasteboard notifications (token=%d)", token);
+        TVLog("Registered for pasteboard notifications (token=%d)", token);
     } else {
         self.notifyToken = 0;
-        CMLog("Failed to register pasteboard notifications (status=%u)", status);
+        TVLog("Failed to register pasteboard notifications (status=%u)", status);
     }
 
     // Initialize baseline change count to avoid spurious first-time callbacks
     dispatch_async(dispatch_get_main_queue(), ^{
         UIPasteboard *pb = [UIPasteboard generalPasteboard];
         self.lastObservedChangeCount = pb.changeCount;
-        CMLog("Initial pasteboard changeCount=%ld", (long)self.lastObservedChangeCount);
+        TVLog("Initial pasteboard changeCount=%ld", (long)self.lastObservedChangeCount);
     });
 }
 
 - (void)stop {
     if (!self.started) {
-        CMLog("stop called but not started");
+        TVLog("stop called but not started");
         return;
     }
 
     self.started = NO;
-    CMLog("Stopping clipboard monitoring");
+    TVLog("Stopping clipboard monitoring");
 
     if (self.notifyToken != 0) {
         notify_cancel(self.notifyToken);
-        CMLog("Notification token %d canceled", self.notifyToken);
+        TVLog("Notification token %d canceled", self.notifyToken);
         self.notifyToken = 0;
     }
 }
@@ -135,11 +131,11 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     // Record the baseline count before our local set; the system will bump it later in the loop.
     self.lastLocalSetBaselineCount = pb.changeCount;
     self.lastSetValue = [text copy];
-    CMLog("Local setString length=%lu, baseline=%ld", (unsigned long)text.length, (long)self.lastLocalSetBaselineCount);
+    TVLog("Local setString length=%lu, baseline=%ld", (unsigned long)text.length, (long)self.lastLocalSetBaselineCount);
     pb.string = text;
 
     // Proactively trigger a callback so upstream can sync to remote immediately
-    CMLog("Proactively dispatching local change to onChange callback");
+    TVLog("Proactively dispatching local change to onChange callback");
     [self dispatchChangeIfNeededFromLocal:YES];
 }
 
@@ -153,7 +149,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     self.lastLocalSetBaselineCount = pb.changeCount;
     self.lastSetValue = [text copy];
     self.suppressNextCallbacks = 2; // 1 for immediate local callback, 1 for following system notify
-    CMLog("Remote setString length=%lu, baseline=%ld, suppression=%ld", (unsigned long)text.length,
+    TVLog("Remote setString length=%lu, baseline=%ld, suppression=%ld", (unsigned long)text.length,
           (long)self.lastLocalSetBaselineCount, (long)self.suppressNextCallbacks);
 
     [pb setString:text];
@@ -167,18 +163,18 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     // System change notification received (triggered by external apps or by our own set)
     UIPasteboard *pb = [UIPasteboard generalPasteboard];
     NSInteger currentCount = pb.changeCount;
-    CMLog("System pasteboard changed: changeCount=%ld (last=%ld)", (long)currentCount,
+    TVLog("System pasteboard changed: changeCount=%ld (last=%ld)", (long)currentCount,
           (long)self.lastObservedChangeCount);
 
     // Ignore duplicate or out-of-order notifications
     if (self.lastObservedChangeCount == currentCount) {
-        CMLog("Ignoring duplicate pasteboard notification");
+        TVLog("Ignoring duplicate pasteboard notification");
         return;
     }
 
     // Advance baseline and then process
     self.lastObservedChangeCount = currentCount;
-    CMLog("Dispatching change from system notification");
+    TVLog("Dispatching change from system notification");
     [self dispatchChangeIfNeededFromLocal:NO];
 }
 
@@ -188,7 +184,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     // If suppression is active, consume one token and skip
     if (self.suppressNextCallbacks > 0) {
         self.suppressNextCallbacks -= 1;
-        CMLog("Suppression active (%ld left); skipping callback", (long)self.suppressNextCallbacks);
+        TVLog("Suppression active (%ld left); skipping callback", (long)self.suppressNextCallbacks);
         return;
     }
 
@@ -198,7 +194,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
         ((current ?: (id)NSNull.null) == (id)NSNull.null ? YES : [self.lastSetValue isEqualToString:current ?: @""])) {
         // Clear the flag once, but do not callback
         self.lastSetValue = nil;
-        CMLog("Ignoring echo of locally set value from system notification");
+        TVLog("Ignoring echo of locally set value from system notification");
         return;
     }
 
@@ -209,7 +205,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
 
         UIPasteboard *pb = [UIPasteboard generalPasteboard];
         if (pb.changeCount <= self.lastLocalSetBaselineCount) {
-            CMLog("Skipping due to unchanged changeCount <= baseline (%ld <= %ld)", (long)pb.changeCount,
+            TVLog("Skipping due to unchanged changeCount <= baseline (%ld <= %ld)", (long)pb.changeCount,
                   (long)self.lastLocalSetBaselineCount);
             return;
         }
@@ -224,7 +220,7 @@ static NSString *const kPasteboardDarwinNotification = @"com.apple.pasteboard.no
     void (^cb)(NSString *_Nullable) = self.onChange;
     if (cb) {
         // Ensure callback is invoked on the main thread
-        CMLog("Invoking onChange with %s string (len=%lu)", local ? "local" : "system", (unsigned long)current.length);
+        TVLog("Invoking onChange with %s string (len=%lu)", local ? "local" : "system", (unsigned long)current.length);
         if ([NSThread isMainThread]) {
             cb(current);
         } else {

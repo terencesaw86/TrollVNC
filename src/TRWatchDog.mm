@@ -19,22 +19,17 @@
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
 
-#import "TRWatchDog.h"
-#import "trollvncmanager-Swift.h"
-
 #import <Foundation/Foundation.h>
 #import <grp.h>
 #import <pwd.h>
 #import <signal.h>
 #import <stdint.h>
 
-#define TAG "TRWatchDog"
+#import "Logging.h"
+#import "TRWatchDog.h"
+#import "trollvncmanager-Swift.h"
 
-#if DEBUG
-#define TRLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define TRLog(...)
-#endif
+#define TAG "TRWatchDog"
 
 // Error domain
 NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
@@ -128,7 +123,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
 - (void)setExitTimeOut:(NSTimeInterval)exitTimeOut {
     if (exitTimeOut < 0.0) {
-        TRLog(@TAG "[%@] invalid exitTimeOut %.1f, using default 3.0", self.label ?: @"<nil>", exitTimeOut);
+        TVLog(@TAG "[%@] invalid exitTimeOut %.1f, using default 3.0", self.label ?: @"<nil>", exitTimeOut);
         _exitTimeOut = 3.0;
     } else {
         _exitTimeOut = exitTimeOut;
@@ -137,7 +132,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
 - (void)setThrottleInterval:(NSTimeInterval)throttleInterval {
     if (throttleInterval < 0.0) {
-        TRLog(@TAG "[%@] invalid throttleInterval %.1f, using default 30.0", self.label ?: @"<nil>", throttleInterval);
+        TVLog(@TAG "[%@] invalid throttleInterval %.1f, using default 30.0", self.label ?: @"<nil>", throttleInterval);
         _throttleInterval = 30.0;
     } else {
         _throttleInterval = throttleInterval;
@@ -150,7 +145,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     } else if ([keepAlive isKindOfClass:[NSNumber class]] || [keepAlive isKindOfClass:[NSDictionary class]]) {
         _keepAlive = keepAlive;
     } else {
-        TRLog(@TAG "[%@] invalid keepAlive type %@, using default NO", self.label ?: @"<nil>", [keepAlive class]);
+        TVLog(@TAG "[%@] invalid keepAlive type %@, using default NO", self.label ?: @"<nil>", [keepAlive class]);
         _keepAlive = @NO;
     }
 }
@@ -158,7 +153,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 - (void)setProcessGroupIdentifier:(pid_t)processGroupIdentifier {
     // Allow -1 (not set), 0 (default group), or positive values (specific group)
     if (processGroupIdentifier < -1) {
-        TRLog(@TAG "[%@] invalid processGroupIdentifier %d, using -1 (not set)", self.label ?: @"<nil>",
+        TVLog(@TAG "[%@] invalid processGroupIdentifier %d, using -1 (not set)", self.label ?: @"<nil>",
               processGroupIdentifier);
         _processGroupIdentifier = -1;
     } else {
@@ -184,7 +179,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         return; // No change
     }
 
-    TRLog(@TAG "[%@] state transition: %@ -> %@", self.label ?: @"<nil>", [self _stringForState:oldState],
+    TVLog(@TAG "[%@] state transition: %@ -> %@", self.label ?: @"<nil>", [self _stringForState:oldState],
           [self _stringForState:newState]);
 
     self.internalState = newState;
@@ -268,10 +263,10 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
             BOOL wasCrashed = (reason == TRTaskTerminationReasonUncaughtSignal);
 
             if (crashedCondition && wasCrashed) {
-                TRLog(@TAG "[%@] restarting due to Crashed=true condition", self.label);
+                TVLog(@TAG "[%@] restarting due to Crashed=true condition", self.label);
                 shouldRestart = YES;
             } else if (!crashedCondition && !wasCrashed) {
-                TRLog(@TAG "[%@] restarting due to Crashed=false condition", self.label);
+                TVLog(@TAG "[%@] restarting due to Crashed=false condition", self.label);
                 shouldRestart = YES;
             }
         }
@@ -283,10 +278,10 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
             BOOL wasSuccessfulExit = (reason == TRTaskTerminationReasonExit && status == 0);
 
             if (successfulExitCondition && wasSuccessfulExit) {
-                TRLog(@TAG "[%@] restarting due to SuccessfulExit=true condition", self.label);
+                TVLog(@TAG "[%@] restarting due to SuccessfulExit=true condition", self.label);
                 shouldRestart = YES;
             } else if (!successfulExitCondition && !wasSuccessfulExit && reason == TRTaskTerminationReasonExit) {
-                TRLog(@TAG "[%@] restarting due to SuccessfulExit=false condition", self.label);
+                TVLog(@TAG "[%@] restarting due to SuccessfulExit=false condition", self.label);
                 shouldRestart = YES;
             }
         }
@@ -294,7 +289,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         return shouldRestart;
     } else {
         // Invalid keepAlive value, default to not restart
-        TRLog(@TAG "[%@] invalid keepAlive value: %@", self.label, self.keepAlive);
+        TVLog(@TAG "[%@] invalid keepAlive value: %@", self.label, self.keepAlive);
         return NO;
     }
 }
@@ -303,7 +298,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     dispatch_assert_queue(self.stateQueue);
 
     if (self.currentTask) {
-        TRLog(@TAG "[%@] cleaning up current task", self.label ?: @"<nil>");
+        TVLog(@TAG "[%@] cleaning up current task", self.label ?: @"<nil>");
         self.currentTask = nil;
     }
 
@@ -330,7 +325,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 - (void)_handleCrash {
     dispatch_assert_queue(self.stateQueue);
 
-    TRLog(@TAG "[%@] handling restart request", self.label ?: @"<nil>");
+    TVLog(@TAG "[%@] handling restart request", self.label ?: @"<nil>");
 
     [self _cleanupCurrentTask];
 
@@ -345,13 +340,13 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
     // If enough time has passed since last start, we can restart immediately
     if (timeSinceLastStart >= self.throttleInterval) {
-        TRLog(@TAG "[%@] sufficient time since last start (%.1fs >= %.1fs), restarting immediately",
+        TVLog(@TAG "[%@] sufficient time since last start (%.1fs >= %.1fs), restarting immediately",
               self.label ?: @"<nil>", timeSinceLastStart, self.throttleInterval);
         [self _transitionToState:TRWatchDogStateStopped];
         [self _startInternal];
     } else {
         // Need to wait for the remaining time
-        TRLog(@TAG "[%@] throttling restart, need to wait %.1fs more (%.1fs since last start)", self.label ?: @"<nil>",
+        TVLog(@TAG "[%@] throttling restart, need to wait %.1fs more (%.1fs since last start)", self.label ?: @"<nil>",
               self.throttleInterval - timeSinceLastStart, timeSinceLastStart);
         [self _transitionToState:TRWatchDogStateThrottled];
     }
@@ -369,7 +364,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         remainingTime = MAX(0.0, self.throttleInterval - timeSinceLastStart);
     }
 
-    TRLog(@TAG "[%@] starting throttle timer for %.1f seconds (remaining time since last start)",
+    TVLog(@TAG "[%@] starting throttle timer for %.1f seconds (remaining time since last start)",
           self.label ?: @"<nil>", remainingTime);
 
     self.throttleStartTime = [NSDate date];
@@ -383,7 +378,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     dispatch_source_set_event_handler(self.throttleTimer, ^{
         TRWatchDog *strongSelf = weakSelf;
         if (strongSelf) {
-            TRLog(@TAG "[%@] throttle timer expired, attempting restart", strongSelf.label ?: @"<nil>");
+            TVLog(@TAG "[%@] throttle timer expired, attempting restart", strongSelf.label ?: @"<nil>");
             // Transition from throttled to stopped state before attempting restart
             [strongSelf _transitionToState:TRWatchDogStateStopped];
             [strongSelf _startInternal];
@@ -517,12 +512,12 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
             // Mark restart as pending and stop the current task (don't clear restartPending)
             self.restartPending = YES;
             result = [self _stopInternalClearRestartPending:NO];
-            TRLog(@TAG "[%@] restart initiated, stopping current task", self.label);
+            TVLog(@TAG "[%@] restart initiated, stopping current task", self.label);
         } else if (self.internalState == TRWatchDogStateStopped) {
             // If already stopped, just start
             result = [self _startInternal];
         } else {
-            TRLog(@TAG "[%@] cannot restart from state: %@", self.label ?: @"<nil>",
+            TVLog(@TAG "[%@] cannot restart from state: %@", self.label ?: @"<nil>",
                   [self _stringForState:self.internalState]);
         }
     });
@@ -536,15 +531,15 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
             pid_t pid = self.currentTask.processIdentifier;
             if (pid > 0) {
                 if (kill(pid, signal) == 0) {
-                    TRLog(@TAG "[%@] sent signal %d to task PID: %d", self.label, signal, pid);
+                    TVLog(@TAG "[%@] sent signal %d to task PID: %d", self.label, signal, pid);
                     result = YES;
                 } else {
-                    TRLog(@TAG "[%@] failed to send signal %d to task PID: %d, error: %s", self.label, signal, pid,
+                    TVLog(@TAG "[%@] failed to send signal %d to task PID: %d, error: %s", self.label, signal, pid,
                           strerror(errno));
                 }
             }
         } else {
-            TRLog(@TAG "[%@] cannot send signal %d: no running task", self.label, signal);
+            TVLog(@TAG "[%@] cannot send signal %d: no running task", self.label, signal);
         }
     });
     return result;
@@ -650,7 +645,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
     // Check current state
     if (self.internalState != TRWatchDogStateStopped && self.internalState != TRWatchDogStateCrashed) {
-        TRLog(@TAG "[%@] cannot start from state: %@", self.label ?: @"<nil>",
+        TVLog(@TAG "[%@] cannot start from state: %@", self.label ?: @"<nil>",
               [self _stringForState:self.internalState]);
         return NO;
     }
@@ -658,12 +653,12 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     // Validate configuration
     NSError *configError;
     if (![self validateConfigurationWithError:&configError]) {
-        TRLog(@TAG "[%@] configuration validation failed: %@", self.label ?: @"<nil>",
+        TVLog(@TAG "[%@] configuration validation failed: %@", self.label ?: @"<nil>",
               configError.localizedDescription);
         return NO;
     }
 
-    TRLog(@TAG "[%@] starting service", self.label);
+    TVLog(@TAG "[%@] starting service", self.label);
 
     [self _transitionToState:TRWatchDogStateStarting];
 
@@ -687,9 +682,9 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         struct passwd *pwd = getpwnam([self.userName UTF8String]);
         if (pwd) {
             task.userIdentifier = pwd->pw_uid;
-            TRLog(@TAG "[%@] setting user identifier: %u (%@)", self.label, (unsigned int)pwd->pw_uid, self.userName);
+            TVLog(@TAG "[%@] setting user identifier: %u (%@)", self.label, (unsigned int)pwd->pw_uid, self.userName);
         } else {
-            TRLog(@TAG "[%@] warning: user '%@' not found", self.label, self.userName);
+            TVLog(@TAG "[%@] warning: user '%@' not found", self.label, self.userName);
         }
     }
 
@@ -698,16 +693,16 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         struct group *grp = getgrnam([self.groupName UTF8String]);
         if (grp) {
             task.groupIdentifier = grp->gr_gid;
-            TRLog(@TAG "[%@] setting group identifier: %u (%@)", self.label, (unsigned int)grp->gr_gid, self.groupName);
+            TVLog(@TAG "[%@] setting group identifier: %u (%@)", self.label, (unsigned int)grp->gr_gid, self.groupName);
         } else {
-            TRLog(@TAG "[%@] warning: group '%@' not found", self.label, self.groupName);
+            TVLog(@TAG "[%@] warning: group '%@' not found", self.label, self.groupName);
         }
     }
 
     // Set process group identifier if specified (-1 means not set)
     if (self.processGroupIdentifier != -1) {
         task.processGroupIdentifier = self.processGroupIdentifier;
-        TRLog(@TAG "[%@] setting process group identifier: %d", self.label, self.processGroupIdentifier);
+        TVLog(@TAG "[%@] setting process group identifier: %d", self.label, self.processGroupIdentifier);
     }
 
     // Set task termination handler
@@ -725,7 +720,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     NSError *launchError;
     BOOL launched = [task launchAndReturnError:&launchError];
     if (!launched) {
-        TRLog(@TAG "[%@] failed to launch task: %@", self.label, launchError.localizedDescription);
+        TVLog(@TAG "[%@] failed to launch task: %@", self.label, launchError.localizedDescription);
         [self _transitionToState:TRWatchDogStateStopped];
         return NO;
     }
@@ -733,7 +728,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
     self.currentTask = task;
     self.internalProcessStartTime = [NSDate date];
 
-    TRLog(@TAG "[%@] task launched successfully, PID: %d", self.label, task.processIdentifier);
+    TVLog(@TAG "[%@] task launched successfully, PID: %d", self.label, task.processIdentifier);
     [self _transitionToState:TRWatchDogStateRunning];
     return YES;
 }
@@ -746,7 +741,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         return YES; // Already stopped or stopping
     }
 
-    TRLog(@TAG "[%@] stopping service", self.label);
+    TVLog(@TAG "[%@] stopping service", self.label);
 
     // Clear restart pending flag when explicitly stopping (if requested)
     if (clearRestartPending) {
@@ -766,7 +761,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         // Mark this task as being terminated
         self.taskBeingTerminated = taskToTerminate;
 
-        TRLog(@TAG "[%@] terminating task PID: %d", self.label, pidToTerminate);
+        TVLog(@TAG "[%@] terminating task PID: %d", self.label, pidToTerminate);
 
         [taskToTerminate terminate];
 
@@ -780,11 +775,11 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
             if (self.taskBeingTerminated && self.taskBeingTerminated == taskToTerminate && taskToTerminate.isRunning &&
                 taskToTerminate.processIdentifier == pidToTerminate) {
 
-                TRLog(@TAG "[%@] force killing task PID: %d after timeout", self.label, pidToTerminate);
+                TVLog(@TAG "[%@] force killing task PID: %d after timeout", self.label, pidToTerminate);
                 // Send SIGKILL signal directly to the process
                 kill(pidToTerminate, SIGKILL);
             } else {
-                TRLog(@TAG "[%@] skipping force kill - task PID: %d already terminated or replaced", self.label,
+                TVLog(@TAG "[%@] skipping force kill - task PID: %d already terminated or replaced", self.label,
                       pidToTerminate);
             }
         });
@@ -801,7 +796,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
     // Defensive check - ensure we have a valid task
     if (!task || task != self.currentTask) {
-        TRLog(@TAG "[%@] ignoring termination of unknown task", self.label ?: @"<nil>");
+        TVLog(@TAG "[%@] ignoring termination of unknown task", self.label ?: @"<nil>");
         return;
     }
 
@@ -810,13 +805,13 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
 
     if (terminationReason == TRTaskTerminationReasonExit) {
         // Normal exit with exit code
-        TRLog(@TAG "[%@] task %d exited with code: %d", self.label, task.processIdentifier, terminationStatus);
+        TVLog(@TAG "[%@] task %d exited with code: %d", self.label, task.processIdentifier, terminationStatus);
     } else if (terminationReason == TRTaskTerminationReasonUncaughtSignal) {
         // Terminated by signal
-        TRLog(@TAG "[%@] task %d terminated by signal: %d", self.label, task.processIdentifier, terminationStatus);
+        TVLog(@TAG "[%@] task %d terminated by signal: %d", self.label, task.processIdentifier, terminationStatus);
     } else {
         // Unknown termination reason
-        TRLog(@TAG "[%@] task %d terminated with unknown reason: %ld, status: %d", self.label, task.processIdentifier,
+        TVLog(@TAG "[%@] task %d terminated with unknown reason: %ld, status: %d", self.label, task.processIdentifier,
               (long)terminationReason, terminationStatus);
     }
 
@@ -863,7 +858,7 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         // Check if restart is pending
         if (self.restartPending) {
             self.restartPending = NO;
-            TRLog(@TAG "[%@] previous task stopped, starting new task for restart", self.label);
+            TVLog(@TAG "[%@] previous task stopped, starting new task for restart", self.label);
             [self _startInternal];
         }
     } else if (self.internalState == TRWatchDogStateRunning) {
@@ -871,10 +866,10 @@ NSString *const TRWatchDogErrorDomain = @"TRWatchDogErrorDomain";
         BOOL shouldRestart = [self _shouldRestartForTerminationReason:terminationReason status:terminationStatus];
 
         if (shouldRestart) {
-            TRLog(@TAG "[%@] process exited, will restart due to keepAlive conditions", self.label);
+            TVLog(@TAG "[%@] process exited, will restart due to keepAlive conditions", self.label);
             [self _transitionToState:TRWatchDogStateCrashed]; // Use crashed state to trigger restart logic
         } else {
-            TRLog(@TAG "[%@] process exited, will not restart", self.label);
+            TVLog(@TAG "[%@] process exited, will not restart", self.label);
             [self _transitionToState:TRWatchDogStateStopped];
         }
     }

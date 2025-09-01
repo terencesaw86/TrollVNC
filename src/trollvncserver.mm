@@ -35,20 +35,9 @@
 #import "ClipboardManager.h"
 #import "FBSOrientationObserver.h"
 #import "IOKitSPI.h"
+#import "Logging.h"
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
-
-#if DEBUG
-#define TVLog(fmt, ...) NSLog((@"%s:%d " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define TVLog(...)
-#endif
-
-#if FB_DEBUG
-#define FBLog(fmt, ...) NSLog((@"%s:%d FB: " fmt), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define FBLog(...)
-#endif
 
 #pragma mark - Options
 
@@ -570,7 +559,7 @@ static void parseCLI(int argc, const char *argv[]) {
     }
 
     int opt;
-    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:h";
+    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:Vh";
     while ((opt = getopt(argc, (char *const *)argv, optstr)) != -1) {
         switch (opt) {
         case 'p': {
@@ -886,6 +875,11 @@ static void parseCLI(int argc, const char *argv[]) {
                 exit(EXIT_FAILURE);
             }
             TVLog(@"CLI: SSL key file set (-k %s)", path);
+            break;
+        }
+        case 'V': {
+            tvncVerboseLoggingEnabled = YES;
+            TVLog(@"CLI: Verbose logging enabled (-V)");
             break;
         }
         case 'h':
@@ -1604,15 +1598,15 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
     CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sampleBuffer);
     if (!pb) {
-        FBLog(@"sampleBuffer has no image buffer (skip)");
+        TVLogVerbose(@"sampleBuffer has no image buffer (skip)");
         return;
     }
 
     // Busy-drop: if encoders are busy and limit reached, skip this frame (disabled when -Q 0)
     if (gMaxInflightUpdates > 0 && gInflight.load(std::memory_order_relaxed) >= gMaxInflightUpdates) {
         // When busy dropping, skip all hashing/dirty work.
-        FBLog(@"drop frame due to inflight=%d >= limit=%d", gInflight.load(std::memory_order_relaxed),
-              gMaxInflightUpdates);
+        TVLogVerbose(@"drop frame due to inflight=%d >= limit=%d", gInflight.load(std::memory_order_relaxed),
+                     gMaxInflightUpdates);
         return;
     }
 
@@ -1625,7 +1619,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tLock1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msLock = (__tv_tLock1 - __tv_tLock0) * 1000.0;
-    FBLog(@"lock pixel buffer took %.3f ms", __tv_msLock);
+    TVLogVerbose(@"lock pixel buffer took %.3f ms", __tv_msLock);
 #endif
 
     uint8_t *base = (uint8_t *)CVPixelBufferGetBaseAddress(pb);
@@ -1645,8 +1639,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tResize1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msResize = (__tv_tResize1 - __tv_tResize0) * 1000.0;
-    FBLog(@"maybeResize(rotQ=%d) took %.3f ms (server=%dx%d, src=%zux%zu)", rotQ, __tv_msResize, gWidth, gHeight, width,
-          height);
+    TVLogVerbose(@"maybeResize(rotQ=%d) took %.3f ms (server=%dx%d, src=%zux%zu)", rotQ, __tv_msResize, gWidth, gHeight,
+                 width, height);
 #endif
 
     if ((int)width != gWidth || (int)height != gHeight) {
@@ -1734,8 +1728,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
         CFAbsoluteTime __tv_tRot1 = CFAbsoluteTimeGetCurrent();
         __tv_msRotate = (__tv_tRot1 - __tv_tRot0) * 1000.0;
-        FBLog(@"rotate %d*90 took %.3f ms (rotW=%zu, rotH=%zu)", rotQ, __tv_msRotate, (size_t)rotBuf.width,
-              (size_t)rotBuf.height);
+        TVLogVerbose(@"rotate %d*90 took %.3f ms (rotW=%zu, rotH=%zu)", rotQ, __tv_msRotate, (size_t)rotBuf.width,
+                     (size_t)rotBuf.height);
 #endif
     }
 
@@ -1755,7 +1749,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
         CFAbsoluteTime __tv_tCopy1 = CFAbsoluteTimeGetCurrent();
         __tv_msScaleOrCopy = (__tv_tCopy1 - __tv_tCopy0) * 1000.0;
-        FBLog(@"copy stage->back (tight) took %.3f ms", __tv_msScaleOrCopy);
+        TVLogVerbose(@"copy stage->back (tight) took %.3f ms", __tv_msScaleOrCopy);
 #endif
 
     } else {
@@ -1776,8 +1770,9 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
             CFAbsoluteTime __tv_tPad1 = CFAbsoluteTimeGetCurrent();
             __tv_msScaleOrCopy = (__tv_tPad1 - __tv_tPad0) * 1000.0;
-            FBLog(@"pad/crop copy stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d, thr=%d)", __tv_msScaleOrCopy,
-                  (size_t)stage.width, (size_t)stage.height, gWidth, gHeight, gNoScalePadThresholdPx);
+            TVLogVerbose(@"pad/crop copy stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d, thr=%d)",
+                         __tv_msScaleOrCopy, (size_t)stage.width, (size_t)stage.height, gWidth, gHeight,
+                         gNoScalePadThresholdPx);
 #endif
 
         } else {
@@ -1806,8 +1801,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
             CFAbsoluteTime __tv_tScale1 = CFAbsoluteTimeGetCurrent();
             __tv_msScaleOrCopy = (__tv_tScale1 - __tv_tScale0) * 1000.0;
-            FBLog(@"scale stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d)", __tv_msScaleOrCopy,
-                  (size_t)stage.width, (size_t)stage.height, gWidth, gHeight);
+            TVLogVerbose(@"scale stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d)", __tv_msScaleOrCopy,
+                         (size_t)stage.width, (size_t)stage.height, gWidth, gHeight);
 #endif
         }
     }
@@ -1821,7 +1816,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tUnlock1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msUnlock = (__tv_tUnlock1 - __tv_tUnlock0) * 1000.0;
-    FBLog(@"unlock pixel buffer took %.3f ms", __tv_msUnlock);
+    TVLogVerbose(@"unlock pixel buffer took %.3f ms", __tv_msUnlock);
 #endif
 
     // If rotation just changed, force a full-screen update and reset dirty state
@@ -1847,7 +1842,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"rotationChanged async-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"rotationChanged async-swap+mark fullscreen took %.3f ms",
+                             (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
 
             } else {
@@ -1857,7 +1853,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"rotationChanged copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"rotationChanged copy(fullscreen)+mark took %.3f ms",
+                             (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
             }
         } else {
@@ -1868,7 +1865,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-            FBLog(@"rotationChanged blocking-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+            TVLogVerbose(@"rotationChanged blocking-swap+mark fullscreen took %.3f ms",
+                         (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
         }
 
@@ -1882,9 +1880,10 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
-        FBLog(@"rotationChanged summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
-              @"total=%.3fms",
-              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, (__tv_tEnd - __tv_tStart) * 1000.0);
+        TVLogVerbose(@"rotationChanged summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
+                     @"total=%.3fms",
+                     rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy,
+                     (__tv_tEnd - __tv_tStart) * 1000.0);
 #endif
 
         return;
@@ -1908,7 +1907,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"dirtyDisabled async-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"dirtyDisabled async-swap+mark fullscreen took %.3f ms",
+                             (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
 
             } else {
@@ -1919,7 +1919,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"dirtyDisabled copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"dirtyDisabled copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
             }
         } else {
@@ -1931,14 +1931,16 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-            FBLog(@"dirtyDisabled blocking-swap+mark fullscreen took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+            TVLogVerbose(@"dirtyDisabled blocking-swap+mark fullscreen took %.3f ms",
+                         (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
         }
 
 #if FB_LOG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
-        FBLog(@"dirtyDisabled summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms total=%.3fms",
-              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, (__tv_tEnd - __tv_tStart) * 1000.0);
+        TVLogVerbose(
+            @"dirtyDisabled summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms total=%.3fms",
+            rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, (__tv_tEnd - __tv_tStart) * 1000.0);
 #endif
 
         return;
@@ -1962,9 +1964,9 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tHash1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msHash = (__tv_tHash1 - __tv_tHash0) * 1000.0;
-    FBLog(@"tile hashing took %.3f ms (tiles=%zu, tileSize=%d)%@%@", __tv_msHash, gTileCount, gTileSize,
-          (gSparseHashDuringDefer && gDeferWindowSec > 0) ? @" [sparse]" : @"",
-          gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+    TVLogVerbose(@"tile hashing took %.3f ms (tiles=%zu, tileSize=%d)%@%@", __tv_msHash, gTileCount, gTileSize,
+                 (gSparseHashDuringDefer && gDeferWindowSec > 0) ? @" [sparse]" : @"",
+                 gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
 #endif
 
     enum { kRectBuf = 1024 };
@@ -1982,7 +1984,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tPend1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msPend = (__tv_tPend1 - __tv_tPend0) * 1000.0;
-    FBLog(@"accumulate pending took %.3f ms (hasPending=%@)", __tv_msPend, gHasPending ? @"YES" : @"NO");
+    TVLogVerbose(@"accumulate pending took %.3f ms (hasPending=%@)", __tv_msPend, gHasPending ? @"YES" : @"NO");
 #endif
 
     // Decide whether to flush now
@@ -1996,8 +1998,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         } else {
             CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
             shouldFlush = ((now - sDeferStartTime) >= gDeferWindowSec);
-            FBLog(@"defer window elapsed=%.3f ms (threshold=%.3f ms) -> %@", (now - sDeferStartTime) * 1000.0,
-                  gDeferWindowSec * 1000.0, shouldFlush ? @"FLUSH" : @"WAIT");
+            TVLogVerbose(@"defer window elapsed=%.3f ms (threshold=%.3f ms) -> %@", (now - sDeferStartTime) * 1000.0,
+                         gDeferWindowSec * 1000.0, shouldFlush ? @"FLUSH" : @"WAIT");
         }
     }
 
@@ -2010,10 +2012,10 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
         CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
-        FBLog(@"deferred (no flush) summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
-              @"hash=%.3fms total=%.3fms",
-              rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash,
-              (__tv_tEnd - __tv_tStart) * 1000.0);
+        TVLogVerbose(@"deferred (no flush) summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms "
+                     @"hash=%.3fms total=%.3fms",
+                     rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash,
+                     (__tv_tEnd - __tv_tStart) * 1000.0);
 #endif
 
         return;
@@ -2043,9 +2045,9 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
         CFAbsoluteTime __tv_tHashFull1 = CFAbsoluteTimeGetCurrent();
         __tv_msHash = (__tv_tHashFull1 - __tv_tHashFull0) * 1000.0;
-        FBLog(@"tile hashing (flush full)%@ took %.3f ms (tiles=%zu, tileSize=%d)%@",
-              gParallelHashOnFlush ? @" [parallel]" : @"", __tv_msHash, gTileCount, gTileSize,
-              gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+        TVLogVerbose(@"tile hashing (flush full)%@ took %.3f ms (tiles=%zu, tileSize=%d)%@",
+                     gParallelHashOnFlush ? @" [parallel]" : @"", __tv_msHash, gTileCount, gTileSize,
+                     gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
 #endif
     }
 
@@ -2096,7 +2098,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         rects[0] = (DirtyRect){minX, minY, maxX - minX, maxY - minY};
         rectCount = 1;
 
-        FBLog(@"rects exceeded limit -> collapse to bbox");
+        TVLogVerbose(@"rects exceeded limit -> collapse to bbox");
     }
 
     fullScreen = (changedPct >= gFullscreenThresholdPercent) || rectCount == 0;
@@ -2104,10 +2106,10 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 #if FB_LOG
     CFAbsoluteTime __tv_tRects1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msRects = (__tv_tRects1 - __tv_tRects0) * 1000.0;
-    FBLog(@"build rects took %.3f ms (rects=%d, changedTiles=%d, extraTiles=%d, changedPct=%d%%, fsThresh=%d%%, "
-          @"fullscreen=%@)",
-          __tv_msRects, rectCount, changedTiles, extraTiles, changedPct, gFullscreenThresholdPercent,
-          fullScreen ? @"YES" : @"NO");
+    TVLogVerbose(@"build rects took %.3f ms (rects=%d, changedTiles=%d, extraTiles=%d, changedPct=%d%%, fsThresh=%d%%, "
+                 @"fullscreen=%@)",
+                 __tv_msRects, rectCount, changedTiles, extraTiles, changedPct, gFullscreenThresholdPercent,
+                 fullScreen ? @"YES" : @"NO");
 #endif
 
     // Clear pending
@@ -2137,8 +2139,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
             CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-            FBLog(@"async-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
-                  fullScreen ? @"fullscreen" : @"partial");
+            TVLogVerbose(@"async-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
+                         fullScreen ? @"fullscreen" : @"partial");
 #endif
 
         } else {
@@ -2150,7 +2152,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"async path copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"async path copy(fullscreen)+mark took %.3f ms", (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
 
             } else {
@@ -2160,8 +2162,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
                 CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-                FBLog(@"async path copy(dirty %d rects)+mark took %.3f ms", rectCount,
-                      (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
+                TVLogVerbose(@"async path copy(dirty %d rects)+mark took %.3f ms", rectCount,
+                             (__tv_tSwap1 - __tv_tSwap0) * 1000.0);
 #endif
             }
         }
@@ -2178,8 +2180,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
         CFAbsoluteTime __tv_tSwap1 = CFAbsoluteTimeGetCurrent();
-        FBLog(@"blocking-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
-              fullScreen ? @"fullscreen" : @"partial");
+        TVLogVerbose(@"blocking-swap+mark took %.3f ms (%@)", (__tv_tSwap1 - __tv_tSwap0) * 1000.0,
+                     fullScreen ? @"fullscreen" : @"partial");
 #endif
     }
 
@@ -2189,11 +2191,11 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
 
 #if FB_LOG
     CFAbsoluteTime __tv_tEnd = CFAbsoluteTimeGetCurrent();
-    FBLog(@"frame summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms hash=%.3fms "
-          @"rects=%.3fms total=%.3fms (rectCount=%d, changedPct=%d%%, fullscreen=%@, inflight=%d/%d)",
-          rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash, __tv_msRects,
-          (__tv_tEnd - __tv_tStart) * 1000.0, rectCount, changedPct, fullScreen ? @"YES" : @"NO",
-          gInflight.load(std::memory_order_relaxed), gMaxInflightUpdates);
+    TVLogVerbose(@"frame summary rotQ=%d lock=%.3fms resize=%.3fms rotate=%.3fms scale/copy=%.3fms hash=%.3fms "
+                 @"rects=%.3fms total=%.3fms (rectCount=%d, changedPct=%d%%, fullscreen=%@, inflight=%d/%d)",
+                 rotQ, __tv_msLock, __tv_msResize, __tv_msRotate, __tv_msScaleOrCopy, __tv_msHash, __tv_msRects,
+                 (__tv_tEnd - __tv_tStart) * 1000.0, rectCount, changedPct, fullScreen ? @"YES" : @"NO",
+                 gInflight.load(std::memory_order_relaxed), gMaxInflightUpdates);
 #endif
 }
 
@@ -2338,10 +2340,10 @@ static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
     }
 
     NSString *keyStr = keysymToString(keySym);
-    if (gKeyEventLogging) {
+    if (gKeyEventLogging && tvncLoggingEnabled) {
         const char *mapped = keyStr ? [keyStr UTF8String] : "(nil)";
-        fprintf(stderr, "[key] %s keysym=0x%lx (%lu) mapped=%s\n", down ? "down" : " up ", (unsigned long)keySym,
-                (unsigned long)keySym, mapped);
+        rfbLog("[key] %s keysym=0x%lx (%lu) mapped=%s\n", down ? "down" : " up ", (unsigned long)keySym,
+               (unsigned long)keySym, mapped);
     }
 
     if (!keyStr)
@@ -3096,6 +3098,66 @@ static void prepareScreenCapturer(void) {
     };
 }
 
+#pragma mark - Logging
+
+BOOL tvncLoggingEnabled = YES;
+BOOL tvncVerboseLoggingEnabled = NO;
+
+#define LOCK(mutex) pthread_mutex_lock(&(mutex))
+#define UNLOCK(mutex) pthread_mutex_unlock(&(mutex))
+
+static MUTEX(logMutex);
+static int logMutex_initialized = 0;
+
+static void rfbCustomLog(const char *format, ...) {
+    va_list args;
+    char buf[256];
+    time_t log_clock;
+
+    if (!tvncLoggingEnabled)
+        return;
+
+    if (!logMutex_initialized) {
+        INIT_MUTEX(logMutex);
+        logMutex_initialized = 1;
+    }
+
+    LOCK(logMutex);
+    va_start(args, format);
+
+    time(&log_clock);
+    strftime(buf, 255, "%Y-%m-%d %X ", localtime(&log_clock));
+    fprintf(stderr, "%s", buf);
+
+    /* If format ends with a \n, replace with \r\n */
+    const char *fmt_to_use = format;
+    char *fmt_copy = NULL;
+    if (format) {
+        size_t flen = strlen(format);
+        if (flen > 0 && format[flen - 1] == '\n') {
+            fmt_copy = (char *)malloc(flen + 2);
+            if (fmt_copy) {
+                memcpy(fmt_copy, format, flen - 1);
+                fmt_copy[flen - 1] = '\r';
+                fmt_copy[flen] = '\n';
+                fmt_copy[flen + 1] = '\0';
+                fmt_to_use = fmt_copy;
+            }
+        }
+    }
+
+    vfprintf(stderr, fmt_to_use, args);
+    fflush(stderr);
+
+    if (fmt_copy)
+        free(fmt_copy);
+
+    va_end(args);
+    UNLOCK(logMutex);
+}
+
+static void setupRfbLogging(void) { rfbLog = rfbErr = rfbCustomLog; }
+
 #pragma mark - Main Procedure
 
 static void dropPrivileges(void) {
@@ -3260,6 +3322,7 @@ int main(int argc, const char *argv[]) {
         setupGeometry();
         setupOrientationObserver();
 
+        setupRfbLogging();
         setupRfbScreen(argc, argv);
         setupRfbEventHandlers();
         setupRfbClassicAuthentication();

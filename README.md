@@ -56,6 +56,10 @@ HTTP/WebSockets:
 - `-e file`  Path to SSL certificate file
 - `-k file`  Path to SSL private key file
 
+Logging:
+
+- `-V`        Enable verbose logging (default: `off`)
+
 Help:
 
 - `-h`        Show built-in help message

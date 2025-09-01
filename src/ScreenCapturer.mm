@@ -19,22 +19,17 @@
 #warning This file must be compiled with ARC. Use -fobjc-arc flag.
 #endif
 
-#import "ScreenCapturer.h"
-#import "IOKitSPI.h"
-#import "IOMobileFramebufferSPI.h"
-#import "IOSurfaceSPI.h"
-
 #import <UIKit/UIDevice.h>
 #import <UIKit/UIGeometry.h>
 #import <UIKit/UIImage.h>
 #import <UIKit/UIScreen.h>
 #import <mach/mach.h>
 
-#if DEBUG
-#define SCLog(fmt, ...) NSLog((@"%s:%d " fmt "\r"), __PRETTY_FUNCTION__, __LINE__, ##__VA_ARGS__)
-#else
-#define SCLog(...)
-#endif
+#import "IOKitSPI.h"
+#import "IOMobileFramebufferSPI.h"
+#import "IOSurfaceSPI.h"
+#import "Logging.h"
+#import "ScreenCapturer.h"
 
 typedef IOReturn IOMobileFramebufferReturn;
 typedef void *IOMobileFramebufferRef;
@@ -140,7 +135,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     };
 
 #if DEBUG
-    SCLog(@"render properties %@", mRenderProperties);
+    TVLog(@"render properties %@", mRenderProperties);
 #endif
 
     mScreenSurface = IOSurfaceCreate((__bridge CFDictionaryRef)mRenderProperties);
@@ -256,7 +251,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         double fps = (windowSec > 0.0) ? (sFpsFrames / windowSec) : 0.0;
         double instOut = (sInstFpsEma > 0.0) ? sInstFpsEma : instFps;
 
-        SCLog(@"elapsed %.2fms, real fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used, fps,
+        TVLog(@"elapsed %.2fms, real fps %.2f (frames=%llu, window=%.2fs), inst fps %.2f, memory used %@", used, fps,
               sFpsFrames, windowSec, instOut, [ScreenCapturer _getMemoryUsageDescription]);
 
         sLastLogAtMs = nowMs;
