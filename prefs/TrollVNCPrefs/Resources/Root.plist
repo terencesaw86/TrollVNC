@@ -174,7 +174,7 @@
 			<key>label</key>
 			<string>Keep-Alive (sec)</string>
 			<key>footerText</key>
-			<string>Keeps device awake only while at least one client is connected. 0 disables. Range 0–300 sec; shorter intervals may increase battery usage.</string>
+			<string>Keeps device awake only while at least one client is connected. 0 disables. Range 15–300 sec; shorter intervals may increase battery usage.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

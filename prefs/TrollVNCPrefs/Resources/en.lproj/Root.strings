@@ -57,7 +57,7 @@
 "Name shown to VNC clients." = "Name shown to VNC clients.";
 "VNC TCP port. Default 5901. Valid range 1024–65535." = "VNC TCP port. Default 5901. Valid range 1024–65535.";
 "Ignore all input from clients. Overrides per-client view-only password if set." = "Ignore all input from clients. Overrides per-client view-only password if set.";
-"Keeps device awake only while at least one client is connected. 0 disables. Range 0–300 sec; shorter intervals may increase battery usage." = "Keeps device awake only while at least one client is connected. 0 disables. Range 0–300 sec; shorter intervals may increase battery usage.";
+"Keeps device awake only while at least one client is connected. 0 disables. Range 15–300 sec; shorter intervals may increase battery usage." = "Keeps device awake only while at least one client is connected. 0 disables. Range 15–300 sec; shorter intervals may increase battery usage.";
 "Syncs text clipboard with VNC clients while connected. Disable if you do not want remote clipboard access." = "Syncs text clipboard with VNC clients while connected. Disable if you do not want remote clipboard access.";
 "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery." = "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery.";
 "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max." = "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max.";

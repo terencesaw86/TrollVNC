@@ -57,7 +57,7 @@
 "Name shown to VNC clients." = "在 VNC 客户端中显示的名称。";
 "VNC TCP port. Default 5901. Valid range 1024–65535." = "VNC TCP 端口。默认 5901。有效范围 1024–65535。";
 "Ignore all input from clients. Overrides per-client view-only password if set." = "忽略来自客户端的所有输入。如设置了仅查看密码，则此开关全局覆盖它。";
-"Keeps device awake only while at least one client is connected. 0 disables. Range 0–300 sec; shorter intervals may increase battery usage." = "仅在至少有一个客户端连接时保持设备唤醒。0 表示禁用。范围 0–300 秒。";
+"Keeps device awake only while at least one client is connected. 0 disables. Range 15–300 sec; shorter intervals may increase battery usage." = "仅在至少有一个客户端连接时保持设备唤醒。0 表示禁用。范围 15–300 秒。";
 "Syncs text clipboard with VNC clients while connected. Disable if you do not want remote clipboard access." = "连接期间与 VNC 客户端同步文本剪贴板。如不希望远程访问剪贴板，请关闭。";
 "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery." = "0.1–1.0。缩小可降低带宽/CPU 占用；1.0 保持像素级清晰。请在画质、延迟与电量之间取得平衡。";
 "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max." = "单一帧率（如 60），范围 min-max（如 30-60），或完整规格 min:pref:max（如 30:60:120）。iOS 15+ 使用范围；iOS 14 使用偏好/最大。";
