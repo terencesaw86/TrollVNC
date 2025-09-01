@@ -1,17 +1,17 @@
 //
-//  ViewController.m
+//  TVNCViewController.m
 //  TrollVNC
 //
 //  Created by 82Flex on 9/1/25.
 //
 
-#import "ViewController.h"
+#import "TVNCViewController.h"
 
-@interface ViewController ()
+@interface TVNCViewController ()
 
 @end
 
-@implementation ViewController
+@implementation TVNCViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];

@@ -3045,7 +3045,12 @@ static void setupRfbHttpServer(void) {
                 const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
                 NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
                 NSString *exeDir = [exe stringByDeletingLastPathComponent];
-                NSString *webRel = @"../share/trollvnc/webclients";
+                NSString *webRel;
+#ifdef THEBOOTSTRAP
+                webRel = @"./webclients";
+#else
+                webRel = @"../share/trollvnc/webclients";
+#endif
                 NSString *webPath = [[exeDir stringByAppendingPathComponent:webRel] stringByStandardizingPath];
                 const char *fs = [webPath fileSystemRepresentation];
                 if (fs && *fs) {
