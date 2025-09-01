@@ -56,6 +56,10 @@ HTTP/WebSockets:
 - `-e file`   Path to SSL certificate file
 - `-k file`   Path to SSL private key file
 
+Discovery:
+
+- `-B on|off` Enable Bonjour/mDNS advertisement for auto-discovery by viewers on the local network (default: `on`)
+
 Logging:
 
 - `-V`        Enable verbose logging (debug only)
@@ -336,6 +340,31 @@ Notes:
 
 - Certificates must match what the browser connects to (IP or hostname).
 - Self-signed setups require trusting the CA (minica.pem) or the specific certificate.
+
+## Auto-Discovery (Bonjour/mDNS)
+
+TrollVNC can advertise itself on the local network via Bonjour/mDNS so compatible viewers can discover it without typing an IP/port.
+
+What it does:
+
+- Publishes an mDNS service of type `_rfb._tcp` (the standard for VNC).
+- Uses the desktop name from `-n` as the service name and the VNC port from `-p`.
+- Starts the advertisement when the server starts and stops it on exit.
+
+How to control it:
+
+- Command line: `-B on|off` (default: `on`). Example to disable: `trollvncserver ... -B off`
+- Preferences app: toggle “Enable Auto-Discovery” in TrollVNC settings.
+
+Client discovery tips:
+
+- Many VNC apps (and network scanners) list `_rfb._tcp` services automatically on the LAN.
+- If you’re using the built-in HTTP client (noVNC), Bonjour is unrelated to WebSockets; it only helps native VNC viewers find the TCP server.
+
+Troubleshooting:
+
+- Ensure the device and client are on the same subnet and that multicast (mDNS) is not filtered by your Wi‑Fi/AP.
+- If discovery doesn’t show up, you can still connect manually using the device IP and port shown in the app or logs.
 
 ## Build Dependencies
 
