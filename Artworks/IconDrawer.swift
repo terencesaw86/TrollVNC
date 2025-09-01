@@ -69,17 +69,24 @@ struct PreviewWaveformView: View {
 struct PreviewBannerView: View {
     var body: some View {
         ZStack {
-            Image(systemName: "display.2")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: symbolWidth, height: symbolWidth)
-                .font(.system(size: symbolWidth, weight: .regular, design: .rounded))
-                .opacity(0.88)
-                .padding(72)
+            VStack(spacing: 0) {
+                Image(systemName: "display.2")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: symbolWidth, height: symbolWidth)
+                    .font(.system(size: symbolWidth, weight: .regular, design: .rounded))
+                    .opacity(0.88)
+
+                Text("VNC")
+                    .font(.system(size: 260, weight: .heavy, design: .default))
+                    .kerning(8)
+                    .scaleEffect(x: 1.1, y: 0.55, anchor: .top)
+                    .opacity(0.75)
+            }
         }
+        .offset(y: 20)
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(50)
         .background {
             LinearGradient(
                 gradient: Gradient(colors: [

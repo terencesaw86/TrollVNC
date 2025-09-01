@@ -91,6 +91,12 @@ static inline void TVNCRestartVNCService(void) {
     });
 }
 
+@interface TVNCRootListController ()
+
+@property(nonatomic, strong) UIColor *primaryColor;
+
+@end
+
 @implementation TVNCRootListController
 
 @synthesize bundle = _bundle;
@@ -122,12 +128,18 @@ static inline void TVNCRestartVNCService(void) {
 // Add Apply button in nav bar
 - (void)viewDidLoad {
     [super viewDidLoad];
+
+    _primaryColor = [UIColor colorWithRed:35/255.0 green:158/255.0 blue:171/255.0 alpha:1.0];
+    [[UISwitch appearanceWhenContainedInInstancesOfClasses:@[
+        [self class],
+    ]] setOnTintColor:_primaryColor];
+
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
         initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
                 style:UIBarButtonItemStyleDone
                target:self
                action:@selector(applyChanges)];
-    applyItem.tintColor = [UIColor systemRedColor];
+    applyItem.tintColor = _primaryColor;
     self.navigationItem.rightBarButtonItem = applyItem;
 }
 
@@ -276,15 +288,14 @@ static inline void TVNCRestartVNCService(void) {
             groupCount++;
         }
     }
-    NSInteger lastSection = groupCount - 1; // support group
-    if (indexPath.section == lastSection) {
+    NSInteger lastSection = groupCount - 2; // support group
+    if (indexPath.section >= lastSection) {
         PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
         NSString *key = [specifier propertyForKey:@"cell"];
         if ([key isEqualToString:@"PSButtonCell"]) {
             UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-            UIColor *color = [UIColor systemBlueColor];
-            cell.textLabel.textColor = color;
-            cell.textLabel.highlightedTextColor = color;
+            cell.textLabel.textColor = self.primaryColor;
+            cell.textLabel.highlightedTextColor = self.primaryColor;
             return cell;
         }
     }
