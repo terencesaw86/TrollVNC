@@ -91,9 +91,25 @@ static char *gHttpDirOverride = NULL;
 static char *gSslCertPath = NULL;
 static char *gSslKeyPath = NULL;
 
+/* clangd behavior workarounds */
+#define STRINGIFY(x) #x
+#define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
+#define MYSTRINGIFY(x)                                                                                                 \
+    ^{                                                                                                                 \
+        NSString *str = [NSString stringWithUTF8String:EXPAND_AND_STRINGIFY(x)];                                       \
+        if ([str hasPrefix:@"\""])                                                                                     \
+            str = [str substringFromIndex:1];                                                                          \
+        if ([str hasSuffix:@"\""])                                                                                     \
+            str = [str substringToIndex:str.length - 1];                                                               \
+        return strdup([str UTF8String]);                                                                               \
+    }()
+
 static void printUsageAndExit(const char *prog) {
     // Compact, grouped usage for quick reference. See README for detailed explanations.
-    fprintf(stderr, "TrollVNC (%s) v%s\n", THEOS_PACKAGE_SCHEME, PACKAGE_VERSION);
+    static const char *packageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
+    static const char *packageVersion = MYSTRINGIFY(PACKAGE_VERSION);
+
+    fprintf(stderr, "TrollVNC (%s) v%s\n", packageScheme, packageVersion);
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");
