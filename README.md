@@ -234,7 +234,7 @@ trollvncserver -O on -P 35 -t 32 -R 512
 trollvncserver -O on -P 0
 ```
 
-## Server-side Cursor
+## Server-Side Cursor
 
 iOS does not present a native on-screen cursor in this setup. TrollVNC does not draw a cursor by default; most VNC viewers render their own pointer. If your viewer expects the server to render a cursor, enable it with `-U on`.
 

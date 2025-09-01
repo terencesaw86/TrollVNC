@@ -2876,8 +2876,8 @@ static void setupOrientationObserver(void) {
         NSUInteger seq = [update sequenceNumber];
         NSInteger direction = [update rotationDirection];
         NSTimeInterval dur = [update duration];
-#endif
         TVLog(@"Orientation update: seq=%lu dir=%ld ori=%ld dur=%.3f", seq, direction, (long)activeOrientation, dur);
+#endif
     };
 
     [sObserver setHandler:handler];
