@@ -238,6 +238,8 @@ trollvncserver ... -W 0
 
 ## Clipboard Sync
 
+_I’ve tested and confirmed only ISO-8859-1 (Latin-1) encoding is supported now._
+
 - UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
 - Starts when the first client connects and stops when the last disconnects.
 - Disable it with `-C off` if not desired.
