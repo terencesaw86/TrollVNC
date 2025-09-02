@@ -446,6 +446,10 @@
 			<real>0</real>
 			<key>max</key>
 			<real>8</real>
+			<key>isSegmented</key>
+			<true/>
+			<key>segmentCount</key>
+			<integer>8</integer>
 			<key>showValue</key>
 			<true/>
 		</dict>

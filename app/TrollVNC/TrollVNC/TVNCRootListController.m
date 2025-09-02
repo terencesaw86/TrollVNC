@@ -198,6 +198,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     self.navigationItem.rightBarButtonItem = applyItem;
 }
 
+#pragma mark - Actions
+
 - (void)applyChanges {
     // Resign first responder status
     [self.view endEditing:YES];
@@ -342,6 +344,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     }
 }
 
+#pragma mark - UITableViewDataSource & UITableViewDelegate
+
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     // Color the last section (support) button blue
     NSArray *specs = [self specifiers];
@@ -363,6 +367,34 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
         }
     }
     return [super tableView:tableView cellForRowAtIndexPath:indexPath];
+}
+
+- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
+    NSString *key = [specifier propertyForKey:@"cell"];
+    if ([key isEqualToString:@"PSSliderCell"]) {
+        // Find any UILabel in the cell's content view recursively
+        UILabel *label = [self findLabelInView:cell.contentView];
+        if (label) {
+            // Do something with the label
+            [label sizeToFit];
+        }
+    }
+}
+
+#pragma mark - Helper Methods
+
+- (UILabel *)findLabelInView:(UIView *)view {
+    for (UIView *subview in view.subviews) {
+        if ([subview isKindOfClass:[UILabel class]]) {
+            return (UILabel *)subview;
+        }
+        UILabel *label = [self findLabelInView:subview];
+        if (label) {
+            return label;
+        }
+    }
+    return nil;
 }
 
 @end
