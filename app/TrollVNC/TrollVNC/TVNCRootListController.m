@@ -18,13 +18,13 @@
 #import <Foundation/Foundation.h>
 #import <Preferences/PSSpecifier.h>
 #import <UIKit/UIKit.h>
+#import <arpa/inet.h>
+#import <ifaddrs.h>
+#import <net/if.h>
 #import <signal.h>
 #import <stdlib.h>
 #import <string.h>
 #import <sys/sysctl.h>
-#import <ifaddrs.h>
-#import <arpa/inet.h>
-#import <net/if.h>
 
 #import "StripedTextTableViewController.h"
 #import "TVNCRootListController.h"
@@ -97,14 +97,18 @@ static inline void TVNCRestartVNCService(void) {
 // Resolve current IPv4/IPv6 address of interface en0 (Wi‑Fi). Prefer IPv4 if available.
 static inline NSString *TVNCGetEn0IPAddress(void) {
     struct ifaddrs *ifaList = NULL;
-    if (getifaddrs(&ifaList) != 0 || !ifaList) return nil;
+    if (getifaddrs(&ifaList) != 0 || !ifaList)
+        return nil;
 
     NSString *ipv4 = nil;
     NSString *ipv6 = nil;
     for (struct ifaddrs *ifa = ifaList; ifa; ifa = ifa->ifa_next) {
-        if (!ifa->ifa_addr || !ifa->ifa_name) continue;
-        if (strcmp(ifa->ifa_name, "en0") != 0) continue;
-        if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK)) continue;
+        if (!ifa->ifa_addr || !ifa->ifa_name)
+            continue;
+        if (strcmp(ifa->ifa_name, "en0") != 0)
+            continue;
+        if (!(ifa->ifa_flags & IFF_UP) || (ifa->ifa_flags & IFF_LOOPBACK))
+            continue;
 
         sa_family_t fam = ifa->ifa_addr->sa_family;
         char buf[INET6_ADDRSTRLEN] = {0};
@@ -120,7 +124,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                 char tmp[INET6_ADDRSTRLEN] = {0};
                 if (inet_ntop(AF_INET6, &sin6->sin6_addr, tmp, sizeof(tmp))) {
                     // Keep as fallback only if no other IPv6 found later
-                    if (!ipv6) ipv6 = [NSString stringWithUTF8String:tmp];
+                    if (!ipv6)
+                        ipv6 = [NSString stringWithUTF8String:tmp];
                 }
             } else {
                 char tmp[INET6_ADDRSTRLEN] = {0};
@@ -136,6 +141,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 
 @interface TVNCRootListController ()
 
+@property(nonatomic, strong) UINotificationFeedbackGenerator *notificationGenerator;
 @property(nonatomic, strong) UIColor *primaryColor;
 
 @end
@@ -174,7 +180,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    _primaryColor = [UIColor colorWithRed:35/255.0 green:158/255.0 blue:171/255.0 alpha:1.0];
+    _notificationGenerator = [[UINotificationFeedbackGenerator alloc] init];
+    _primaryColor = [UIColor colorWithRed:35 / 255.0 green:158 / 255.0 blue:171 / 255.0 alpha:1.0];
     [[UISwitch appearanceWhenContainedInInstancesOfClasses:@[
         [self class],
     ]] setOnTintColor:_primaryColor];
@@ -248,7 +255,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     // Append current en0 IP on a second line, if available
     NSString *ip = TVNCGetEn0IPAddress();
     NSString *ipUnavailable = NSLocalizedStringFromTableInBundle(@"unavailable", @"Localizable", self.bundle, nil);
-    NSString *ipFormat = NSLocalizedStringFromTableInBundle(@"Current IP Address: %@", @"Localizable", self.bundle, nil);
+    NSString *ipFormat =
+        NSLocalizedStringFromTableInBundle(@"Current IP Address: %@", @"Localizable", self.bundle, nil);
     NSString *ipLine = [NSString stringWithFormat:ipFormat, (ip.length ? ip : ipUnavailable)];
     NSString *fullMessage = [NSString stringWithFormat:@"%@\n%@", message, ipLine];
     NSString *cancel = NSLocalizedStringFromTableInBundle(@"Cancel", @"Localizable", self.bundle, nil);
@@ -263,7 +271,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                                               style:UIAlertActionStyleDestructive
                                             handler:^(UIAlertAction *_Nonnull action) {
                                                 TVNCRestartVNCService();
-                                                // Optionally give a tiny feedback
+                                                [weakSelf.notificationGenerator
+                                                    notificationOccurred:UINotificationFeedbackTypeSuccess];
                                                 [weakSelf.view endEditing:YES];
                                             }]];
     [self presentViewController:alert animated:YES completion:nil];
