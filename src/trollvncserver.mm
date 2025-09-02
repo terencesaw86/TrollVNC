@@ -3110,8 +3110,30 @@ static void setupGeometry(void) {
     }
 }
 
+NS_INLINE UIInterfaceOrientation makeInterfaceOrientationRotate90(UIInterfaceOrientation o) {
+    switch (o) {
+    case UIInterfaceOrientationPortrait:
+        return UIInterfaceOrientationLandscapeLeft;
+    case UIInterfaceOrientationPortraitUpsideDown:
+        return UIInterfaceOrientationLandscapeRight;
+    case UIInterfaceOrientationLandscapeLeft:
+        return UIInterfaceOrientationPortraitUpsideDown;
+    case UIInterfaceOrientationLandscapeRight:
+    default:
+        return UIInterfaceOrientationPortrait;
+    }
+}
+
 // Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
 NS_INLINE int rotationForOrientation(UIInterfaceOrientation o) {
+    static BOOL isPad;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        isPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+    });
+    if (isPad) {
+        o = makeInterfaceOrientationRotate90(o);
+    }
     switch (o) {
     case UIInterfaceOrientationPortrait:
     default:

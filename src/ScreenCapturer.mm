@@ -77,8 +77,14 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     int width, height;
     CGSize screenSize = [[UIScreen mainScreen] _unjailedReferenceBoundsInPixels].size;
 
-    width = (int)round(screenSize.width);
-    height = (int)round(screenSize.height);
+    BOOL isPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+    if (isPad) {
+        width = (int)round(screenSize.height);
+        height = (int)round(screenSize.width);
+    } else {
+        width = (int)round(screenSize.width);
+        height = (int)round(screenSize.height);
+    }
 
     // Pixel format for Alpha, Red, Green and Blue
     unsigned pixelFormat = 0x42475241; // 'ARGB'
@@ -153,12 +159,12 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 #else
     CFRunLoopRef runLoop = CFRunLoopGetMain();
 
-    static IOSurfaceRef sourceSurface;
+    static IOSurfaceRef srcSurface;
     static IOSurfaceAcceleratorRef accelerator;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         @autoreleasepool {
-            sourceSurface = IOSurfaceCreate((__bridge CFDictionaryRef)mRenderProperties);
+            srcSurface = IOSurfaceCreate((__bridge CFDictionaryRef)mRenderProperties);
             IOSurfaceAcceleratorCreate(kCFAllocatorDefault, nil, &accelerator);
 
             CFRunLoopSourceRef runLoopSource = IOSurfaceAcceleratorGetRunLoopSource(accelerator);
@@ -173,8 +179,8 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     }
 
     // Fast ~20ms, sRGB, while the image is GOOD. Recommended.
-    CARenderServerRenderDisplay(0 /* Main Display */, CFSTR("LCD"), sourceSurface, 0, 0);
-    IOSurfaceAcceleratorTransferSurface(accelerator, sourceSurface, dstSurface, NULL, NULL, NULL, NULL);
+    CARenderServerRenderDisplay(0 /* Main Display */, CFSTR("LCD"), srcSurface, 0, 0);
+    IOSurfaceAcceleratorTransferSurface(accelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL);
 
     previousDirtyFrameCount = dirtyFrameCount;
     return YES;
