@@ -30,6 +30,7 @@
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
 #import <string>
+#import <sys/sysctl.h>
 #import <unistd.h>
 
 #import "ClipboardManager.h"
@@ -2623,6 +2624,67 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 static NSNetService *gBonjourService = nil;     // VNC service (_rfb._tcp.)
 static NSNetService *gBonjourHttpService = nil; // Optional HTTP service (_http._tcp.)
 
+// Compute a short, per-boot stable hash suffix (6 hex chars) from system uptime
+static NSString *tvBootHash6(void) {
+    static NSString *suf = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // Read boot time from the kernel (stable across process restarts in the same boot)
+        struct timeval boottv = {0};
+        size_t len = sizeof(boottv);
+        int mib[2] = {CTL_KERN, KERN_BOOTTIME};
+        int rc = sysctl(mib, 2, &boottv, &len, NULL, 0);
+
+        uint64_t h = 1469598103934665603ULL; // FNV-1a 64-bit offset basis
+        const uint64_t p = 1099511628211ULL; // prime
+        if (rc == 0 && len == sizeof(boottv)) {
+            uint64_t sec = (uint64_t)boottv.tv_sec;
+            uint64_t usec = (uint64_t)boottv.tv_usec;
+            for (int i = 0; i < 8; i++) {
+                h ^= (uint8_t)((sec >> (i * 8)) & 0xFF);
+                h *= p;
+            }
+            for (int i = 0; i < 8; i++) {
+                h ^= (uint8_t)((usec >> (i * 8)) & 0xFF);
+                h *= p;
+            }
+        } else {
+            // Fallback: hash the monotonic uptime seconds (may vary between app restarts in same boot)
+            uint64_t up_ms = (uint64_t)([NSProcessInfo processInfo].systemUptime * 1000.0);
+            for (int i = 0; i < 8; i++) {
+                h ^= (uint8_t)((up_ms >> (i * 8)) & 0xFF);
+                h *= p;
+            }
+        }
+        unsigned int shortHash = (unsigned int)(h & 0xFFFFFFu); // 24-bit
+        suf = [NSString stringWithFormat:@"%06x", shortHash];
+    });
+    return suf;
+}
+
+// Compose Bonjour service name as gDesktopName + 6-char boot hash, clamped to 63 bytes
+static NSString *tvBonjourServiceName(NSString *baseName) {
+    NSString *name = baseName ?: @"TrollVNC";
+    NSString *suffix = tvBootHash6();
+    // mDNS single-label length limit is 63 bytes (UTF-8). We reserve suffix bytes.
+    const NSUInteger maxBytes = 63;
+    NSData *data = [name dataUsingEncoding:NSUTF8StringEncoding];
+    // Reserve bytes for "-" + 6-char suffix (ASCII)
+    NSUInteger reserve = suffix.length + 1; // hyphen + suffix
+    if (reserve >= maxBytes) {
+        // Pathological, but keep at least the suffix
+        return suffix;
+    }
+    while (data.length + reserve > maxBytes && name.length > 0) {
+        name = [name substringToIndex:name.length - 1];
+        data = [name dataUsingEncoding:NSUTF8StringEncoding];
+    }
+    if (name.length == 0) {
+        return suffix; // no space left for hyphen
+    }
+    return [NSString stringWithFormat:@"%@-%@", name, suffix];
+}
+
 @interface TVBonjourDelegate : NSObject <NSNetServiceDelegate>
 @end
 
@@ -2708,10 +2770,8 @@ static void startBonjour(void) {
 
     // Publish VNC service: _rfb._tcp. on gPort
     if (!gBonjourService) {
-        gBonjourService = [[NSNetService alloc] initWithDomain:@"local."
-                                                          type:@"_rfb._tcp."
-                                                          name:gDesktopName
-                                                          port:gPort];
+        NSString *svcName = tvBonjourServiceName(gDesktopName);
+        gBonjourService = [[NSNetService alloc] initWithDomain:@"local." type:@"_rfb._tcp." name:svcName port:gPort];
         gBonjourService.delegate = gBonjourDelegate;
         [gBonjourService setTXTRecordData:bonjourTXTRecord()];
         [gBonjourService publish];
@@ -2728,9 +2788,10 @@ static void startBonjour(void) {
             [gBonjourHttpService stop];
             gBonjourHttpService = nil;
         }
+        NSString *svcName = tvBonjourServiceName(gDesktopName);
         gBonjourHttpService = [[NSNetService alloc] initWithDomain:@"local."
                                                               type:@"_http._tcp."
-                                                              name:gDesktopName
+                                                              name:svcName
                                                               port:gHttpPort];
         gBonjourHttpService.delegate = gBonjourDelegate;
         [gBonjourHttpService publish];
