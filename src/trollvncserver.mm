@@ -2995,35 +2995,70 @@ static void sendClipboardToClients(NSString *_Nullable text) {
         return; // suppressed (likely local set)
     }
 
-    const char *utf8 = NULL;
+    char *utf8 = NULL;
     int utf8Len = 0;
-    const char *latin1 = NULL;
+    char *latin1 = NULL;
     int latin1Len = 0;
 
-    std::string utf8Buf;
-    std::string latin1Buf;
-
-    if (text) {
-        NSData *utf8Data = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
-        utf8Len = (int)utf8Data.length;
-        utf8Buf.assign((const char *)utf8Data.bytes, (size_t)utf8Len);
-        utf8 = utf8Len > 0 ? utf8Buf.data() : "";
+    do {
+        if (!text) {
+            break;
+        }
 
         // Prepare best-effort Latin-1 fallback
         NSData *latin1Data = [text dataUsingEncoding:NSISOLatin1StringEncoding allowLossyConversion:YES];
         latin1Len = (int)latin1Data.length;
-        latin1Buf.assign((const char *)latin1Data.bytes, (size_t)latin1Len);
-        latin1 = latin1Len > 0 ? latin1Buf.data() : "";
-    } else {
-        // Empty/clear
-        utf8 = "";
-        utf8Len = 0;
-        latin1 = "";
-        latin1Len = 0;
+        if (!latin1Len)
+            break;
+
+        latin1 = (char *)malloc((size_t)latin1Len);
+        if (!latin1) {
+            latin1Len = 0;
+            break;
+        }
+
+        memcpy(latin1, [latin1Data bytes], (size_t)latin1Len);
+
+    } while (0);
+
+    do {
+        if (!text) {
+            break;
+        }
+
+        NSData *utf8Data = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+        utf8Len = (int)utf8Data.length;
+        if (!utf8Len)
+            break;
+
+        utf8 = (char *)malloc((size_t)utf8Len);
+        if (!utf8) {
+            utf8Len = 0;
+            break;
+        }
+
+        memcpy(utf8, [utf8Data bytes], (size_t)utf8Len);
+
+    } while (0);
+
+    if (utf8 || latin1) {
+        TVLog(@"Clipboard: sending to clients (utf8Len=%d, latin1Len=%d, clients=%d)", utf8Len, latin1Len,
+              gClientCount);
     }
 
-    TVLog(@"Clipboard: sending to clients (utf8Len=%d, latin1Len=%d, clients=%d)", utf8Len, latin1Len, gClientCount);
-    rfbSendServerCutTextUTF8(gScreen, (char *)utf8, utf8Len, (char *)latin1, latin1Len);
+    if (utf8 && latin1) {
+        rfbSendServerCutTextUTF8(gScreen, utf8, utf8Len, latin1, latin1Len);
+    } else if (latin1) {
+        rfbSendServerCutText(gScreen, latin1, latin1Len);
+    } else {
+        TVLog(@"Clipboard: no valid clipboard data to send");
+    }
+
+    if (utf8)
+        free(utf8);
+
+    if (latin1)
+        free(latin1);
 }
 
 #pragma mark - Server-Side Cursor
@@ -3123,6 +3158,7 @@ static void setupGeometry(void) {
     }
 }
 
+#if !TARGET_IPHONE_SIMULATOR
 NS_INLINE UIInterfaceOrientation makeInterfaceOrientationRotate90(UIInterfaceOrientation o) {
     switch (o) {
     case UIInterfaceOrientationPortrait:
@@ -3136,6 +3172,7 @@ NS_INLINE UIInterfaceOrientation makeInterfaceOrientationRotate90(UIInterfaceOri
         return UIInterfaceOrientationPortrait;
     }
 }
+#endif
 
 // Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
 NS_INLINE int rotationForOrientation(UIInterfaceOrientation o) {
