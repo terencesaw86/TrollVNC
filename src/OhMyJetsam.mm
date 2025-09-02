@@ -17,8 +17,7 @@
 
 #import <TargetConditionals.h>
 
-#if TARGET_OS_SIMULATOR
-#else
+#if !TARGET_OS_SIMULATOR
 
 #import <Foundation/Foundation.h>
 

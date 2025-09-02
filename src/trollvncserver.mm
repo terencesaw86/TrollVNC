@@ -2823,9 +2823,13 @@ static void startBonjour(void) {
 #pragma mark - Client Handlers
 
 static int gClientCount = 0; // Number of connected clients
-static BOOL gRestoreAssist = NO;
+
 static BOOL gIsCaptureStarted = NO;
 static BOOL gIsClipboardStarted = NO;
+
+#if !TARGET_OS_SIMULATOR
+static BOOL gRestoreAssist = NO;
+#endif
 
 static void clientGone(rfbClientPtr cl) {
     // Decrement client count and stop capture if this was the last client.
@@ -2846,11 +2850,13 @@ static void clientGone(rfbClientPtr cl) {
         TVLog(@"No clients remaining; clipboard listening stopped.");
     }
 
+#if !TARGET_OS_SIMULATOR
     // AutoAssist: disable AssistiveTouch if we enabled it and no clients remain
     if (gClientCount == 0 && gRestoreAssist) {
         gRestoreAssist = NO;
         [PSAssistiveTouchSettingsDetail setEnabled:NO];
     }
+#endif
 
     // KeepAlive: disable when no clients remain
     if (gClientCount == 0) {
@@ -2882,11 +2888,13 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
     }
 
+#if !TARGET_OS_SIMULATOR
     // AutoAssist: enable AssistiveTouch if not already enabled
     if (gClientCount > 0 && gAutoAssistEnabled && ![PSAssistiveTouchSettingsDetail isEnabled]) {
         gRestoreAssist = YES;
         [PSAssistiveTouchSettingsDetail setEnabled:YES];
     }
+#endif
 
     // KeepAlive: enable when at least one client is connected and interval > 0
     if (gClientCount > 0 && gKeepAliveSec > 0.0) {
