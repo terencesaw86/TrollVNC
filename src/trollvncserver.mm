@@ -37,6 +37,7 @@
 #import "FBSOrientationObserver.h"
 #import "IOKitSPI.h"
 #import "Logging.h"
+#import "PSAssistiveTouchSettingsDetail.h"
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
 
@@ -82,8 +83,9 @@ static BOOL gWheelNaturalDir = NO;        // natural scroll direction (invert de
 
 // Modifier mapping scheme: 0 = standard (Alt->Option, Meta/Super->Command), 1 = Alt-as-Command
 static int gModMapScheme = 0;
-static BOOL gKeyEventLogging = NO;
+static BOOL gAutoAssistEnabled = NO;
 static BOOL gCursorEnabled = NO;
+static BOOL gKeyEventLogging = NO;
 static BOOL gOrientationSyncEnabled = NO;
 
 // Classic VNC authentication
@@ -148,6 +150,9 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -N        Natural scroll direction (invert wheel)\n");
     fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K        Log keyboard events to stderr\n\n");
+
+    fprintf(stderr, "Accessibility:\n");
+    fprintf(stderr, "  -E on|off Enable AssistiveTouch auto-activation (default: off)\n\n");
 
     fprintf(stderr, "Cursor:\n");
     fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n\n");
@@ -434,6 +439,9 @@ static void parseDaemonOptions(void) {
     NSNumber *keyLogN = [prefs objectForKey:@"KeyLogging"];
     if ([keyLogN isKindOfClass:[NSNumber class]])
         gKeyEventLogging = keyLogN.boolValue;
+    NSNumber *assistN = [prefs objectForKey:@"AutoAssistEnabled"];
+    if ([assistN isKindOfClass:[NSNumber class]])
+        gAutoAssistEnabled = assistN.boolValue;
     NSNumber *bonjourN = [prefs objectForKey:@"BonjourEnabled"];
     if ([bonjourN isKindOfClass:[NSNumber class]])
         gBonjourEnabled = bonjourN.boolValue;
@@ -820,6 +828,20 @@ static void parseCLI(int argc, const char *argv[]) {
         case 'K': {
             gKeyEventLogging = YES;
             TVLog(@"CLI: Keyboard event logging enabled (-K)");
+            break;
+        }
+        case 'E': {
+            const char *val = optarg ? optarg : "off";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gAutoAssistEnabled = YES;
+                TVLog(@"CLI: AssistiveTouch auto-activation enabled (-E %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gAutoAssistEnabled = NO;
+                TVLog(@"CLI: AssistiveTouch auto-activation disabled (-E %s)", [@(val) UTF8String]);
+            } else {
+                TVPrintError("Invalid -E value: %s (expected on|off|1|0|true|false)", val);
+                exit(EXIT_FAILURE);
+            }
             break;
         }
         case 'U': {
@@ -2801,6 +2823,7 @@ static void startBonjour(void) {
 #pragma mark - Client Handlers
 
 static int gClientCount = 0; // Number of connected clients
+static BOOL gRestoreAssist = NO;
 static BOOL gIsCaptureStarted = NO;
 static BOOL gIsClipboardStarted = NO;
 
@@ -2821,6 +2844,12 @@ static void clientGone(rfbClientPtr cl) {
         [[ClipboardManager sharedManager] stop];
         gIsClipboardStarted = NO;
         TVLog(@"No clients remaining; clipboard listening stopped.");
+    }
+
+    // AutoAssist: disable AssistiveTouch if we enabled it and no clients remain
+    if (gClientCount == 0 && gRestoreAssist) {
+        gRestoreAssist = NO;
+        [PSAssistiveTouchSettingsDetail setEnabled:NO];
     }
 
     // KeepAlive: disable when no clients remain
@@ -2851,6 +2880,12 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         gIsClipboardStarted = YES;
         [[ClipboardManager sharedManager] start];
         TVLog(@"Clipboard listening started (clients=%d).", gClientCount);
+    }
+
+    // AutoAssist: enable AssistiveTouch if not already enabled
+    if (gClientCount > 0 && gAutoAssistEnabled && ![PSAssistiveTouchSettingsDetail isEnabled]) {
+        gRestoreAssist = YES;
+        [PSAssistiveTouchSettingsDetail setEnabled:YES];
     }
 
     // KeepAlive: enable when at least one client is connected and interval > 0

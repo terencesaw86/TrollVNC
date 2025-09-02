@@ -34,7 +34,7 @@
 "Alt→Cmd" = "Alt→Cmd";
 "Log Keyboard Events" = "Log Keyboard Events";
 "Cursor & Orientation" = "Cursor & Orientation";
-"Server-side Cursor" = "Server-side Cursor";
+"Server-Side Cursor" = "Server-Side Cursor";
 "Sync Interface Orientation" = "Sync Interface Orientation";
 "HTTP / WebSockets" = "HTTP / WebSockets";
 "Configure the built-in web client server." = "Configure the built-in web client server.";
@@ -85,3 +85,5 @@
 "View Logs" = "View Logs";
 "Enable Auto-Discovery" = "Enable Auto-Discovery";
 "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting." = "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting.";
+"Assistive Touch Auto-Activation" = "Assistive Touch Auto-Activation";
+"Automatically enables iOS AssistiveTouch while clients are connected to improve input support.";

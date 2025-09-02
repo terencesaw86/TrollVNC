@@ -354,7 +354,29 @@
 			<true/>
 		</dict>
 
-		<!-- 14) Server-side Cursor -->
+		<!-- 14.1) Assistive Touch -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
+			<string>Automatically enables iOS AssistiveTouch while clients are connected to improve input support.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>AutoAssistEnabled</string>
+			<key>label</key>
+			<string>Assistive Touch Auto-Activation</string>
+			<key>default</key>
+			<false/>
+		</dict>
+
+		<!-- 14.2) Server-Side Cursor -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -371,7 +393,7 @@
 			<key>key</key>
 			<string>ServerCursor</string>
 			<key>label</key>
-			<string>Server-side Cursor</string>
+			<string>Server-Side Cursor</string>
 			<key>default</key>
 			<false/>
 		</dict>

@@ -34,7 +34,7 @@
 "Alt→Cmd" = "Alt→Cmd";
 "Log Keyboard Events" = "记录键盘事件";
 "Cursor & Orientation" = "光标与方向";
-"Server-side Cursor" = "服务器端光标";
+"Server-Side Cursor" = "服务器端光标";
 "Sync Interface Orientation" = "同步界面方向";
 "HTTP / WebSockets" = "HTTP / WebSockets";
 "Configure the built-in web client server." = "配置内置 Web 客户端服务器。";
@@ -87,3 +87,5 @@
 "View Logs" = "查看日志";
 "Enable Auto-Discovery" = "启用自动发现";
 "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting." = "通过 Bonjour 在局域网发布 VNC 服务（_rfb._tcp），便于兼容客户端自动发现；启用内置 HTTP 时也会发布 _http._tcp。关闭以禁用广播。";
+"Assistive Touch Auto-Activation" = "Assistive Touch 自动激活";
+"Automatically enables iOS AssistiveTouch while clients are connected to improve input support." = "连接期间自动启用 iOS AssistiveTouch，以改善输入支持。";
