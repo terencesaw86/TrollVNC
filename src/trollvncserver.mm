@@ -2433,9 +2433,18 @@ NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
     // back to device capture space (portrait, gSrcWidth x gSrcHeight), inverting rotation.
     int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
 
+    // On iPad, align input coordinates with an extra +270° CW rotation
+    // (i.e., -90°) per corrected requirement.
+    static BOOL sIsPad = NO;
+    static dispatch_once_t sPadOnce;
+    dispatch_once(&sPadOnce, ^{
+        sIsPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+    });
+    int effRotQ = (rotQ + (sIsPad ? 3 : 0)) & 3;
+
     // Dimensions of the rotated (pre-scale) stage
-    int rotW = (rotQ % 2 == 0) ? gSrcWidth : gSrcHeight;
-    int rotH = (rotQ % 2 == 0) ? gSrcHeight : gSrcWidth;
+    int rotW = (effRotQ % 2 == 0) ? gSrcWidth : gSrcHeight;
+    int rotH = (effRotQ % 2 == 0) ? gSrcHeight : gSrcWidth;
 
     // Undo scaling from stage(rotW x rotH) -> VNC(gWidth x gHeight)
     double sx = (gWidth > 0) ? ((double)rotW / (double)gWidth) : 1.0;
@@ -2455,7 +2464,7 @@ NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
 
     // Invert rotation: stage -> source portrait space
     double dx = 0.0, dy = 0.0;
-    switch (rotQ) {
+    switch (effRotQ) {
     case 0: // identity
         dx = stX;
         dy = stY;
@@ -3126,12 +3135,12 @@ NS_INLINE UIInterfaceOrientation makeInterfaceOrientationRotate90(UIInterfaceOri
 
 // Map UIInterfaceOrientation to rotation quadrant (clockwise degrees/90)
 NS_INLINE int rotationForOrientation(UIInterfaceOrientation o) {
-    static BOOL isPad;
+    static BOOL sIsPad;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        isPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+        sIsPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
     });
-    if (isPad) {
+    if (sIsPad) {
         o = makeInterfaceOrientationRotate90(o);
     }
     switch (o) {

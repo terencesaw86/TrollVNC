@@ -159,7 +159,14 @@ NS_INLINE void _DTXCalcLinearPinchStartEndPoints(CGRect bounds, CGFloat pixelsSc
     if (!self)
         return nil;
 
-    _physicalScreenSize = [[UIScreen mainScreen] _unjailedReferenceBoundsInPixels].size;
+    CGSize screenSize = [[UIScreen mainScreen] _unjailedReferenceBoundsInPixels].size;
+    BOOL isPad = ([[UIDevice currentDevice] userInterfaceIdiom] == UIUserInterfaceIdiomPad);
+    if (isPad) {
+        _physicalScreenSize = CGSizeMake(screenSize.height, screenSize.width);
+    } else {
+        _physicalScreenSize = CGSizeMake(screenSize.width, screenSize.height);
+    }
+
     dispatch_queue_attr_t attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL,
                                                                          QOS_CLASS_USER_INTERACTIVE, 0);
     _hidEventQueue = dispatch_queue_create("com.82flex.trollvnc.hid-events", attr);
