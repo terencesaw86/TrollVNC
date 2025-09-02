@@ -6,7 +6,9 @@ TrollVNC is a VNC server for iOS devices, allowing remote access and control of 
 
 ## Usage
 
-Run on iOS device or simulator:
+1. Download “TrollVNC” from Releases and install it on your iOS device.
+2. Configure the VNC server settings from “Settings” → “TrollVNC” or the standalone “TrollVNC” app as needed.
+3. Or, run the following command on iOS device or simulator:
 
 ```sh
 trollvncserver -p 5901 -n "My iPhone" [options]
@@ -44,6 +46,10 @@ Scroll/Input:
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
 
+Accessibility:
+
+- `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
+
 Cursor & Rotation:
 
 - `-U on|off` Enable server-side cursor overlay (default: `off`)
@@ -72,6 +78,39 @@ Notes:
 
 - Capture starts only when at least one client is connected, and stops when the last disconnects.
 - You may want to use `-M altcmd` on macOS clients.
+
+### Key Input Mapping
+
+Mouse:
+
+- Left button: single-finger touch. Hold to drag; move updates while held.
+- Right button: iOS Home/Menu (Consumer: Menu). Press = short press; hold ≈ long press. Release ends the press.
+- Middle button: Power button (Consumer: Power). Press = short press; hold ≈ long press. Release ends the press.
+- Wheel: translated into short drags with coalescing/velocity; see “Wheel/Scroll Tuning”.
+
+Keyboard:
+
+- Standard ASCII keys, Return/Tab/Backspace/Delete, arrows, Home/End/PageUp/PageDown, and function keys F1..F24 are
+  sent as HID keyboard usages.
+- Modifier mapping (`-M`):
+  - `std` (default): Alt -> Option; Meta/Super -> Command.
+  - `altcmd`: Alt -> Command; Meta -> Option; Super -> Command.
+- Media/consumer keys (when the client sends XF86 keysyms):
+  - Brightness Up/Down -> display brightness increment/decrement
+  - Volume Up/Down/Mute -> volume increment/decrement/mute
+  - Previous / Play-Pause / Next -> previous track / toggle play-pause / next track
+
+Notes:
+
+- “Home/Menu” is generated via the Consumer Menu usage; on devices without a physical Home button it performs the Home action.
+- Double/triple press of Power/Home are not synthesized automatically from mouse clicks; hold the button to simulate long-press when needed.
+- Touch, scroll, and button mappings respect the current rotation when `-O on` is used.
+
+AssistiveTouch auto-activation (`-E on`):
+
+- When the first client connects, TrollVNC enables AssistiveTouch if it’s currently off; when the last client disconnects,
+  it restores the previous state (disables it only if TrollVNC enabled it).
+- Applies on device builds; no-op on the simulator.
 
 ## Performance Tips
 
