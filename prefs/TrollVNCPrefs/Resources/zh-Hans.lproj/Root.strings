@@ -89,3 +89,12 @@
 "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting." = "通过 Bonjour 在局域网发布 VNC 服务（_rfb._tcp），便于兼容客户端自动发现；启用内置 HTTP 时也会发布 _http._tcp。关闭以禁用广播。";
 "Assistive Touch Auto-Activation" = "Assistive Touch 自动激活";
 "Automatically enables iOS AssistiveTouch while clients are connected to improve input support." = "连接期间自动启用 iOS AssistiveTouch，以改善输入支持。";
+"Reverse Connection" = "反向连接";
+"Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT." = "建立到监听的 VNC 查看器或中继器的反向连接，而无需打开服务器端口。这对于绕过防火墙或 NAT 非常有用。";
+"Mode" = "模式";
+"Viewer" = "查看器";
+"Repeater" = "中继器";
+"A repeater ID is required for the “Repeater” mode." = "“中继器”模式需要一个中继器 ID。";
+"Server" = "服务器";
+"server:port" = "服务器:端口";
+"Repeater ID" = "中继器 ID";

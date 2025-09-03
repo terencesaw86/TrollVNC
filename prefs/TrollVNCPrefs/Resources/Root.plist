@@ -678,7 +678,80 @@
 			<true/>
 		</dict>
 
-		<!-- 26) Bonjour / Auto-Discovery -->
+		<!-- 26.1) Reverse Connection -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Reverse Connection</string>
+			<key>footerText</key>
+			<string>Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>ReverseMode</string>
+			<key>label</key>
+			<string>Mode</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>default</key>
+			<string>viewer</string>
+			<key>shortTitles</key>
+			<array>
+				<string>Viewer</string>
+				<string>Repeater</string>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>Viewer</string>
+				<string>Repeater</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<string>viewer</string>
+				<string>repeater</string>
+			</array>
+			<key>staticTextMessage</key>
+			<string>A repeater ID is required for the “Repeater” mode.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>ReverseSocket</string>
+			<key>label</key>
+			<string>Server</string>
+			<key>placeholder</key>
+			<string>server:port</string>
+			<key>noAutoCorrect</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>ReverseRepeaterID</string>
+			<key>label</key>
+			<string>Repeater ID</string>
+			<key>decimal</key>
+			<true/>
+			<key>isNumeric</key>
+			<true/>
+			<key>noAutoCorrect</key>
+			<true/>
+			<key>placeholder</key>
+			<string>0</string>
+		</dict>
+
+		<!-- 26.2) Bonjour / Auto-Discovery -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>

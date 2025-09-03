@@ -87,3 +87,12 @@
 "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting." = "Advertises the VNC service over Bonjour (_rfb._tcp) for clients that support auto-discovery. When the built-in HTTP server is enabled, also publishes _http._tcp. Turn off to disable broadcasting.";
 "Assistive Touch Auto-Activation" = "Assistive Touch Auto-Activation";
 "Automatically enables iOS AssistiveTouch while clients are connected to improve input support.";
+"Reverse Connection" = "Reverse Connection";
+"Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT." = "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT.";
+"Mode" = "Mode";
+"Viewer" = "Viewer";
+"Repeater" = "Repeater";
+"A repeater ID is required for the “Repeater” mode." = "A repeater ID is required for the “Repeater” mode.";
+"Server" = "Server";
+"server:port" = "server:port";
+"Repeater ID" = "Repeater ID";
