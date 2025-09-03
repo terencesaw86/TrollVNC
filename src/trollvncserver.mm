@@ -102,6 +102,9 @@ static char *gSslKeyPath = NULL;
 // Bonjour / mDNS Auto-Discovery
 static BOOL gBonjourEnabled = YES; // publish _rfb._tcp (and optional _http._tcp)
 
+// TightVNC 1.x file transfer extension (deprecated)
+static BOOL gFileTransferEnabled = NO;
+
 /* clangd behavior workarounds */
 #define STRINGIFY(x) #x
 #define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
@@ -168,6 +171,9 @@ static void printUsageAndExit(const char *prog) {
 
     fprintf(stderr, "Bonjour/mDNS:\n");
     fprintf(stderr, "  -B on|off Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
+
+    fprintf(stderr, "Legacy features:\n");
+    fprintf(stderr, "  -T on|off Enable TightVNC 1.x file transfer extension (default: off)\n");
 
 #if DEBUG
     fprintf(stderr, "Logging:\n");
@@ -445,6 +451,9 @@ static void parseDaemonOptions(void) {
     NSNumber *bonjourN = [prefs objectForKey:@"BonjourEnabled"];
     if ([bonjourN isKindOfClass:[NSNumber class]])
         gBonjourEnabled = bonjourN.boolValue;
+    NSNumber *fileN = [prefs objectForKey:@"FileTransferEnabled"];
+    if ([fileN isKindOfClass:[NSNumber class]])
+        gFileTransferEnabled = fileN.boolValue;
 
     // Modifier mapping
     NSString *modMap = [prefs objectForKey:@"ModifierMap"];
@@ -946,6 +955,20 @@ static void parseCLI(int argc, const char *argv[]) {
                 TVLog(@"CLI: Bonjour advertisement disabled (-B %s)", [@(val) UTF8String]);
             } else {
                 TVPrintError("Invalid -B value: %s (expected on|off|1|0|true|false)", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        case 'T': {
+            const char *val = optarg ? optarg : "off";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gFileTransferEnabled = YES;
+                TVLog(@"CLI: TightVNC 1.x file transfer extension enabled (-T %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gFileTransferEnabled = NO;
+                TVLog(@"CLI: TightVNC 1.x file transfer extension disabled (-T %s)", [@(val) UTF8String]);
+            } else {
+                TVPrintError("Invalid -T value: %s (expected on|off|1|0|true|false)", val);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -3406,6 +3429,15 @@ static void setupRfbHttpServer(void) {
     }
 }
 
+static void setupRfbFileTransferExtension(void) {
+    if (!gFileTransferEnabled) {
+        return;
+    }
+
+    TVLog(@"TightVNC 1.x file transfer extension registered");
+    rfbRegisterTightVNCFileTransferExtension();
+}
+
 static void initializeAndRunRfbServer(void) {
     rfbInitServer(gScreen);
     TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
@@ -3702,6 +3734,7 @@ int main(int argc, const char *argv[]) {
         setupRfbCutTextHandlers();
         setupRfbServerSideCursor();
         setupRfbHttpServer();
+        setupRfbFileTransferExtension();
 
         initializeAndRunRfbServer();
         initializeTilingOrReset();
