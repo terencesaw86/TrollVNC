@@ -207,9 +207,11 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     // Validate ports before restarting service, using -readPreferenceValue: to get live edits
     int port = 5901;
     int httpPort = 0;
+    NSString *revMode = @"none";
 
     PSSpecifier *portSpec = nil;
     PSSpecifier *httpPortSpec = nil;
+    PSSpecifier *revModeSpec = nil;
     for (PSSpecifier *sp in [self specifiers]) {
         NSString *key = [sp propertyForKey:@"key"];
         if (!key)
@@ -218,7 +220,9 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
             portSpec = sp;
         else if (!httpPortSpec && [key isEqualToString:@"HttpPort"])
             httpPortSpec = sp;
-        if (portSpec && httpPortSpec)
+        else if (!revModeSpec && [key isEqualToString:@"ReverseMode"])
+            revModeSpec = sp;
+        if (portSpec && httpPortSpec && revModeSpec)
             break;
     }
 
@@ -254,12 +258,31 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     NSString *title = NSLocalizedStringFromTableInBundle(@"Apply Changes", @"Localizable", self.bundle, nil);
     NSString *message = NSLocalizedStringFromTableInBundle(@"Are you sure you want to restart the VNC service?",
                                                            @"Localizable", self.bundle, nil);
-    // Append current en0 IP on a second line, if available
-    NSString *ip = TVNCGetEn0IPAddress();
-    NSString *ipUnavailable = NSLocalizedStringFromTableInBundle(@"unavailable", @"Localizable", self.bundle, nil);
-    NSString *ipFormat =
-        NSLocalizedStringFromTableInBundle(@"Current IP Address: %@", @"Localizable", self.bundle, nil);
-    NSString *ipLine = [NSString stringWithFormat:ipFormat, (ip.length ? ip : ipUnavailable)];
+
+    id revModeVal = revModeSpec ? [self readPreferenceValue:revModeSpec] : nil;
+    if ([revModeVal isKindOfClass:[NSString class]]) {
+        revMode = (NSString *)revModeVal;
+    }
+
+    NSString *ipLine;
+    BOOL isRevModeOn = [revMode caseInsensitiveCompare:@"none"] != NSOrderedSame;
+    if (isRevModeOn) {
+        NSString *modeFormat = NSLocalizedStringFromTableInBundle(@"Reverse Connection: %@", @"Localizable", self.bundle, nil);
+        if ([revMode caseInsensitiveCompare:@"repeater"] == NSOrderedSame) {
+            revMode = NSLocalizedStringFromTableInBundle(@"Repeater", @"Localizable", self.bundle, nil);
+        } else {
+            revMode = NSLocalizedStringFromTableInBundle(@"Viewer", @"Localizable", self.bundle, nil);
+        }
+        ipLine = [NSString stringWithFormat:modeFormat, revMode];
+    } else {
+        // Append current en0 IP on a second line, if available
+        NSString *ip = TVNCGetEn0IPAddress();
+        NSString *ipUnavailable = NSLocalizedStringFromTableInBundle(@"unavailable", @"Localizable", self.bundle, nil);
+        NSString *ipFormat =
+            NSLocalizedStringFromTableInBundle(@"Current IP Address: %@", @"Localizable", self.bundle, nil);
+        ipLine = [NSString stringWithFormat:ipFormat, (ip.length ? ip : ipUnavailable)];
+    }
+
     NSString *fullMessage = [NSString stringWithFormat:@"%@\n%@", message, ipLine];
     NSString *cancel = NSLocalizedStringFromTableInBundle(@"Cancel", @"Localizable", self.bundle, nil);
     NSString *restart = NSLocalizedStringFromTableInBundle(@"Restart", @"Localizable", self.bundle, nil);
@@ -369,7 +392,9 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     return [super tableView:tableView cellForRowAtIndexPath:indexPath];
 }
 
-- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
+- (void)tableView:(UITableView *)tableView
+      willDisplayCell:(UITableViewCell *)cell
+    forRowAtIndexPath:(NSIndexPath *)indexPath {
     PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
     NSString *key = [specifier propertyForKey:@"cell"];
     if ([key isEqualToString:@"PSSliderCell"]) {

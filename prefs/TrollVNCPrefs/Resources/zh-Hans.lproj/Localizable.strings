@@ -16,3 +16,6 @@
 "Launching" = "启动中";
 "Current IP Address: %@" = "当前 IP 地址：%@";
 "unavailable" = "不可用";
+"Reverse Connection: %@" = "反向连接：%@";
+"Viewer" = "查看器";
+"Repeater" = "中继器";

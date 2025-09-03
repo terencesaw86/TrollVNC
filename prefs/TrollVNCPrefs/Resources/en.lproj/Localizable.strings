@@ -16,3 +16,6 @@
 "Launching" = "Launching";
 "Current IP Address: %@" = "Current IP Address: %@";
 "unavailable" = "unavailable";
+"Reverse Connection: %@" = "Reverse Connection: %@";
+"Viewer" = "Viewer";
+"Repeater" = "Repeater";
