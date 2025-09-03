@@ -111,8 +111,8 @@ static BOOL gFileTransferEnabled = NO;
 // UltraVNC repeater
 static int gRepeaterMode = 0; // 0: disabled, 1: viewer, 2: repeater
 static char *gRepeaterHost = NULL;
-static int gRepeaterPort = 0;
-static int gRepeaterId = 0;
+static int gRepeaterPort = 5500;
+static int gRepeaterId = 12345679;
 
 NS_INLINE BOOL isRepeaterEnabled(void) {
     return gRepeaterMode > 0 && gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
@@ -3899,6 +3899,9 @@ static void initializeAndRunRfbServer(void) {
 
         if (gRepeaterMode == 2) {
             TVLog(@"VNC server running in repeater mode");
+            static NSString *sRepeaterId = [NSString stringWithFormat:@"%d", gRepeaterId];
+            const char *repeaterId = [sRepeaterId UTF8String];
+            sClient = rfbUltraVNCRepeaterMode2Connection(gScreen, gRepeaterHost, gRepeaterPort, repeaterId);
         } else {
             TVLog(@"VNC server running in viewer mode");
             sClient = rfbReverseConnection(gScreen, gRepeaterHost, gRepeaterPort);
