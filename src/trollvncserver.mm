@@ -23,6 +23,7 @@
 #import <Foundation/Foundation.h>
 
 #import <atomic>
+#import <climits>
 #import <cstdio>
 #import <cstdlib>
 #import <cstring>
@@ -32,6 +33,7 @@
 #import <string>
 #import <sys/sysctl.h>
 #import <unistd.h>
+#import <vector>
 
 #import "ClipboardManager.h"
 #import "FBSOrientationObserver.h"
@@ -105,6 +107,12 @@ static BOOL gBonjourEnabled = YES; // publish _rfb._tcp (and optional _http._tcp
 // TightVNC 1.x file transfer extension (deprecated)
 static BOOL gFileTransferEnabled = NO;
 
+// UltraVNC repeater
+static int gRepeaterMode = 0; // 0: viewer, 1: repeater
+static char *gRepeaterHost = NULL;
+static int gRepeaterPort = 0;
+static int gRepeaterId = 0;
+
 /* clangd behavior workarounds */
 #define STRINGIFY(x) #x
 #define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
@@ -171,6 +179,10 @@ static void printUsageAndExit(const char *prog) {
 
     fprintf(stderr, "Bonjour/mDNS:\n");
     fprintf(stderr, "  -B on|off Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
+
+    fprintf(stderr, "Reverse Connection:\n");
+    fprintf(stderr, "  %s -reverse host:port [options]\n", prog);
+    fprintf(stderr, "  %s -repeater id host:port [options]\n\n", prog);
 
     fprintf(stderr, "Legacy features:\n");
     fprintf(stderr, "  -T on|off Enable TightVNC 1.x file transfer extension (default: off)\n");
@@ -567,6 +579,98 @@ static void parseDaemonOptions(void) {
         }
     }
 
+    // Reverse Connection (26.1) from preferences
+    // Expected keys (per Root.plist):
+    //  - ReverseMode: "viewer" (default) | "repeater"
+    //  - ReverseSocket: "host:port" or "[ipv6]:port"
+    //  - ReverseRepeaterID: number id (only used when mode=repeater)
+    NSString *revMode = [prefs objectForKey:@"ReverseMode"];
+    if ([revMode isKindOfClass:[NSString class]]) {
+        if ([revMode caseInsensitiveCompare:@"repeater"] == NSOrderedSame) {
+            gRepeaterMode = 1;
+        } else {
+            gRepeaterMode = 0;
+        }
+    }
+    NSString *revSock = [prefs objectForKey:@"ReverseSocket"];
+    if ([revSock isKindOfClass:[NSString class]] && revSock.length > 0) {
+        const char *hp = revSock.UTF8String;
+        const char *hostBegin = hp;
+        const char *hostEnd = NULL;
+        const char *portStr = NULL;
+        if (hp[0] == '[') {
+            const char *rb = strchr(hp, ']');
+            if (rb && rb[1] == ':') {
+                hostBegin = hp + 1;
+                hostEnd = rb;
+                portStr = rb + 2;
+            }
+        } else {
+            const char *colon = strrchr(hp, ':');
+            if (colon && colon != hp && *(colon + 1) != '\0') {
+                hostBegin = hp;
+                hostEnd = colon;
+                portStr = colon + 1;
+            }
+        }
+        if (hostEnd && portStr) {
+            long pv = strtol(portStr, NULL, 10);
+            if (pv > 0 && pv <= 65535) {
+                size_t hostLen = (size_t)(hostEnd - hostBegin);
+                if (hostLen > 0) {
+                    char *hostDup = (char *)malloc(hostLen + 1);
+                    if (hostDup) {
+                        memcpy(hostDup, hostBegin, hostLen);
+                        hostDup[hostLen] = '\0';
+                        if (gRepeaterHost) {
+                            free(gRepeaterHost);
+                            gRepeaterHost = NULL;
+                        }
+                        gRepeaterHost = hostDup;
+                        gRepeaterPort = (int)pv;
+                    }
+                }
+            } else {
+                TVLog(@"-daemon: ReverseSocket port invalid: %ld (ignored)", pv);
+            }
+        } else {
+            TVLog(@"-daemon: ReverseSocket invalid: %@ (expected host:port or [ipv6]:port)", revSock);
+        }
+    } else {
+        // Backward-compat: accept separate ReverseHost/ReversePort if present
+        NSString *revHost = [prefs objectForKey:@"ReverseHost"];
+        if ([revHost isKindOfClass:[NSString class]] && revHost.length > 0) {
+            if (gRepeaterHost) {
+                free(gRepeaterHost);
+                gRepeaterHost = NULL;
+            }
+            gRepeaterHost = strdup(revHost.UTF8String);
+        }
+        NSNumber *revPortN = [prefs objectForKey:@"ReversePort"];
+        if ([revPortN isKindOfClass:[NSNumber class]] || [revPortN isKindOfClass:[NSString class]]) {
+            int v = revPortN.intValue;
+            if (v > 0 && v <= 65535) {
+                gRepeaterPort = v;
+            }
+        }
+    }
+    NSNumber *revIdN = [prefs objectForKey:@"ReverseRepeaterID"];
+    if ([revIdN isKindOfClass:[NSNumber class]] || [revIdN isKindOfClass:[NSString class]]) {
+        gRepeaterId = revIdN.intValue;
+    }
+
+    // If reverse connection is configured, override mutually exclusive options here in daemon mode
+    if (gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0) {
+        gPort = -1;    // disable local listening
+        gHttpPort = 0; // disable HTTP server
+        if (gHttpDirOverride) {
+            free(gHttpDirOverride);
+            gHttpDirOverride = NULL;
+        }
+        gBonjourEnabled = NO; // disable Bonjour advertisement
+        TVLog(@"-daemon: Reverse enabled -> overriding: port=-1, http=0, bonjour=off");
+    }
+
     // Passwords via environment (leveraging existing setupRfbClassicAuthentication).
     // Classic VNC authentication uses only first 8 chars; truncate here for clarity.
     NSString *fullPwd = [prefs objectForKey:@"FullPassword"];
@@ -583,18 +687,43 @@ static void parseDaemonOptions(void) {
         hasViewPwd = (trunc.length > 0);
     }
 
-    // Single-line summary of effective configuration with password flags (8-char classic VNC)
-    TVLog(@"-daemon: cfg name='%@' port=%d http=%d viewOnly=%@ clip=%@ keepAlive=%.0fs scale=%.2f fps=%d:%d:%d "
-          @"defer=%.3f inflight=%d tile=%d full%%=%d rects=%d async=%@ cursor=%@ orient=%@ keylog=%@ "
-          @"wheel=%.1f natural=%@ mod=%s bonjour=%@ auth(full=%@,view=%@,8char) dir=%s cert=%s key=%s",
-          gDesktopName, gPort, gHttpPort, gViewOnly ? @"YES" : @"NO", gClipboardEnabled ? @"YES" : @"NO", gKeepAliveSec,
-          gScale, gFpsMin, gFpsPref, gFpsMax, gDeferWindowSec, gMaxInflightUpdates, gTileSize,
-          gFullscreenThresholdPercent, gMaxRectsLimit, gAsyncSwapEnabled ? @"YES" : @"NO",
-          gCursorEnabled ? @"YES" : @"NO", gOrientationSyncEnabled ? @"YES" : @"NO", gKeyEventLogging ? @"YES" : @"NO",
-          gWheelStepPx, gWheelNaturalDir ? @"YES" : @"NO", (gModMapScheme == 1) ? "altcmd" : "std",
-          gBonjourEnabled ? @"on" : @"off", hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off",
-          gHttpDirOverride ? gHttpDirOverride : "(null)", gSslCertPath ? gSslCertPath : "(null)",
-          gSslKeyPath ? gSslKeyPath : "(null)");
+    // Single-line summary using NSMutableString; include reverse-connection fields and new options
+    NSMutableString *cfg = [NSMutableString stringWithFormat:@"-daemon: cfg "];
+    [cfg appendFormat:@"name='%@' ", gDesktopName];
+    [cfg appendFormat:@"port=%d http=%d ", gPort, gHttpPort];
+
+    // Reverse connection summary
+    const char *revModeStr =
+        (gRepeaterHost && gRepeaterPort > 0) ? (gRepeaterMode == 1 ? "repeater" : "viewer") : "off";
+    NSString *revHostStr = gRepeaterHost ? [NSString stringWithUTF8String:gRepeaterHost] : @"(null)";
+    [cfg appendFormat:@"reverse=%s host=%@ port=%d id=%d ", revModeStr, revHostStr, gRepeaterPort, gRepeaterId];
+
+    // Core feature flags
+    [cfg appendFormat:@"viewOnly=%@ clip=%@ keepAlive=%.0fs ", gViewOnly ? @"YES" : @"NO",
+                      gClipboardEnabled ? @"YES" : @"NO", gKeepAliveSec];
+    [cfg appendFormat:@"scale=%.2f fps=%d:%d:%d defer=%.3f ", gScale, gFpsMin, gFpsPref, gFpsMax, gDeferWindowSec];
+    [cfg appendFormat:@"inflight=%d tile=%d full%%=%d rects=%d ", gMaxInflightUpdates, gTileSize,
+                      gFullscreenThresholdPercent, gMaxRectsLimit];
+    [cfg appendFormat:@"async=%@ cursor=%@ orient=%@ keylog=%@ ", gAsyncSwapEnabled ? @"YES" : @"NO",
+                      gCursorEnabled ? @"YES" : @"NO", gOrientationSyncEnabled ? @"YES" : @"NO",
+                      gKeyEventLogging ? @"YES" : @"NO"];
+
+    // Wheel / input tuning
+    [cfg appendFormat:@"wheel=%.1f natural=%@ mod=%s ", gWheelStepPx, gWheelNaturalDir ? @"YES" : @"NO",
+                      (gModMapScheme == 1) ? "altcmd" : "std"];
+
+    // Networking / discovery
+    [cfg appendFormat:@"bonjour=%@ ", gBonjourEnabled ? @"on" : @"off"];
+    [cfg appendFormat:@"fileXfer=%@ ", gFileTransferEnabled ? @"on" : @"off"];
+
+    // Auth and paths
+    [cfg appendFormat:@"auth(full=%@,view=%@,8char) ", hasFullPwd ? @"on" : @"off", hasViewPwd ? @"on" : @"off"];
+    NSString *dirStr = gHttpDirOverride ? [NSString stringWithUTF8String:gHttpDirOverride] : @"(null)";
+    NSString *certStr = gSslCertPath ? [NSString stringWithUTF8String:gSslCertPath] : @"(null)";
+    NSString *keyStr = gSslKeyPath ? [NSString stringWithUTF8String:gSslKeyPath] : @"(null)";
+    [cfg appendFormat:@"dir=%@ cert=%@ key=%@", dirStr, certStr, keyStr];
+
+    TVLog(@"%@", cfg);
     TVLog(@"-daemon: preferences applied (domain=com.82flex.trollvnc)");
 }
 
@@ -613,9 +742,148 @@ static void parseCLI(int argc, const char *argv[]) {
         return;
     }
 
+    // Pre-scan for Reverse Connection long options (-reverse, -repeater)
+    // Build a filtered argv without these options for getopt handling of the rest.
+    std::vector<const char *> __filtered;
+    __filtered.reserve((size_t)argc);
+    __filtered.push_back(argv[0]);
+    BOOL __reverseEnabled = NO;
+    for (int i = 1; i < argc; ++i) {
+        const char *arg = argv[i];
+        if (strcmp(arg, "-reverse") == 0) {
+            if (i + 1 >= argc) {
+                TVPrintError("-reverse requires host:port");
+                exit(EXIT_FAILURE);
+            }
+            const char *hp = argv[++i];
+            const char *hostBegin = hp;
+            const char *hostEnd = NULL;
+            const char *portStr = NULL;
+            if (hp[0] == '[') {
+                const char *rb = strchr(hp, ']');
+                if (!rb || rb[1] != ':') {
+                    TVPrintError("Invalid -reverse target: %s (expected [host]:port)", hp);
+                    exit(EXIT_FAILURE);
+                }
+                hostBegin = hp + 1;
+                hostEnd = rb;
+                portStr = rb + 2;
+            } else {
+                const char *colon = strrchr(hp, ':');
+                if (!colon || colon == hp || *(colon + 1) == '\0') {
+                    TVPrintError("Invalid -reverse target: %s (expected host:port)", hp);
+                    exit(EXIT_FAILURE);
+                }
+                hostBegin = hp;
+                hostEnd = colon;
+                portStr = colon + 1;
+            }
+            int port = (int)strtol(portStr, NULL, 10);
+            if (port <= 0 || port > 65535) {
+                TVPrintError("Invalid -reverse port: %s", portStr);
+                exit(EXIT_FAILURE);
+            }
+            size_t hostLen = (size_t)(hostEnd - hostBegin);
+            if (hostLen == 0) {
+                TVPrintError("Invalid -reverse host (empty)");
+                exit(EXIT_FAILURE);
+            }
+            char *hostDup = (char *)malloc(hostLen + 1);
+            if (!hostDup) {
+                TVPrintError("Out of memory");
+                exit(EXIT_FAILURE);
+            }
+            memcpy(hostDup, hostBegin, hostLen);
+            hostDup[hostLen] = '\0';
+            if (gRepeaterHost) {
+                free(gRepeaterHost);
+                gRepeaterHost = NULL;
+            }
+            gRepeaterMode = 0;
+            gRepeaterHost = hostDup;
+            gRepeaterPort = port;
+            TVLog(@"CLI: Reverse connection to %@:%d", [NSString stringWithUTF8String:gRepeaterHost], gRepeaterPort);
+            __reverseEnabled = YES;
+            continue; // skip adding this arg
+        }
+        if (strcmp(arg, "-repeater") == 0) {
+            if (i + 2 >= argc) {
+                TVPrintError("-repeater requires: id host:port");
+                exit(EXIT_FAILURE);
+            }
+            const char *idStr = argv[++i];
+            long repId = strtol(idStr, NULL, 10);
+            if (repId < 0 || repId > INT_MAX) {
+                TVPrintError("Invalid repeater id: %s", idStr);
+                exit(EXIT_FAILURE);
+            }
+            const char *hp = argv[++i];
+            const char *hostBegin = hp;
+            const char *hostEnd = NULL;
+            const char *portStr = NULL;
+            if (hp[0] == '[') {
+                const char *rb = strchr(hp, ']');
+                if (!rb || rb[1] != ':') {
+                    TVPrintError("Invalid -repeater target: %s (expected [host]:port)", hp);
+                    exit(EXIT_FAILURE);
+                }
+                hostBegin = hp + 1;
+                hostEnd = rb;
+                portStr = rb + 2;
+            } else {
+                const char *colon = strrchr(hp, ':');
+                if (!colon || colon == hp || *(colon + 1) == '\0') {
+                    TVPrintError("Invalid -repeater target: %s (expected host:port)", hp);
+                    exit(EXIT_FAILURE);
+                }
+                hostBegin = hp;
+                hostEnd = colon;
+                portStr = colon + 1;
+            }
+            int port = (int)strtol(portStr, NULL, 10);
+            if (port <= 0 || port > 65535) {
+                TVPrintError("Invalid -repeater port: %s", portStr);
+                exit(EXIT_FAILURE);
+            }
+            size_t hostLen = (size_t)(hostEnd - hostBegin);
+            if (hostLen == 0) {
+                TVPrintError("Invalid -repeater host (empty)");
+                exit(EXIT_FAILURE);
+            }
+            char *hostDup = (char *)malloc(hostLen + 1);
+            if (!hostDup) {
+                TVPrintError("Out of memory");
+                exit(EXIT_FAILURE);
+            }
+            memcpy(hostDup, hostBegin, hostLen);
+            hostDup[hostLen] = '\0';
+            if (gRepeaterHost) {
+                free(gRepeaterHost);
+                gRepeaterHost = NULL;
+            }
+            gRepeaterMode = 1;
+            gRepeaterId = (int)repId;
+            gRepeaterHost = hostDup;
+            gRepeaterPort = port;
+            TVLog(@"CLI: Repeater mode id=%d target=%@:%d", gRepeaterId, [NSString stringWithUTF8String:gRepeaterHost],
+                  gRepeaterPort);
+            __reverseEnabled = YES;
+            continue; // skip adding this arg
+        }
+        __filtered.push_back(arg);
+    }
+
+    // Prepare argv for getopt from filtered vector
+    int __argc2 = (int)__filtered.size();
+    std::vector<char *> __argv2;
+    __argv2.reserve(__filtered.size());
+    for (const char *s : __filtered)
+        __argv2.push_back(const_cast<char *>(s));
+
     int opt;
-    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:Vh";
-    while ((opt = getopt(argc, (char *const *)argv, optstr)) != -1) {
+    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:T:Vh";
+    optind = 1;
+    while ((opt = getopt(__argc2, __argv2.data(), optstr)) != -1) {
         switch (opt) {
         case 'p': {
             long port = strtol(optarg, NULL, 10);
@@ -984,6 +1252,18 @@ static void parseCLI(int argc, const char *argv[]) {
             break;
         }
         }
+    }
+
+    // Reverse connection active -> override conflicting settings
+    if (__reverseEnabled) {
+        gPort = -1;    // disable listening port
+        gHttpPort = 0; // disable HTTP server
+        if (gHttpDirOverride) {
+            free(gHttpDirOverride);
+            gHttpDirOverride = NULL;
+        }
+        gBonjourEnabled = NO; // disable Bonjour when reverse is used
+        TVLog(@"CLI: Reverse enabled -> port=-1, http=0, bonjour=off");
     }
 }
 
