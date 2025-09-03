@@ -710,7 +710,7 @@
 			<array>
 				<string>None</string>
 				<string>Viewer</string>
-				<string>Repeater</string>
+				<string>UltraVNC Repeater</string>
 			</array>
 			<key>validValues</key>
 			<array>
@@ -719,7 +719,7 @@
 				<string>repeater</string>
 			</array>
 			<key>staticTextMessage</key>
-			<string>A repeater ID is required for the “Repeater” mode.</string>
+			<string>A repeater ID is required for the “UltraVNC Repeater” mode.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

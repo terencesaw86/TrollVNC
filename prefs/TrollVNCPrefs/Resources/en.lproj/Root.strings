@@ -93,7 +93,8 @@
 "None" = "None";
 "Viewer" = "Viewer";
 "Repeater" = "Repeater";
-"A repeater ID is required for the “Repeater” mode." = "A repeater ID is required for the “Repeater” mode.";
+"UltraVNC Repeater" = "UltraVNC Repeater";
+"A repeater ID is required for the “UltraVNC Repeater” mode." = "A repeater ID is required for the “UltraVNC Repeater” mode.";
 "Server" = "Server";
 "server:port" = "server:port";
 "Repeater ID" = "Repeater ID";

@@ -69,7 +69,7 @@
 "Attempts to avoid blocking when swapping buffers; may cause tearing. Can reduce stalls when encoders are slow." = "尝试在交换缓冲时避免阻塞；可能导致撕裂。在编码器较慢时可减少停顿。";
 "Pixels per wheel tick sent to clients. Higher = faster scroll." = "每次滚轮事件向客户端发送的像素数。数值越大滚动越快。";
 "Advanced wheel options: comma-separated key=value (e.g. step=48,coalesce=0.03,accel=1.0). Leave empty to use defaults." = "高级滚轮选项：以逗号分隔的 key=value（例如 step=48,coalesce=0.03,accel=1.0）。留空使用默认值。";
-"Match iOS natural scroll direction for mouse wheel/trackpad; disable for traditional desktop direction." = "使鼠标滚轮/触控板滚动方向与 iOS 的“自然滚动”保持一致；关闭则使用传统桌面方向。";
+"Match iOS natural scroll direction for mouse wheel/trackpad; disable for traditional desktop direction." = "使鼠标滚轮/触控板滚动方向与 iOS 的 “自然滚动” 保持一致；关闭则使用传统桌面方向。";
 "Choose how remote Alt/Super map to iOS Option/Command." = "选择远端 Alt/Super 映射为 iOS 的 Option/Command。";
 "Logs key events to syslog for debugging. Do not leave enabled in normal use." = "将按键事件记录到系统日志用于调试。正常使用时不建议长期开启。";
 "Render a cursor on the server for clients that lack a hardware cursor. May slightly reduce performance." = "为缺少硬件光标的客户端在服务器端绘制光标。可能略微影响性能。";
@@ -95,7 +95,8 @@
 "None" = "无";
 "Viewer" = "查看器";
 "Repeater" = "中继器";
-"A repeater ID is required for the “Repeater” mode." = "“中继器”模式需要一个中继器 ID。";
+"UltraVNC Repeater" = "UltraVNC 中继器";
+"A repeater ID is required for the “UltraVNC Repeater” mode." = "“UltraVNC 中继器” 模式需要一个中继器 ID。";
 "Server" = "服务器";
 "server:port" = "服务器:端口";
 "Repeater ID" = "中继器 ID";

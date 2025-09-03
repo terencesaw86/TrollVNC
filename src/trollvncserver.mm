@@ -140,71 +140,73 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");
-    fprintf(stderr, "  -p port   VNC TCP port (default: %d)\n", gPort);
-    fprintf(stderr, "  -n name   Desktop name (default: %s)\n", [gDesktopName UTF8String]);
-    fprintf(stderr, "  -v        View-only (ignore input)\n");
-    fprintf(stderr, "  -A sec    Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n");
-    fprintf(stderr, "  -C on|off Clipboard sync (default: on)\n\n");
+    fprintf(stderr, "  -p port    VNC TCP port (default: %d)\n", gPort);
+    fprintf(stderr, "  -n name    Desktop name (default: %s)\n", [gDesktopName UTF8String]);
+    fprintf(stderr, "  -v         View-only (ignore input)\n");
+    fprintf(stderr, "  -A sec     Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n");
+    fprintf(stderr, "  -C on|off  Clipboard sync (default: on)\n\n");
 
     fprintf(stderr, "Display/Perf:\n");
-    fprintf(stderr, "  -s scale  Output scale 0<s<=1 (default: %.2f)\n", gScale);
-    fprintf(stderr, "  -F spec   Frame rate: fps | min-max | min:pref:max\n");
-    fprintf(stderr, "  -d sec    Defer window (0..0.5, default: %.3f)\n", gDeferWindowSec);
-    fprintf(stderr, "  -Q n      Max in-flight encodes (0=never drop, default: %d)\n\n", gMaxInflightUpdates);
+    fprintf(stderr, "  -s scale   Output scale 0<s<=1 (default: %.2f)\n", gScale);
+    fprintf(stderr, "  -F spec    Frame rate: fps | min-max | min:pref:max\n");
+    fprintf(stderr, "  -d sec     Defer window (0..0.5, default: %.3f)\n", gDeferWindowSec);
+    fprintf(stderr, "  -Q n       Max in-flight encodes (0=never drop, default: %d)\n\n", gMaxInflightUpdates);
 
     fprintf(stderr, "Dirty detection:\n");
-    fprintf(stderr, "  -t size   Tile size (8..128, default: %d)\n", gTileSize);
-    fprintf(stderr, "  -P pct    Fullscreen fallback threshold (0..100; 0=disable dirty detection, default: %d)\n",
+    fprintf(stderr, "  -t size    Tile size (8..128, default: %d)\n", gTileSize);
+    fprintf(stderr, "  -P pct     Fullscreen fallback threshold (0..100; 0=disable dirty detection, default: %d)\n",
             gFullscreenThresholdPercent);
-    fprintf(stderr, "  -R max    Max dirty rects before bbox (default: %d)\n", gMaxRectsLimit);
-    fprintf(stderr, "  -a        Non-blocking swap (may cause tearing)\n\n");
+    fprintf(stderr, "  -R max     Max dirty rects before bbox (default: %d)\n", gMaxRectsLimit);
+    fprintf(stderr, "  -a         Non-blocking swap (may cause tearing)\n\n");
 
     fprintf(stderr, "Scroll/Input:\n");
-    fprintf(stderr, "  -W px     Wheel step in pixels (0=disable, default: %.0f)\n", gWheelStepPx);
+    fprintf(stderr, "  -W px      Wheel step in pixels (0=disable, default: %.0f)\n", gWheelStepPx);
     fprintf(stderr,
             "  -w k=v,.. Wheel tuning keys: step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax\n");
-    fprintf(stderr, "  -N        Natural scroll direction (invert wheel)\n");
-    fprintf(stderr, "  -M scheme Modifier mapping: std|altcmd (default: std)\n");
-    fprintf(stderr, "  -K        Log keyboard events to stderr\n\n");
+    fprintf(stderr, "  -N         Natural scroll direction (invert wheel)\n");
+    fprintf(stderr, "  -M scheme  Modifier mapping: std|altcmd (default: std)\n");
+    fprintf(stderr, "  -K         Log keyboard events to stderr\n\n");
 
     fprintf(stderr, "Accessibility:\n");
-    fprintf(stderr, "  -E on|off Enable AssistiveTouch auto-activation (default: off)\n\n");
+    fprintf(stderr, "  -E on|off  Enable AssistiveTouch auto-activation (default: off)\n\n");
 
     fprintf(stderr, "Cursor:\n");
-    fprintf(stderr, "  -U on|off Enable server-side cursor X (default: off)\n\n");
+    fprintf(stderr, "  -U on|off  Enable server-side cursor X (default: off)\n\n");
 
     fprintf(stderr, "Rotate/Orientation:\n");
-    fprintf(stderr, "  -O on|off Observe iOS interface orientation and sync (default: off)\n\n");
+    fprintf(stderr, "  -O on|off  Observe iOS interface orientation and sync (default: off)\n\n");
 
     fprintf(stderr, "HTTP/WebSockets:\n");
-    fprintf(stderr, "  -H port   Enable built-in HTTP server on port (0=off, default: 0)\n");
-    fprintf(stderr, "  -D path   Absolute path for HTTP document root\n");
-    fprintf(stderr, "  -e file   Path to SSL certificate file\n");
-    fprintf(stderr, "  -k file   Path to SSL private key file\n\n");
+    fprintf(stderr, "  -H port    Enable built-in HTTP server on port (0=off, default: 0)\n");
+    fprintf(stderr, "  -D path    Absolute path for HTTP document root\n");
+    fprintf(stderr, "  -e file    Path to SSL certificate file\n");
+    fprintf(stderr, "  -k file    Path to SSL private key file\n\n");
 
     fprintf(stderr, "Bonjour/mDNS:\n");
-    fprintf(stderr, "  -B on|off Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
+    fprintf(stderr, "  -B on|off  Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
+
+    fprintf(stderr, "Legacy features:\n");
+    fprintf(stderr, "  -T on|off  Enable TightVNC 1.x file transfer extension (default: off)\n\n");
+
+#if DEBUG
+    fprintf(stderr, "Logging:\n");
+    fprintf(stderr, "  -V         Enable verbose logging\n\n");
+#endif
+
+    fprintf(stderr, "Help:\n");
+    fprintf(stderr, "  -h         Show this help message\n\n");
 
     fprintf(stderr, "Reverse Connection:\n");
     fprintf(stderr, "  %s -reverse host:port [options]\n", prog);
     fprintf(stderr, "  %s -repeater id host:port [options]\n\n", prog);
 
-    fprintf(stderr, "Legacy features:\n");
-    fprintf(stderr, "  -T on|off Enable TightVNC 1.x file transfer extension (default: off)\n");
-
-#if DEBUG
-    fprintf(stderr, "Logging:\n");
-    fprintf(stderr, "  -V        Enable verbose logging\n\n");
-#endif
-
-    fprintf(stderr, "Help:\n");
-    fprintf(stderr, "  -h        Show this help message\n\n");
-
     fprintf(stderr, "Environment:\n");
+    fprintf(
+        stderr,
+        "  TROLLVNC_PASSWORD                 Classic VNC password (enables VNC auth when set; first 8 chars used)\n");
     fprintf(stderr,
-            "  TROLLVNC_PASSWORD           Classic VNC password (enables VNC auth when set; first 8 chars used)\n");
-    fprintf(stderr,
-            "  TROLLVNC_VIEWONLY_PASSWORD  View-only password; passwords stored as [full..., view-only...]\n\n");
+            "  TROLLVNC_VIEWONLY_PASSWORD        View-only password; passwords stored as [full..., view-only...]\n");
+    fprintf(stderr, "  TROLLVNC_REPEATER_RETRY_INTERVAL  Repeater retry interval (default: 0)\n\n");
 
     exit(EXIT_SUCCESS);
 }
@@ -3896,7 +3898,6 @@ static void initializeAndRunRfbServer(void) {
         }
 
         static rfbClientPtr sClient = NULL;
-
         if (gRepeaterMode == 2) {
             TVLog(@"VNC server running in repeater mode");
             static NSString *sRepeaterId = [NSString stringWithFormat:@"%d", gRepeaterId];
