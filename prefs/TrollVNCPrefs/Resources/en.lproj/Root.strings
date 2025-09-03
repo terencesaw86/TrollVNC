@@ -90,6 +90,7 @@
 "Reverse Connection" = "Reverse Connection";
 "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable." = "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable.";
 "Mode" = "Mode";
+"None" = "None";
 "Viewer" = "Viewer";
 "Repeater" = "Repeater";
 "A repeater ID is required for the “Repeater” mode." = "A repeater ID is required for the “Repeater” mode.";

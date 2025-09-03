@@ -92,6 +92,7 @@
 "Reverse Connection" = "反向连接";
 "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable." = "建立到监听的 VNC 查看器或中继器的反向连接，而无需打开服务器端口。这对于绕过防火墙或 NAT 非常有用。留空以禁用反向连接。";
 "Mode" = "模式";
+"None" = "无";
 "Viewer" = "查看器";
 "Repeater" = "中继器";
 "A repeater ID is required for the “Repeater” mode." = "“中继器”模式需要一个中继器 ID。";

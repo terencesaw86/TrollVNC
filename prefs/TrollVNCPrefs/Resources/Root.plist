@@ -699,19 +699,22 @@
 			<key>detail</key>
 			<string>PSListItemsController</string>
 			<key>default</key>
-			<string>viewer</string>
+			<string>none</string>
 			<key>shortTitles</key>
 			<array>
+				<string>None</string>
 				<string>Viewer</string>
 				<string>Repeater</string>
 			</array>
 			<key>validTitles</key>
 			<array>
+				<string>None</string>
 				<string>Viewer</string>
 				<string>Repeater</string>
 			</array>
 			<key>validValues</key>
 			<array>
+				<string>none</string>
 				<string>viewer</string>
 				<string>repeater</string>
 			</array>

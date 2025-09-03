@@ -28,6 +28,7 @@
 #import <cstdlib>
 #import <cstring>
 #import <mach-o/dyld.h>
+#import <pthread.h>
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
 #import <string>
@@ -108,13 +109,13 @@ static BOOL gBonjourEnabled = YES; // publish _rfb._tcp (and optional _http._tcp
 static BOOL gFileTransferEnabled = NO;
 
 // UltraVNC repeater
-static int gRepeaterMode = 0; // 0: viewer, 1: repeater
+static int gRepeaterMode = 0; // 0: disabled, 1: viewer, 2: repeater
 static char *gRepeaterHost = NULL;
 static int gRepeaterPort = 0;
 static int gRepeaterId = 0;
 
 NS_INLINE BOOL isRepeaterEnabled(void) {
-    return gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
+    return gRepeaterMode > 0 && gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
 }
 
 /* clangd behavior workarounds */
@@ -591,6 +592,8 @@ static void parseDaemonOptions(void) {
     NSString *revMode = [prefs objectForKey:@"ReverseMode"];
     if ([revMode isKindOfClass:[NSString class]]) {
         if ([revMode caseInsensitiveCompare:@"repeater"] == NSOrderedSame) {
+            gRepeaterMode = 2;
+        } else if ([revMode caseInsensitiveCompare:@"viewer"] == NSOrderedSame) {
             gRepeaterMode = 1;
         } else {
             gRepeaterMode = 0;
@@ -697,8 +700,7 @@ static void parseDaemonOptions(void) {
     [cfg appendFormat:@"port=%d http=%d ", gPort, gHttpPort];
 
     // Reverse connection summary
-    const char *revModeStr =
-        (gRepeaterHost && gRepeaterPort > 0) ? (gRepeaterMode == 1 ? "repeater" : "viewer") : "off";
+    const char *revModeStr = isRepeaterEnabled() ? (gRepeaterMode == 2 ? "repeater" : "viewer") : "off";
     NSString *revHostStr = gRepeaterHost ? [NSString stringWithUTF8String:gRepeaterHost] : @"(null)";
     [cfg appendFormat:@"reverse=%s host=%@ port=%d id=%d ", revModeStr, revHostStr, gRepeaterPort, gRepeaterId];
 
@@ -751,6 +753,7 @@ static void parseCLI(int argc, const char *argv[]) {
     std::vector<const char *> __filtered;
     __filtered.reserve((size_t)argc);
     __filtered.push_back(argv[0]);
+
     BOOL __reverseEnabled = NO;
     for (int i = 1; i < argc; ++i) {
         const char *arg = argv[i];
@@ -759,16 +762,19 @@ static void parseCLI(int argc, const char *argv[]) {
                 TVPrintError("-reverse requires host:port");
                 exit(EXIT_FAILURE);
             }
+
             const char *hp = argv[++i];
             const char *hostBegin = hp;
             const char *hostEnd = NULL;
             const char *portStr = NULL;
+
             if (hp[0] == '[') {
                 const char *rb = strchr(hp, ']');
                 if (!rb || rb[1] != ':') {
                     TVPrintError("Invalid -reverse target: %s (expected [host]:port)", hp);
                     exit(EXIT_FAILURE);
                 }
+
                 hostBegin = hp + 1;
                 hostEnd = rb;
                 portStr = rb + 2;
@@ -778,35 +784,44 @@ static void parseCLI(int argc, const char *argv[]) {
                     TVPrintError("Invalid -reverse target: %s (expected host:port)", hp);
                     exit(EXIT_FAILURE);
                 }
+
                 hostBegin = hp;
                 hostEnd = colon;
                 portStr = colon + 1;
             }
+
             int port = (int)strtol(portStr, NULL, 10);
             if (port <= 0 || port > 65535) {
                 TVPrintError("Invalid -reverse port: %s", portStr);
                 exit(EXIT_FAILURE);
             }
+
             size_t hostLen = (size_t)(hostEnd - hostBegin);
             if (hostLen == 0) {
                 TVPrintError("Invalid -reverse host (empty)");
                 exit(EXIT_FAILURE);
             }
+
             char *hostDup = (char *)malloc(hostLen + 1);
             if (!hostDup) {
                 TVPrintError("Out of memory");
                 exit(EXIT_FAILURE);
             }
+
             memcpy(hostDup, hostBegin, hostLen);
             hostDup[hostLen] = '\0';
+
             if (gRepeaterHost) {
                 free(gRepeaterHost);
                 gRepeaterHost = NULL;
             }
-            gRepeaterMode = 0;
+
+            gRepeaterMode = 1;
             gRepeaterHost = hostDup;
             gRepeaterPort = port;
+
             TVLog(@"CLI: Reverse connection to %@:%d", [NSString stringWithUTF8String:gRepeaterHost], gRepeaterPort);
+
             __reverseEnabled = YES;
             continue; // skip adding this arg
         }
@@ -815,22 +830,26 @@ static void parseCLI(int argc, const char *argv[]) {
                 TVPrintError("-repeater requires: id host:port");
                 exit(EXIT_FAILURE);
             }
+
             const char *idStr = argv[++i];
             long repId = strtol(idStr, NULL, 10);
             if (repId < 0 || repId > INT_MAX) {
                 TVPrintError("Invalid repeater id: %s", idStr);
                 exit(EXIT_FAILURE);
             }
+
             const char *hp = argv[++i];
             const char *hostBegin = hp;
             const char *hostEnd = NULL;
             const char *portStr = NULL;
+
             if (hp[0] == '[') {
                 const char *rb = strchr(hp, ']');
                 if (!rb || rb[1] != ':') {
                     TVPrintError("Invalid -repeater target: %s (expected [host]:port)", hp);
                     exit(EXIT_FAILURE);
                 }
+
                 hostBegin = hp + 1;
                 hostEnd = rb;
                 portStr = rb + 2;
@@ -840,40 +859,50 @@ static void parseCLI(int argc, const char *argv[]) {
                     TVPrintError("Invalid -repeater target: %s (expected host:port)", hp);
                     exit(EXIT_FAILURE);
                 }
+
                 hostBegin = hp;
                 hostEnd = colon;
                 portStr = colon + 1;
             }
+
             int port = (int)strtol(portStr, NULL, 10);
             if (port <= 0 || port > 65535) {
                 TVPrintError("Invalid -repeater port: %s", portStr);
                 exit(EXIT_FAILURE);
             }
+
             size_t hostLen = (size_t)(hostEnd - hostBegin);
             if (hostLen == 0) {
                 TVPrintError("Invalid -repeater host (empty)");
                 exit(EXIT_FAILURE);
             }
+
             char *hostDup = (char *)malloc(hostLen + 1);
             if (!hostDup) {
                 TVPrintError("Out of memory");
                 exit(EXIT_FAILURE);
             }
+
             memcpy(hostDup, hostBegin, hostLen);
             hostDup[hostLen] = '\0';
+
             if (gRepeaterHost) {
                 free(gRepeaterHost);
                 gRepeaterHost = NULL;
             }
-            gRepeaterMode = 1;
+
+            gRepeaterMode = 2;
             gRepeaterId = (int)repId;
             gRepeaterHost = hostDup;
             gRepeaterPort = port;
+
             TVLog(@"CLI: Repeater mode id=%d target=%@:%d", gRepeaterId, [NSString stringWithUTF8String:gRepeaterHost],
                   gRepeaterPort);
+
             __reverseEnabled = YES;
             continue; // skip adding this arg
         }
+
         __filtered.push_back(arg);
     }
 
@@ -1720,7 +1749,7 @@ static const int gNoScalePadThresholdPx = 8; // if both |dW| and |dH| <= this, d
 // Flush-time hashing optimization
 static const BOOL gParallelHashOnFlush = YES; // use parallel hashing at flush to reduce wall time
 
-#pragma mark - Frame Handler
+#pragma mark - Frame Handlers
 
 static std::atomic<int> gRotationQuad(0); // 0=0°, 1=90°, 2=180°, 3=270° (clockwise)
 static void *gRotateScratch = NULL;       // rotation scratch (for 90°/270°)
@@ -2818,9 +2847,10 @@ typedef struct {
     int lastButtonMask;       // last received pointer button mask from this client
     double wheelAccumPx;      // accumulated scroll in pixels (+down, -up) for this client
     BOOL wheelFlushScheduled; // whether a flush is pending for this client
+    BOOL isRepeaterClient;    // whether this client is a repeater
 } TVClientState;
 
-static inline TVClientState *tvGetClientState(rfbClientPtr cl) { return cl ? (TVClientState *)cl->clientData : NULL; }
+NS_INLINE TVClientState *tvGetClientState(rfbClientPtr cl) { return cl ? (TVClientState *)cl->clientData : NULL; }
 
 static dispatch_queue_t gWheelQueue = nil; // serial queue for wheel gestures
 
@@ -3187,7 +3217,9 @@ static BOOL gRestoreAssist = NO;
 static void clientGone(rfbClientPtr cl) {
     // Free per-client state
     TVClientState *st = tvGetClientState(cl);
+    BOOL isRepeaterClient = NO;
     if (st) {
+        isRepeaterClient = st->isRepeaterClient;
         free(st);
         cl->clientData = NULL;
     }
@@ -3226,6 +3258,11 @@ static void clientGone(rfbClientPtr cl) {
 
     // Update TXT with possibly changed state (e.g., viewOnly unaffected, but keep consistent)
     refreshBonjourTXTRecord();
+
+    // Stop the main run loop if this was a repeater client
+    if (isRepeaterClient) {
+        CFRunLoopStop(CFRunLoopGetMain());
+    }
 }
 
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
@@ -3236,6 +3273,8 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
     TVClientState *st = (TVClientState *)calloc(1, sizeof(TVClientState));
     if (st) {
         st->lastButtonMask = 0;
+        st->wheelAccumPx = 0;
+        st->wheelFlushScheduled = NO;
         cl->clientData = st;
     }
 
@@ -3486,7 +3525,33 @@ NS_INLINE void setupAlphaCursor(rfbScreenInfoPtr screen, int mode) {
     c->cleanupMask = TRUE;
 }
 
-#pragma mark - Setups
+#pragma mark - Setups (Native)
+
+static void prepareClipboardManager(void) {
+    // server->client sync; start/stop tied to client presence
+    if (gClipboardEnabled) {
+        [[ClipboardManager sharedManager] setOnChange:^(NSString *_Nullable text) {
+            // If we’re in suppression (coming from client->server), do nothing
+            if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
+                return;
+            sendClipboardToClients(text);
+        }];
+    } else {
+        [[ClipboardManager sharedManager] setOnChange:nil];
+    }
+}
+
+static void prepareScreenCapturer(void) {
+    // Apply preferred frame rate (if provided)
+    if (gFpsMin > 0 || gFpsPref > 0 || gFpsMax > 0) {
+        TVLog(@"Applying preferred FPS to ScreenCapturer: min=%d pref=%d max=%d", gFpsMin, gFpsPref, gFpsMax);
+        [[ScreenCapturer sharedCapturer] setPreferredFrameRateWithMin:gFpsMin preferred:gFpsPref max:gFpsMax];
+    }
+
+    gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
+        handleFramebuffer(sampleBuffer);
+    };
+}
 
 static void setupGeometry(void) {
     NSDictionary *props = [[ScreenCapturer sharedCapturer] renderProperties];
@@ -3591,6 +3656,8 @@ static void setupOrientationObserver(void) {
     TVLog(@"Orientation observer registered (initial=%ld -> rotQ=%d)", (long)activeOrientation,
           gRotationQuad.load(std::memory_order_relaxed));
 }
+
+#pragma mark - Setups (RFB)
 
 static void setupRfbScreen(int argc, const char *argv[]) {
     int argcCopy = argc; // rfbGetScreen may modify argc/argv
@@ -3760,6 +3827,8 @@ static void setupRfbHttpServer(void) {
     }
 }
 
+static BOOL gFileTransferRegistered = NO;
+
 static void setupRfbFileTransferExtension(void) {
     if (!gFileTransferEnabled) {
         return;
@@ -3767,6 +3836,52 @@ static void setupRfbFileTransferExtension(void) {
 
     TVLog(@"TightVNC 1.x file transfer extension registered");
     rfbRegisterTightVNCFileTransferExtension();
+
+    gFileTransferRegistered = YES;
+}
+
+#pragma mark - Setups (Event Model)
+
+#define TVNC_RUNLOOP_USEC 40000
+
+// Background event thread for reverse-connection mode
+static pthread_t gRfbEventThread = 0;
+static std::atomic<int> gRfbEventThreadRunning(0);
+
+static void *tvRfbEventThreadMain(void *arg) {
+    (void)arg;
+    for (;;) {
+        if (!gRfbEventThreadRunning.load(std::memory_order_relaxed))
+            break;
+        if (!gScreen)
+            break;
+        rfbProcessEvents(gScreen, TVNC_RUNLOOP_USEC);
+        if (!rfbIsActive(gScreen))
+            break;
+    }
+    gRfbEventThreadRunning.store(0, std::memory_order_relaxed);
+    return NULL;
+}
+
+static void tvStartRfbEventThread(void) {
+    if (gRfbEventThreadRunning.exchange(1, std::memory_order_acq_rel))
+        return;
+    int rc = pthread_create(&gRfbEventThread, NULL, tvRfbEventThreadMain, NULL);
+    if (rc != 0) {
+        gRfbEventThreadRunning.store(0, std::memory_order_relaxed);
+        TVPrintError("Failed to create VNC event thread (rc=%d)", rc);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static void tvStopRfbEventThread(void) {
+    if (!gRfbEventThreadRunning.exchange(0, std::memory_order_acq_rel))
+        return;
+    if (gRfbEventThread) {
+        if (!pthread_equal(gRfbEventThread, pthread_self()))
+            pthread_join(gRfbEventThread, NULL);
+        gRfbEventThread = 0;
+    }
 }
 
 static void initializeAndRunRfbServer(void) {
@@ -3776,7 +3891,7 @@ static void initializeAndRunRfbServer(void) {
     if (isRepeaterEnabled()) {
         static rfbClientPtr sClient = NULL;
 
-        if (gRepeaterMode == 1) {
+        if (gRepeaterMode == 2) {
             TVLog(@"VNC server running in repeater mode");
         } else {
             TVLog(@"VNC server running in viewer mode");
@@ -3788,11 +3903,19 @@ static void initializeAndRunRfbServer(void) {
             exit(EXIT_FAILURE);
         }
 
-        sClient->clientGoneHook = clientGone;
-    }
+        TVClientState *st = tvGetClientState(sClient);
+        if (st) {
+            st->isRepeaterClient = YES;
+        }
 
-    // Run VNC in background thread
-    rfbRunEventLoop(gScreen, 40000, TRUE);
+        TVLog(@"Reverse connection established to %s", gRepeaterHost);
+
+        // Start background event thread to pump events while in reverse mode
+        tvStartRfbEventThread();
+    } else {
+        // Run VNC in background thread
+        rfbRunEventLoop(gScreen, TVNC_RUNLOOP_USEC, TRUE);
+    }
 
     // Start Bonjour advertisement after server is ready
     startBonjour();
@@ -3812,32 +3935,6 @@ static void installSignalHandlers(void) {
     sa.sa_handler = handleSignal;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
-}
-
-static void prepareClipboardManager(void) {
-    // server->client sync; start/stop tied to client presence
-    if (gClipboardEnabled) {
-        [[ClipboardManager sharedManager] setOnChange:^(NSString *_Nullable text) {
-            // If we’re in suppression (coming from client->server), do nothing
-            if (gClipboardSuppressSend.load(std::memory_order_relaxed) > 0)
-                return;
-            sendClipboardToClients(text);
-        }];
-    } else {
-        [[ClipboardManager sharedManager] setOnChange:nil];
-    }
-}
-
-static void prepareScreenCapturer(void) {
-    // Apply preferred frame rate (if provided)
-    if (gFpsMin > 0 || gFpsPref > 0 || gFpsMax > 0) {
-        TVLog(@"Applying preferred FPS to ScreenCapturer: min=%d pref=%d max=%d", gFpsMin, gFpsPref, gFpsMax);
-        [[ScreenCapturer sharedCapturer] setPreferredFrameRateWithMin:gFpsMin preferred:gFpsPref max:gFpsMax];
-    }
-
-    gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
-        handleFramebuffer(sampleBuffer);
-    };
 }
 
 #pragma mark - Logging
@@ -3929,6 +4026,13 @@ static void dropPrivileges(void) {
 }
 
 static void cleanupAndExit(int code) {
+    // Stop event thread if running
+    tvStopRfbEventThread();
+
+    if (gFileTransferRegistered) {
+        rfbUnregisterTightVNCFileTransferExtension();
+    }
+
     if (gScreen) {
         rfbShutdownServer(gScreen, YES);
         rfbScreenCleanup(gScreen);
@@ -4085,12 +4189,12 @@ int main(int argc, const char *argv[]) {
         setupRfbHttpServer();
         setupRfbFileTransferExtension();
 
-        initializeAndRunRfbServer();
-        initializeTilingOrReset();
-        installSignalHandlers();
-
         prepareClipboardManager();
         prepareScreenCapturer();
+
+        initializeTilingOrReset();
+        initializeAndRunRfbServer();
+        installSignalHandlers();
     }
 
     CFRunLoopRun();
