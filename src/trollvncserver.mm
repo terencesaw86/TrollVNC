@@ -2529,27 +2529,46 @@ NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
 - (void)_updateTouchPoints:(CGPoint *)points count:(NSUInteger)count;
 @end
 
-// Track last button state to detect edges; per-process (typical single client).
-static int gLastButtonMask = 0;
-static dispatch_queue_t gWheelQueue = nil; // serial queue for wheel gestures
-static double gWheelAccumPx = 0.0;         // accumulated scroll in pixels (+down, -up)
-static BOOL gWheelFlushScheduled = NO;     // whether a flush is pending
+// Per-client state stored in cl->clientData to avoid cross-client conflicts.
+typedef struct {
+    int lastButtonMask;       // last received pointer button mask from this client
+    double wheelAccumPx;      // accumulated scroll in pixels (+down, -up) for this client
+    BOOL wheelFlushScheduled; // whether a flush is pending for this client
+} TVClientState;
 
-static void wheelScheduleFlush(CGPoint anchorPoint, double delaySec, int rotQ) {
+static inline TVClientState *tvGetClientState(rfbClientPtr cl) { return cl ? (TVClientState *)cl->clientData : NULL; }
+
+static dispatch_queue_t gWheelQueue = nil; // serial queue for wheel gestures
+
+static void wheelScheduleFlush(rfbClientPtr cl, CGPoint anchorPoint, double delaySec, int rotQ) {
+    TVClientState *st = tvGetClientState(cl);
+    if (!st)
+        return;
+
     if (gWheelStepPx <= 0) { // disabled
-        gWheelAccumPx = 0.0;
-        gWheelFlushScheduled = NO;
+        st->wheelAccumPx = 0.0;
+        st->wheelFlushScheduled = NO;
         return;
     }
 
+    // Ensure client remains valid during delayed execution
+    rfbIncrClientRef(cl);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delaySec * NSEC_PER_SEC)), gWheelQueue, ^{
-        // Consume the entire accumulation in one gesture to avoid many small drags.
-        double takeRaw = gWheelAccumPx;
-        gWheelAccumPx = 0.0; // zero out
-        gWheelFlushScheduled = NO;
-        double mag = fabs(takeRaw);
-        if (mag < 1.0)
+        TVClientState *st2 = tvGetClientState(cl);
+        if (!st2) {
+            rfbDecrClientRef(cl);
             return;
+        }
+
+        // Consume the entire accumulation in one gesture to avoid many small drags.
+        double takeRaw = st2->wheelAccumPx;
+        st2->wheelAccumPx = 0.0; // zero out
+        st2->wheelFlushScheduled = NO;
+        double mag = fabs(takeRaw);
+        if (mag < 1.0) {
+            rfbDecrClientRef(cl);
+            return;
+        }
 
         // Velocity-like amplification: for larger accumulations (faster wheel),
         // slightly increase distance instead of emitting many short drags.
@@ -2611,20 +2630,24 @@ static void wheelScheduleFlush(CGPoint anchorPoint, double delaySec, int rotQ) {
             dur = gWheelDurMin;
 
         [[STHIDEventGenerator sharedGenerator] dragLinearWithStartPoint:anchorPoint endPoint:endPt duration:dur];
+
+        rfbDecrClientRef(cl);
     });
 }
 
 static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
-    (void)cl;
     if (gViewOnly)
         return;
 
     STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
     CGPoint pt = vncPointToDevicePoint(x, y);
 
+    TVClientState *st = tvGetClientState(cl);
+    int lastMask = st ? st->lastButtonMask : 0;
+
     // Left button (bit 0)
     bool leftNow = (buttonMask & 1) != 0;
-    bool leftPrev = (gLastButtonMask & 1) != 0;
+    bool leftPrev = (lastMask & 1) != 0;
     if (leftNow && !leftPrev) {
         [gen touchDownAtPoints:&pt touchCount:1];
     } else if (!leftNow && leftPrev) {
@@ -2636,7 +2659,7 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 
     // Middle button (bit 1 -> mask 2): map to Power key
     bool midNow = (buttonMask & 2) != 0;
-    bool midPrev = (gLastButtonMask & 2) != 0;
+    bool midPrev = (lastMask & 2) != 0;
     if (midNow && !midPrev) {
         [gen powerDown];
     } else if (!midNow && midPrev) {
@@ -2645,7 +2668,7 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 
     // Right button (bit 2 -> mask 4): map to Home/Menu key
     bool rightNow = (buttonMask & 4) != 0;
-    bool rightPrev = (gLastButtonMask & 4) != 0;
+    bool rightPrev = (lastMask & 4) != 0;
     if (rightNow && !rightPrev) {
         [gen menuDown];
     } else if (!rightNow && rightPrev) {
@@ -2655,26 +2678,36 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
     // Wheel emulation: coalesce ticks and perform async flicks off the VNC thread.
     bool wheelUpNow = (buttonMask & 8) != 0;  // button 4
     bool wheelDnNow = (buttonMask & 16) != 0; // button 5
-    bool wheelUpPrev = (gLastButtonMask & 8) != 0;
-    bool wheelDnPrev = (gLastButtonMask & 16) != 0;
-    if (!gWheelQueue) {
+    bool wheelUpPrev = (lastMask & 8) != 0;
+    bool wheelDnPrev = (lastMask & 16) != 0;
+
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
         gWheelQueue = dispatch_queue_create("com.82flex.trollvnc.wheel", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
-    }
+    });
+
     if (gWheelStepPx > 0 && ((wheelUpNow && !wheelUpPrev) || (wheelDnNow && !wheelDnPrev))) {
         double delta = (wheelDnNow && !wheelDnPrev) ? +gWheelStepPx : -gWheelStepPx;
         if (gWheelNaturalDir)
             delta = -delta;
         int rotQ = (gOrientationSyncEnabled ? gRotationQuad.load(std::memory_order_relaxed) : 0) & 3;
+        // Ensure client remains valid while we touch its state asynchronously
+        rfbIncrClientRef(cl);
         dispatch_async(gWheelQueue, ^{
-            gWheelAccumPx += delta;
-            if (!gWheelFlushScheduled) {
-                gWheelFlushScheduled = YES;
-                wheelScheduleFlush(pt, gWheelCoalesceSec, rotQ);
+            TVClientState *st2 = tvGetClientState(cl);
+            if (st2) {
+                st2->wheelAccumPx += delta;
+                if (!st2->wheelFlushScheduled) {
+                    st2->wheelFlushScheduled = YES;
+                    wheelScheduleFlush(cl, pt, gWheelCoalesceSec, rotQ);
+                }
             }
+            rfbDecrClientRef(cl);
         });
     }
 
-    gLastButtonMask = buttonMask;
+    if (st)
+        st->lastButtonMask = buttonMask;
 }
 
 #pragma mark - Bonjour (mDNS) Advertisement
@@ -2868,6 +2901,13 @@ static BOOL gRestoreAssist = NO;
 #endif
 
 static void clientGone(rfbClientPtr cl) {
+    // Free per-client state
+    TVClientState *st = tvGetClientState(cl);
+    if (st) {
+        free(st);
+        cl->clientData = NULL;
+    }
+
     // Decrement client count and stop capture if this was the last client.
     if (gClientCount > 0)
         gClientCount--;
@@ -2907,6 +2947,13 @@ static void clientGone(rfbClientPtr cl) {
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
     cl->clientGoneHook = clientGone;
     cl->viewOnly = gViewOnly ? TRUE : FALSE;
+
+    // Allocate per-client state bag
+    TVClientState *st = (TVClientState *)calloc(1, sizeof(TVClientState));
+    if (st) {
+        st->lastButtonMask = 0;
+        cl->clientData = st;
+    }
 
     gClientCount++;
     TVLog(@"Client connected, active clients=%d", gClientCount);
