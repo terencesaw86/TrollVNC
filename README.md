@@ -16,7 +16,7 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 
 ### Options
 
-Basic:
+**Basic**:
 
 - `-p port`   TCP port for VNC (default: `5901`)
 - `-n name`   Desktop name shown to clients (default: `TrollVNC`)
@@ -24,21 +24,21 @@ Basic:
 - `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`15..86400`, `0` disables, default: `0`)
 - `-C on|off` Clipboard sync (default: `on`)
 
-Display/Performance:
+**Display/Performance**:
 
 - `-s scale`  Output scale factor (`0 < s <= 1`, default: `1.0`; `1` means no scaling)
 - `-F spec`   Frame rate: single `fps`, range `min-max`, or full `min:pref:max`; on iOS 15+ a range is applied, on iOS 14 the max (or preferred) is used
 - `-d sec`    Defer update window in seconds to coalesce changes (`0..0.5`, default: `0.015`)
 - `-Q n`      Max in-flight updates before dropping new frames (`0..8`, default: `2`; `0` disables dropping)
 
-Dirty detection:
+**Dirty detection**:
 
 - `-t size`   Tile size for dirty-detection in pixels (`8..128`, default: `32`)
 - `-P pct`    Fullscreen fallback threshold percent (`0..100`, default: `0`; `0` disables dirty detection entirely)
 - `-R max`    Max dirty rects before collapsing to a bounding box (default: `256`)
 - `-a`        Enable non-blocking swap (may cause tearing).
 
-Scroll/Input:
+**Scroll/Input**:
 
 - `-W px`     Wheel step in pixels per tick (`0` disables, default: `48`)
 - `-w k=v,..` Wheel tuning keys: `step,coalesce,max,clamp,amp,cap,minratio,durbase,durk,durmin,durmax`
@@ -46,67 +46,65 @@ Scroll/Input:
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
 
-Accessibility:
+**Accessibility**:
 
 - `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
 
-Cursor & Rotation:
+**Cursor & Rotation**:
 
 - `-U on|off` Enable server-side cursor overlay (default: `off`)
 - `-O on|off` Sync UI orientation and rotate output (default: `off`)
 
-HTTP/WebSockets:
+**HTTP/WebSockets**:
 
 - `-H port`   Enable built-in HTTP server on port (`0` disables; default `0`)
 - `-D path`   Absolute path for HTTP document root
 - `-e file`   Path to SSL certificate file
 - `-k file`   Path to SSL private key file
 
-Discovery:
+**Discovery**:
 
 - `-B on|off` Enable Bonjour/mDNS advertisement for auto-discovery by viewers on the local network (default: `on`)
 
-Logging:
+**Logging**:
 
 - `-V`        Enable verbose logging (debug only)
 
-Help:
+**Help**:
 
 - `-h`        Show built-in help message
 
-Notes:
+**Reverse Connection**:
 
-- Capture starts only when at least one client is connected, and stops when the last disconnects.
-- You may want to use `-M altcmd` on macOS clients.
+- `-reverse host:port`  Connect out to a listening VNC viewer (TightVNC/UltraVNC). IPv6 as `[addr]:port`.
+- `-repeater id host:port`  Connect out to an UltraVNC Repeater (Mode II) with numeric `id`; `host:port` is the repeater’s server (invers) port (often `5500`).
+
+> When reverse is enabled, TrollVNC disables the local VNC port (`-p`), HTTP/WebSockets (`-H`), and Bonjour (`-B`). See “Reverse VNC” below for full setup with examples.
 
 ### Key Input Mapping
 
-Mouse:
+**Mouse**:
 
-- Left button: single-finger touch. Hold to drag; move updates while held.
-- Right button: iOS Home/Menu (Consumer: Menu). Press = short press; hold ≈ long press. Release ends the press.
-- Middle button: Power button (Consumer: Power). Press = short press; hold ≈ long press. Release ends the press.
-- Wheel: translated into short drags with coalescing/velocity; see “Wheel/Scroll Tuning”.
+- **Left button**: single-finger touch. Hold to drag; move updates while held.
+- **Right button**: Home/Menu button. Press = short press; hold ≈ long press. Release ends the press.
+- **Middle button**: Power button. Press = short press; hold ≈ long press. Release ends the press.
+- **Wheel**: translated into short drags with coalescing/velocity; see “Wheel/Scroll Tuning”.
 
-Keyboard:
+**Keyboard**:
 
 - Standard ASCII keys, Return/Tab/Backspace/Delete, arrows, Home/End/PageUp/PageDown, and function keys F1..F24 are
   sent as HID keyboard usages.
 - Modifier mapping (`-M`):
   - `std` (default): Alt -> Option; Meta/Super -> Command.
-  - `altcmd`: Alt -> Command; Meta -> Option; Super -> Command.
+  - `altcmd` (macOS): Alt -> Command; Meta -> Option; Super -> Command.
 - Media/consumer keys (when the client sends XF86 keysyms):
   - Brightness Up/Down -> display brightness increment/decrement
   - Volume Up/Down/Mute -> volume increment/decrement/mute
   - Previous / Play-Pause / Next -> previous track / toggle play-pause / next track
 
-Notes:
+> Touch, scroll, and button mappings respect the current rotation when `-O on` is used.
 
-- “Home/Menu” is generated via the Consumer Menu usage; on devices without a physical Home button it performs the Home action.
-- Double/triple press of Power/Home are not synthesized automatically from mouse clicks; hold the button to simulate long-press when needed.
-- Touch, scroll, and button mappings respect the current rotation when `-O on` is used.
-
-AssistiveTouch auto-activation (`-E on`):
+**AssistiveTouch auto-activation (`-E on`)**:
 
 - When the first client connects, TrollVNC enables AssistiveTouch if it’s currently off; when the last client disconnects,
   it restores the previous state (disables it only if TrollVNC enabled it).
@@ -125,7 +123,7 @@ Quick guidance on key trade-offs (latency vs. bandwidth vs. CPU/battery):
 - `-R max`: Rect cap before collapsing to a bounding box. `128–512` common; too high increases RFB overhead.
 - `-a`: Non-blocking swap. Can reduce stalls/contension; may introduce tearing. Try if you see occasional stalls; leave off for maximal visual stability. If a non-blocking swap cannot lock clients, TrollVNC falls back to copying only dirty rectangles to the front buffer to minimize tearing and bandwidth.
 
-Notes:
+**Notes:**
 
 - Scaling happens before dirty detection; tile size applies to the scaled frame. Effective tile size in source pixels ≈ t / scale.
 - With `-Q 0`, frames are never dropped. If the client or network is slow, input-to-display latency can grow.
@@ -179,7 +177,7 @@ Use `-F` to set the `CADisplayLink` frame rate:
 - Range: `-F 30-60`
 - Full range with preferred: `-F 30:60:120`
 
-Notes:
+**Notes:**
 
 - On iOS 15+, the full range is applied via `preferredFrameRateRange`.
 - On iOS 14, only `preferredFramesPerSecond` is available, so the max (or preferred if provided) is used.
@@ -187,9 +185,6 @@ Notes:
 ### Keep-Alive (Prevent Sleep)
 
 Use `-A` to periodically send a harmless dummy key event to keep the device awake while clients are connected.
-
-- Active only when at least one client is connected; automatically stops when the last client disconnects.
-- Set `-A 0` (or omit) to disable. Shorter intervals may increase battery usage.
 
 ## Wheel/Scroll Tuning
 
@@ -210,7 +205,7 @@ The scroll wheel is emulated with short drags. Fast wheel motion becomes one lon
   - `durmax`: max gesture duration (default `0.14`)
   - `natural`: `1` to enable natural direction, `0` to disable
 
-### Examples
+**Examples**:
 
 Smooth and slow:
 
@@ -238,7 +233,7 @@ trollvncserver ... -W 0
 
 ## Clipboard Sync
 
-_I’ve tested and confirmed that UTF-8 text encoding is supported by UltraVNC now._
+_Many VNC clients support clipboard sync, but behavior may vary. This feature is primarily supported by UltraVNC._
 
 - UTF-8 clipboard sync is enabled by default; fallbacks to Latin-1 for legacy clients where needed.
 - Starts when the first client connects and stops when the last disconnects.
@@ -248,46 +243,9 @@ _I’ve tested and confirmed that UTF-8 text encoding is supported by UltraVNC n
 
 When `-O on` is set, TrollVNC tracks iOS interface orientation and rotates the outgoing framebuffer to match (0°, 90°, 180°, 270°). Touch and scroll input are mapped into the device coordinate space with the correct axis and direction in all orientations.
 
-Pipeline overview (per frame):
-
-1) Capture portrait buffer from `ScreenCapturer`.
-2) Rotate with Accelerate/vImage (90/180/270) into a tight ARGB buffer.
-3) Scale to the server output size (if `-s < 1.0`), reusing a persistent vImage temp buffer to reduce allocations.
-4) Width is rounded up to a multiple of 4 bytes per pixel row to satisfy encoders/clients; height is adjusted to preserve aspect ratio.
-5) Framebuffer is resized via LibVNCServer when geometry changes; width/height and pixel format are kept consistent (BGRA little-endian).
-6) Dirty detection (if enabled via `-P > 0`) runs on the rotated+scaled back buffer.
-
-Dirty detection and rotation:
-
-- On an orientation change, TrollVNC performs a one-time full-screen update and clears pending tile state to establish a clean baseline.
-- Tile/hash tables are reinitialized on any geometry change (e.g., 90°/270° or scale changes).
-- Subsequent frames use normal tile hashing and dirty rectangles again.
-- Set `-P 0` to disable dirty detection entirely and always send full frames.
-
-Input mapping:
-
-- Touch coordinates are transformed from the VNC framebuffer space back into the device’s portrait space, inverting the current rotation.
-- The scroll wheel is emulated with short drags; when rotated, the gesture axis and direction are remapped (e.g., in landscape, vertical wheel becomes a horizontal drag). `-N` still toggles natural direction.
-
-Examples:
-
-```sh
-# Enable rotation sync and keep dirty detection enabled with a reasonable threshold
-trollvncserver -O on -P 35 -t 32 -R 512
-
-# Rotation sync with full frames (dirty detection disabled)
-trollvncserver -O on -P 0
-```
-
 ## Server-Side Cursor
 
-iOS does not present a native on-screen cursor in this setup. TrollVNC does not draw a cursor by default; most VNC viewers render their own pointer. If your viewer expects the server to render a cursor, enable it with `-U on`.
-
-Details:
-
-- Overlay style: a simple “X” cursor shape with centered hotspot. Alpha is disabled to keep the cursor crisp.
-- Pros: visible even if the client does not draw its own cursor.
-- Cons: may show two cursors if the client also renders one. Keep it off unless needed.
+TrollVNC does not draw a cursor by default; most VNC viewers render their own pointer. If your viewer expects the server to render a cursor, enable it with `-U on`.
 
 ## Authentication
 
@@ -296,12 +254,7 @@ Classic VNC authentication can be enabled via environment variables:
 - `TROLLVNC_PASSWORD`: full-access password. Enables VNC auth when set.
 - `TROLLVNC_VIEWONLY_PASSWORD`: optional view-only password. When present, clients authenticating with this password can view but cannot send input.
 
-Semantics:
-
-- Passwords are stored in a NULL-terminated list as `[full..., view-only...]`. The index of the first view-only password equals the number of full-access passwords.
-- Classic VNC only uses the first 8 characters of each password.
-
-Examples (zsh):
+**Examples**:
 
 ```sh
 export TROLLVNC_PASSWORD=editpass
@@ -309,24 +262,21 @@ export TROLLVNC_VIEWONLY_PASSWORD=viewpass   # optional
 trollvncserver -p 5901 -n "My iPhone"
 ```
 
-Notes:
+**Notes**:
 
-- `-v` forces global view-only regardless of password. View-only password applies per client.
+- Classic VNC only uses the first 8 characters of each password.
 - You must set a password if you’re using the built-in VNC client of macOS.
-- Environment variables may be visible to the process environment; consider using a secure launcher if needed.
+- `-v` forces global view-only regardless of password. View-only password applies per client.
 
 ## HTTP / WebSockets
 
-TrollVNC can start LibVNCServer’s built-in HTTP server to serve a browser-based VNC client ([noVNC](https://github.com/novnc/noVNC)).
-
-Behavior:
+TrollVNC can start LibVNCServer’s built-in HTTP server to serve a browser-based VNC client, [noVNC](https://github.com/novnc/noVNC).
 
 - When `-H` is non-zero, the HTTP server listens on that port.
-- If `-D` is provided, its absolute path is used as `httpDir`.
-- If `-D` is omitted, TrollVNC derives a default `httpDir` relative to the executable `../share/trollvnc/webclients`.
+- If `-D` is provided, its absolute path is used as `httpDir`. If omitted, TrollVNC derives a default `httpDir` relative to the executable `../share/trollvnc/webclients`.
 - HTTP proxy CONNECT is enabled to support certain viewer flows.
 
-Examples:
+**Examples**:
 
 ```sh
 # Enable web client on port 5801 using the default web root
@@ -336,76 +286,145 @@ trollvncserver -p 5901 -H 5801
 trollvncserver -p 5901 -H 8081 -D /var/www/trollvnc/webclients
 ```
 
-Notes:
-
-- Ensure the web root contains the required client assets.
-- If the directory is missing or incomplete, the HTTP server may start but won’t serve a functional client.
-
 ### Using Secure WebSockets
 
-You can serve the web client over HTTPS/WSS by providing an SSL certificate and key via `-e` and `-k`.
+WSS encrypts the WebSocket transport (TLS for ws).
 
-What you need:
+**Prerequisites**:
 
-- A certificate (`cert.pem`) and private key (`key.pem`) that your browser will accept.
-- The HTTP server enabled on some port with `-H`.
+- A certificate (`cert.pem`) and private key (`key.pem`) accepted by your browser.
+- The built‑in HTTP server enabled on some port with `-H` (it also exposes the WebSocket endpoint).
 
-Quick start with a local CA (minica):
+**Steps**:
 
-```sh
-# 1) Install minica (macOS):
-brew install minica
+Generate or obtain a cert/key (example using a local CA on macOS).
 
-# 2) Create a host cert for your device IP or DNS name
-minica -ip-addresses "192.168.2.100"
-# This produces a CA (minica.pem) and a host folder (e.g., 192.168.2.100/) with cert.pem and key.pem
+  ```sh
+  brew install minica
+  minica -ip-addresses "192.168.2.100"
+  ```
 
-# 3) Trust the CA in your browser/OS by importing minica.pem (Authorities/Trusted Roots)
-#    Without this, the browser will warn about an untrusted certificate.
+Trust the CA: import `minica.pem` into your OS/browser trust store (otherwise the browser will warn).
 
-# 4) Copy the host cert and key to the device (pick any readable path)
-scp -r 192.168.2.100 root@192.168.2.100:/usr/share/trollvnc/ssl/
+Copy the host cert and key to the device (choose any readable path).
 
-# 5) Start TrollVNC with HTTPS/WSS enabled
-trollvncserver -p 5901 -H 5801 \
-  -e /usr/share/trollvnc/ssl/192.168.2.100/cert.pem \
-  -k /usr/share/trollvnc/ssl/192.168.2.100/key.pem
-```
+  ```sh
+  scp -r 192.168.2.100 root@192.168.2.100:/usr/share/trollvnc/ssl/
+  ```
 
-Connect:
+Start TrollVNC with WSS enabled.
 
-- Open `https://192.168.2.100:5801/` in your browser.
-- Use the bundled web client page to connect to the VNC server.
+  ```sh
+  trollvncserver -p 5901 -H 5801 \
+    -e /usr/share/trollvnc/ssl/192.168.2.100/cert.pem \
+    -k /usr/share/trollvnc/ssl/192.168.2.100/key.pem
+  ```
 
-Notes:
+Connect from your browser. Open the bundled web page at `http://<host>:5801/`. The secure endpoint will be available when `-e`/`-k` are provided.
 
-- Certificates must match what the browser connects to (IP or hostname).
-- Self-signed setups require trusting the CA (minica.pem) or the specific certificate.
+**Notes**:
+
+- The certificate must match what the browser connects to (IP or hostname/SAN).
+- Self‑signed setups require trusting the CA or the specific certificate.
 
 ## Auto-Discovery (Bonjour/mDNS)
 
-TrollVNC can advertise itself on the local network via Bonjour/mDNS so compatible viewers can discover it without typing an IP/port.
+- Publishes a VNC service on the local network via Bonjour/mDNS (type `_rfb._tcp`), using the name from `-n` and the port from `-p`.
+- Enabled by default. Toggle with `-B on|off` or in Settings → TrollVNC → “Enable Auto-Discovery”.
+- Viewers on the same LAN that support Bonjour can find it automatically; otherwise connect by `ip:port` shown in the app/logs.
 
-What it does:
+## Reverse VNC (Reverse Connection)
 
-- Publishes an mDNS service of type `_rfb._tcp` (the standard for VNC).
-- Uses the desktop name from `-n` as the service name and the VNC port from `-p`.
-- Starts the advertisement when the server starts and stops it on exit.
+TrollVNC can initiate an outbound connection to a listening VNC viewer or an UltraVNC repeater. This avoids opening inbound ports on the device and is helpful behind NAT/firewalls.
 
-How to control it:
+When reverse connection is enabled:
 
-- Command line: `-B on|off` (default: `on`). Example to disable: `trollvncserver ... -B off`
-- Preferences app: toggle “Enable Auto-Discovery” in TrollVNC settings.
+- The normal server listening port is disabled (equivalent to not using `-p`).
+- The built-in HTTP server is disabled (any `-H` is ignored).
+- Bonjour/mDNS advertisement is disabled.
+- Classic VNC authentication via environment variables still applies if set (see “Authentication”).
 
-Client discovery tips:
+### 1) Viewer mode (Listening Viewer: TightVNC/UltraVNC)
 
-- Many VNC apps (and network scanners) list `_rfb._tcp` services automatically on the LAN.
-- If you’re using the built-in HTTP client (noVNC), Bonjour is unrelated to WebSockets; it only helps native VNC viewers find the TCP server.
+TrollVNC can connect to a viewer running in Listening mode. The viewer listens for inbound reverse connections; TrollVNC dials out.
 
-Troubleshooting:
+Roles and steps:
 
-- Ensure the device and client are on the same subnet and that multicast (mDNS) is not filtered by your Wi‑Fi/AP.
-- If discovery doesn’t show up, you can still connect manually using the device IP and port shown in the app or logs.
+#### A) Viewer (Listening)
+
+- Start TightVNC or UltraVNC Viewer in “Listen” mode (UltraVNC: Connections → Listen mode, or Toolbar → Listen).
+- Default listening port is `5500`; you can change it in the viewer options.
+- Ensure your desktop firewall allows inbound on the chosen listening port.
+
+#### B) Server (TrollVNC, Viewer mode)
+
+- CLI examples (use your viewer’s listening `host:port`):
+
+  ```sh
+  # IPv4
+  trollvncserver -reverse 203.0.113.10:5500 -n "My iPhone"
+
+  # IPv6
+  trollvncserver -reverse [2001:db8::1]:5500 -n "My iPhone"
+  ```
+
+- Preferences (Settings → TrollVNC):
+  - Reverse Connection → Mode: Viewer
+  - Server: `host:port` (e.g., `viewer.example.com:5500` or `[2001:db8::1]:5500`)
+
+Notes:
+
+- Only an outbound TCP connection from the device to the viewer is required.
+- If your viewer uses a custom port, specify that port in `-reverse host:port` and in the Server field.
+- The desktop viewer shows the incoming reverse connection with the name from `-n`.
+
+### 2) Repeater mode (UltraVNC Repeater, Mode II)
+
+TrollVNC can connect to an UltraVNC Repeater in Mode II. Both the Server (TrollVNC) and the Viewer make outbound connections to the Repeater and pair via a numeric ID.
+
+Roles and steps:
+
+#### A) Repeater
+
+- Deploy or start an UltraVNC Repeater that both device and viewer can reach (public, DMZ, or with NAT port forwards).
+- Common defaults (may vary by setup):
+  - Server (invers) port: `5500`
+  - Viewer port: `5900` (sometimes `5901`)
+- Make a note of the repeater’s `host:port` for the Server side (often `host:5500`) and for the Viewer side (often `host:5900`).
+
+#### B) Server (TrollVNC on iOS)
+
+- Choose a numeric Repeater ID (commonly up to 9 digits). Do not include `ID:` — enter only the number.
+- CLI example (use the repeater’s server port):
+
+  ```sh
+  trollvncserver -repeater 12345679 repeater.example.com:5500 -n "My iPhone"
+  ```
+
+  - `12345679` is the numeric Repeater ID.
+  - `repeater.example.com:5500` should point to the repeater’s server (invers) port. IPv6 example: `-repeater 12345679 [2001:db8::1]:5500`
+
+- Preferences (Settings → TrollVNC):
+  - Reverse Connection → Mode: UltraVNC Repeater
+  - Server: `host:server_port` (e.g., `repeater.example.com:5500` or `[2001:db8::1]:5500`)
+  - Repeater ID: numeric (e.g., `12345679`)
+
+Behavior when reverse is enabled: local VNC port is disabled, HTTP/WebSockets are disabled, and Bonjour/mDNS is disabled.
+
+Optional: set `TROLLVNC_REPEATER_RETRY_INTERVAL` (seconds) to wait before exit if the connection fails (useful when a supervisor always restarts the process).
+
+#### C) Viewer (Client)
+
+- UltraVNC Viewer is recommended for Mode II:
+  - In “VNC Server”, enter `ID:<your_id>` (e.g., `ID:12345679`).
+  - Enable “Proxy/Repeater” and enter the repeater’s viewer address, e.g., `repeater.example.com:5900`.
+  - Connect; the repeater pairs the viewer with the server using the matching ID.
+
+Notes:
+
+- Connections are outbound from both sides; no inbound port on the iOS device is needed.
+- Use the repeater’s server port for TrollVNC (`-repeater <id> host:server_port`) and the viewer port for UltraVNC Viewer.
+- UltraVNC “Mode SSL” repeaters require special viewer/server builds; TrollVNC connects to standard (non-SSL) Mode II repeaters.
 
 ## Build Dependencies
 
