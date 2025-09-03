@@ -133,10 +133,10 @@ NS_INLINE BOOL isRepeaterEnabled(void) {
 
 static void printUsageAndExit(const char *prog) {
     // Compact, grouped usage for quick reference. See README for detailed explanations.
-    static const char *packageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
-    static const char *packageVersion = MYSTRINGIFY(PACKAGE_VERSION);
+    static const char *cPackageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
+    static const char *cPackageVersion = MYSTRINGIFY(PACKAGE_VERSION);
 
-    fprintf(stderr, "TrollVNC (%s) v%s\n", packageScheme, packageVersion);
+    fprintf(stderr, "TrollVNC (%s) v%s\n", cPackageScheme, cPackageVersion);
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");
@@ -1318,9 +1318,9 @@ static void *gBackBuffer = NULL;  // We render into this and then swap
 // Hash algorithm selection (auto: prefer CRC32 on ARM with hardware support)
 #if DEBUG
 #if defined(__aarch64__) || defined(__ARM_FEATURE_CRC32)
-static const BOOL gUseCRC32Hash = YES;
+static const BOOL cUseCRC32Hash = YES;
 #else
-static const BOOL gUseCRC32Hash = NO;
+static const BOOL cUseCRC32Hash = NO;
 #endif
 #endif
 
@@ -1740,14 +1740,14 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
 #pragma mark - Display Tiling Constants
 
 // Hashing performance controls
-static const int gHashStrideX = 4;              // sparse sampling stride X (>=1; 1 = full scan)
-static const int gHashStrideY = 4;              // sparse sampling stride Y (>=1; 1 = full scan)
-static const BOOL gSparseHashDuringDefer = YES; // use sparse hashing while within defer window
+static const int cHashStrideX = 4;              // sparse sampling stride X (>=1; 1 = full scan)
+static const int cHashStrideY = 4;              // sparse sampling stride Y (>=1; 1 = full scan)
+static const BOOL cSparseHashDuringDefer = YES; // use sparse hashing while within defer window
 // Skip vImage scaling when src/dst size difference is small; copy with pad/crop instead
-static const int gNoScalePadThresholdPx = 8; // if both |dW| and |dH| <= this, do pad/crop copy
+static const int cNoScalePadThresholdPx = 8; // if both |dW| and |dH| <= this, do pad/crop copy
 
 // Flush-time hashing optimization
-static const BOOL gParallelHashOnFlush = YES; // use parallel hashing at flush to reduce wall time
+static const BOOL cParallelHashOnFlush = YES; // use parallel hashing at flush to reduce wall time
 
 #pragma mark - Frame Handlers
 
@@ -2166,8 +2166,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         // Small-diff pad/crop fast path to avoid vImageScale when sizes are close
         int dW = (int)dstBuf.width - (int)stage.width;
         int dH = (int)dstBuf.height - (int)stage.height;
-        if (gNoScalePadThresholdPx > 0 && dW <= gNoScalePadThresholdPx && dW >= -gNoScalePadThresholdPx &&
-            dH <= gNoScalePadThresholdPx && dH >= -gNoScalePadThresholdPx) {
+        if (cNoScalePadThresholdPx > 0 && dW <= cNoScalePadThresholdPx && dW >= -cNoScalePadThresholdPx &&
+            dH <= cNoScalePadThresholdPx && dH >= -cNoScalePadThresholdPx) {
 
 #if DEBUG
             CFAbsoluteTime __tv_tPad0 = CFAbsoluteTimeGetCurrent();
@@ -2181,7 +2181,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
             __tv_msScaleOrCopy = (__tv_tPad1 - __tv_tPad0) * 1000.0;
             TVLogVerbose(@"pad/crop copy stage->back took %.3f ms (stage=%zux%zu -> dst=%dx%d, thr=%d)",
                          __tv_msScaleOrCopy, (size_t)stage.width, (size_t)stage.height, gWidth, gHeight,
-                         gNoScalePadThresholdPx);
+                         cNoScalePadThresholdPx);
 #endif
 
         } else {
@@ -2362,9 +2362,9 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     CFAbsoluteTime __tv_tHash0 = CFAbsoluteTimeGetCurrent();
 #endif
 
-    if (gSparseHashDuringDefer && gDeferWindowSec > 0) {
+    if (cSparseHashDuringDefer && gDeferWindowSec > 0) {
         hashTiledFromBufferSparse((const uint8_t *)gBackBuffer, gWidth, gHeight,
-                                  (size_t)gWidth * (size_t)gBytesPerPixel, gHashStrideX, gHashStrideY);
+                                  (size_t)gWidth * (size_t)gBytesPerPixel, cHashStrideX, cHashStrideY);
     } else {
         resetCurrTileHashes();
         hashTiledFromBuffer((const uint8_t *)gBackBuffer, gWidth, gHeight, (size_t)gWidth * (size_t)gBytesPerPixel);
@@ -2374,8 +2374,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
     CFAbsoluteTime __tv_tHash1 = CFAbsoluteTimeGetCurrent();
     CFTimeInterval __tv_msHash = (__tv_tHash1 - __tv_tHash0) * 1000.0;
     TVLogVerbose(@"tile hashing took %.3f ms (tiles=%zu, tileSize=%d)%@%@", __tv_msHash, gTileCount, gTileSize,
-                 (gSparseHashDuringDefer && gDeferWindowSec > 0) ? @" [sparse]" : @"",
-                 gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+                 (cSparseHashDuringDefer && gDeferWindowSec > 0) ? @" [sparse]" : @"",
+                 cUseCRC32Hash ? @" [crc32]" : @" [fnv]");
 #endif
 
     enum { kRectBuf = 1024 };
@@ -2437,7 +2437,7 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         CFAbsoluteTime __tv_tHashFull0 = CFAbsoluteTimeGetCurrent();
 #endif
 
-        if (gParallelHashOnFlush) {
+        if (cParallelHashOnFlush) {
             // Use number of logical CPUs as thread hint (capped)
             int threads = (int)[[NSProcessInfo processInfo] processorCount];
             if (threads < 2)
@@ -2455,8 +2455,8 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         CFAbsoluteTime __tv_tHashFull1 = CFAbsoluteTimeGetCurrent();
         __tv_msHash = (__tv_tHashFull1 - __tv_tHashFull0) * 1000.0;
         TVLogVerbose(@"tile hashing (flush full)%@ took %.3f ms (tiles=%zu, tileSize=%d)%@",
-                     gParallelHashOnFlush ? @" [parallel]" : @"", __tv_msHash, gTileCount, gTileSize,
-                     gUseCRC32Hash ? @" [crc32]" : @" [fnv]");
+                     cParallelHashOnFlush ? @" [parallel]" : @"", __tv_msHash, gTileCount, gTileSize,
+                     cUseCRC32Hash ? @" [crc32]" : @" [fnv]");
 #endif
     }
 
@@ -3842,7 +3842,7 @@ static void setupRfbFileTransferExtension(void) {
 
 #pragma mark - Setups (Event Model)
 
-#define TVNC_RUNLOOP_USEC 40000
+static const long cSelectTimeout = 1e4; // 10 ms
 
 // Background event thread for reverse-connection mode
 static pthread_t gRfbEventThread = 0;
@@ -3855,7 +3855,7 @@ static void *tvRfbEventThreadMain(void *arg) {
             break;
         if (!gScreen)
             break;
-        rfbProcessEvents(gScreen, TVNC_RUNLOOP_USEC);
+        rfbProcessEvents(gScreen, cSelectTimeout);
         if (!rfbIsActive(gScreen))
             break;
     }
@@ -3889,6 +3889,12 @@ static void initializeAndRunRfbServer(void) {
     TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
 
     if (isRepeaterEnabled()) {
+        static CFTimeInterval sRetryInterval = 0.0;
+        const char *envRetryInterval = getenv("TROLLVNC_REPEATER_RETRY_INTERVAL");
+        if (envRetryInterval) {
+            sRetryInterval = atof(envRetryInterval);
+        }
+
         static rfbClientPtr sClient = NULL;
 
         if (gRepeaterMode == 2) {
@@ -3900,6 +3906,8 @@ static void initializeAndRunRfbServer(void) {
 
         if (!sClient) {
             TVPrintError("Failed to establish reverse connection to %s", gRepeaterHost);
+            if (sRetryInterval > 0)
+                CFRunLoopRunInMode(kCFRunLoopDefaultMode, sRetryInterval, false);
             exit(EXIT_FAILURE);
         }
 
@@ -3914,7 +3922,7 @@ static void initializeAndRunRfbServer(void) {
         tvStartRfbEventThread();
     } else {
         // Run VNC in background thread
-        rfbRunEventLoop(gScreen, TVNC_RUNLOOP_USEC, TRUE);
+        rfbRunEventLoop(gScreen, cSelectTimeout, TRUE);
     }
 
     // Start Bonjour advertisement after server is ready
@@ -3935,6 +3943,17 @@ static void installSignalHandlers(void) {
     sa.sa_handler = handleSignal;
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
+}
+
+static void installTerminationHandlers(void) {
+    atexit_b(^(void) {
+#if !TARGET_OS_SIMULATOR
+        if (gRestoreAssist) {
+            gRestoreAssist = NO;
+            [PSAssistiveTouchSettingsDetail setEnabled:NO];
+        }
+#endif
+    });
 }
 
 #pragma mark - Logging
@@ -4194,7 +4213,9 @@ int main(int argc, const char *argv[]) {
 
         initializeTilingOrReset();
         initializeAndRunRfbServer();
+
         installSignalHandlers();
+        installTerminationHandlers();
     }
 
     CFRunLoopRun();

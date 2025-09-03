@@ -230,7 +230,12 @@ int main(int argc, const char *argv[]) {
             @"-daemon",
         ]];
 
-        [gWatchDog setEnvironmentVariables:[[NSProcessInfo processInfo] environment]];
+        NSMutableDictionary *mEnvs = [[[NSProcessInfo processInfo] environment] mutableCopy];
+        [mEnvs addEntriesFromDictionary:@{
+            @"TROLLVNC_REPEATER_RETRY_INTERVAL" : @"30.0",
+        }];
+
+        [gWatchDog setEnvironmentVariables:mEnvs];
         [gWatchDog setWorkingDirectory:[[NSFileManager defaultManager] currentDirectoryPath]];
 
         NSString *rootPath = executablePath;
