@@ -113,6 +113,10 @@ static char *gRepeaterHost = NULL;
 static int gRepeaterPort = 0;
 static int gRepeaterId = 0;
 
+NS_INLINE BOOL isRepeaterEnabled(void) {
+    return gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
+}
+
 /* clangd behavior workarounds */
 #define STRINGIFY(x) #x
 #define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
@@ -660,7 +664,7 @@ static void parseDaemonOptions(void) {
     }
 
     // If reverse connection is configured, override mutually exclusive options here in daemon mode
-    if (gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0) {
+    if (isRepeaterEnabled()) {
         gPort = -1;    // disable local listening
         gHttpPort = 0; // disable HTTP server
         if (gHttpDirOverride) {
@@ -3768,6 +3772,24 @@ static void setupRfbFileTransferExtension(void) {
 static void initializeAndRunRfbServer(void) {
     rfbInitServer(gScreen);
     TVLog(@"VNC server initialized on port %d, %dx%d, name '%@'", gPort, gWidth, gHeight, gDesktopName);
+
+    if (isRepeaterEnabled()) {
+        static rfbClientPtr sClient = NULL;
+
+        if (gRepeaterMode == 1) {
+            TVLog(@"VNC server running in repeater mode");
+        } else {
+            TVLog(@"VNC server running in viewer mode");
+            sClient = rfbReverseConnection(gScreen, gRepeaterHost, gRepeaterPort);
+        }
+
+        if (!sClient) {
+            TVPrintError("Failed to establish reverse connection to %s", gRepeaterHost);
+            exit(EXIT_FAILURE);
+        }
+
+        sClient->clientGoneHook = clientGone;
+    }
 
     // Run VNC in background thread
     rfbRunEventLoop(gScreen, 40000, TRUE);
