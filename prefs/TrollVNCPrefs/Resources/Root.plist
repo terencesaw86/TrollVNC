@@ -685,7 +685,7 @@
 			<key>label</key>
 			<string>Reverse Connection</string>
 			<key>footerText</key>
-			<string>Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable.</string>
+			<string>Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
