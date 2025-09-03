@@ -88,7 +88,7 @@
 "Assistive Touch Auto-Activation" = "Assistive Touch Auto-Activation";
 "Automatically enables iOS AssistiveTouch while clients are connected to improve input support.";
 "Reverse Connection" = "Reverse Connection";
-"Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT." = "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT.";
+"Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable." = "Establish a reverse connection to a listening VNC viewer or repeater without opening a server port. This is useful for bypassing firewalls or NAT. Leave empty to disable.";
 "Mode" = "Mode";
 "Viewer" = "Viewer";
 "Repeater" = "Repeater";
