@@ -447,4 +447,22 @@ See: <https://github.com/Lessica/BuildVNCServer>
 
 ## License
 
-TrollVNC is licensed under the GPLv2 License. See the [COPYING](COPYING) file for more information.
+TrollVNC is an open-source VNC solution, licensed under GPLv2. You are free to access, use, and modify the source code. See the [COPYING](COPYING) file for more information.
+
+### Why pay for TrollVNC?
+
+- Ready-to-use, pre-compiled builds
+- Automatic updates and continuous improvements
+- Priority support and troubleshooting assistance
+- Sustainable development through your contribution
+
+### Free and Open Source
+
+If you prefer, you can always build TrollVNC yourself directly from the source. Historical builds can be obtained from the latest GitHub Actions artifacts.
+
+### Your choice:
+
+- Compile for free.
+- Pay for convenience, updates, and support.
+
+Support TrollVNC and help us keep remote access fast, secure, and evolving.
