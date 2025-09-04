@@ -389,8 +389,8 @@ Roles and steps:
 - Deploy or start an UltraVNC Repeater that both device and viewer can reach (public, DMZ, or with NAT port forwards).
 - Common defaults (may vary by setup):
   - Server (invers) port: `5500`
-  - Viewer port: `5900` (sometimes `5901`)
-- Make a note of the repeater’s `host:port` for the Server side (often `host:5500`) and for the Viewer side (often `host:5900`).
+  - Viewer port: `5901` (sometimes `5900`)
+- Make a note of the repeater’s `host:port` for the Server side (often `host:5500`) and for the Viewer side (often `host:5901`).
 
 #### B) Server (TrollVNC on iOS)
 
@@ -416,9 +416,11 @@ Optional: set `TROLLVNC_REPEATER_RETRY_INTERVAL` (seconds) to wait before exit i
 #### C) Viewer (Client)
 
 - UltraVNC Viewer is recommended for Mode II:
-  - In “VNC Server”, enter `ID:<your_id>` (e.g., `ID:12345679`).
-  - Enable “Proxy/Repeater” and enter the repeater’s viewer address, e.g., `repeater.example.com:5900`.
+  - Select “Repeater”; in “ID:12345679”, enter `ID:<your_id>` (e.g., `ID:12345679`).
+  - Enter the repeater’s viewer address, e.g., `repeater.example.com:5901`.
   - Connect; the repeater pairs the viewer with the server using the matching ID.
+
+<img width="383" height="198" alt="uvnc_repeater" src="https://github.com/user-attachments/assets/5f5e86a1-605a-4624-8b8e-27ebe89ce4e3" />
 
 Notes:
 
