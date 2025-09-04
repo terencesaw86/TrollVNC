@@ -1,5 +1,9 @@
 # TrollVNC
 
+[now-on-havoc]: https://havoc.app/search/TrollVNC
+
+[<img width="150" src="https://docs.havoc.app/img/badges/get_square.svg" />][now-on-havoc]
+
 TrollVNC is a VNC server for iOS devices, allowing remote access and control of the device’s screen.
 
 <img width="763" alt="screenshot tiny" src="https://github.com/user-attachments/assets/2d2cd457-a3d2-475a-b391-e3232d747f48" />
@@ -443,4 +447,4 @@ See: <https://github.com/Lessica/BuildVNCServer>
 
 ## License
 
-TrollVNC is licensed under the GPLv2 License. See the COPYING file for more information.
+TrollVNC is licensed under the GPLv2 License. See the [COPYING](COPYING) file for more information.
