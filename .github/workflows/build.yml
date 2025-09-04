@@ -129,5 +129,5 @@ jobs:
           
           Built on: ${{ github.sha }}
         files: release-packages/**/*
-        draft: false
+        draft: true
         prerelease: false
