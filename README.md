@@ -348,7 +348,7 @@ When reverse connection is enabled:
 
 TrollVNC can connect to a viewer running in Listening mode. The viewer listens for inbound reverse connections; TrollVNC dials out.
 
-Roles and steps:
+**Roles and steps**:
 
 #### A) Viewer (Listening)
 
@@ -372,7 +372,7 @@ Roles and steps:
   - Reverse Connection → Mode: Viewer
   - Server: `host:port` (e.g., `viewer.example.com:5500` or `[2001:db8::1]:5500`)
 
-Notes:
+**Notes**:
 
 - Only an outbound TCP connection from the device to the viewer is required.
 - If your viewer uses a custom port, specify that port in `-reverse host:port` and in the Server field.
@@ -382,7 +382,7 @@ Notes:
 
 TrollVNC can connect to an UltraVNC Repeater in Mode II. Both the Server (TrollVNC) and the Viewer make outbound connections to the Repeater and pair via a numeric ID.
 
-Roles and steps:
+**Roles and steps**:
 
 #### A) Repeater
 
@@ -411,18 +411,18 @@ Roles and steps:
 
 Behavior when reverse is enabled: local VNC port is disabled, HTTP/WebSockets are disabled, and Bonjour/mDNS is disabled.
 
-Optional: set `TROLLVNC_REPEATER_RETRY_INTERVAL` (seconds) to wait before exit if the connection fails (useful when a supervisor always restarts the process).
+**Optional**: set `TROLLVNC_REPEATER_RETRY_INTERVAL` (seconds) to wait before exit if the connection fails (useful when a supervisor always restarts the process).
 
 #### C) Viewer (Client)
+
+<img width="383" height="198" alt="uvnc_repeater" src="https://github.com/user-attachments/assets/5f5e86a1-605a-4624-8b8e-27ebe89ce4e3" />
 
 - UltraVNC Viewer is recommended for Mode II:
   - Select “Repeater”; in “ID:12345679”, enter `ID:<your_id>` (e.g., `ID:12345679`).
   - Enter the repeater’s viewer address, e.g., `repeater.example.com:5901`.
   - Connect; the repeater pairs the viewer with the server using the matching ID.
 
-<img width="383" height="198" alt="uvnc_repeater" src="https://github.com/user-attachments/assets/5f5e86a1-605a-4624-8b8e-27ebe89ce4e3" />
-
-Notes:
+**Notes**:
 
 - Connections are outbound from both sides; no inbound port on the iOS device is needed.
 - Use the repeater’s server port for TrollVNC (`-repeater <id> host:server_port`) and the viewer port for UltraVNC Viewer.
