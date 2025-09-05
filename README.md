@@ -456,9 +456,7 @@ TrollVNC is an open-source VNC solution, licensed under GPLv2. You are free to a
 - Priority support and troubleshooting assistance
 - Sustainable development through your contribution
 
-### Free and Open Source
-
-If you prefer, you can always build TrollVNC yourself directly from the source. Historical builds can be obtained from the latest GitHub Actions artifacts.
+If you prefer, you can always build TrollVNC yourself directly from the source.
 
 ### Your choice:
 
