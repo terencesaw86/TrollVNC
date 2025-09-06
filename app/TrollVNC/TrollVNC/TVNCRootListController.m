@@ -27,6 +27,7 @@
 #import <sys/sysctl.h>
 
 #import "StripedTextTableViewController.h"
+#import "TVNCClientListController.h"
 #import "TVNCRootListController.h"
 
 // Minimal process enumeration to restart VNC service
@@ -195,7 +196,24 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                target:self
                action:@selector(applyChanges)];
     applyItem.tintColor = _primaryColor;
-    self.navigationItem.rightBarButtonItem = applyItem;
+
+    UIBarButtonItem *clientsItem = [[UIBarButtonItem alloc]
+        initWithTitle:NSLocalizedStringFromTableInBundle(@"Clients", @"Localizable", self.bundle, nil)
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(showClients)];
+    applyItem.tintColor = _primaryColor;
+
+    self.navigationItem.rightBarButtonItems = @[
+        applyItem,
+        clientsItem,
+    ];
+}
+
+- (void)showClients {
+    TVNCClientListController *vc = [[TVNCClientListController alloc] init];
+    UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:vc];
+    [self.navigationController presentViewController:navController animated:YES completion:nil];
 }
 
 #pragma mark - Actions
@@ -267,7 +285,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     NSString *ipLine;
     BOOL isRevModeOn = [revMode caseInsensitiveCompare:@"none"] != NSOrderedSame;
     if (isRevModeOn) {
-        NSString *modeFormat = NSLocalizedStringFromTableInBundle(@"Reverse Connection: %@", @"Localizable", self.bundle, nil);
+        NSString *modeFormat =
+            NSLocalizedStringFromTableInBundle(@"Reverse Connection: %@", @"Localizable", self.bundle, nil);
         if ([revMode caseInsensitiveCompare:@"repeater"] == NSOrderedSame) {
             revMode = NSLocalizedStringFromTableInBundle(@"Repeater", @"Localizable", self.bundle, nil);
         } else {

@@ -2854,12 +2854,15 @@ NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
 - (void)_updateTouchPoints:(CGPoint *)points count:(NSUInteger)count;
 @end
 
+#define CLIENT_ID_LEN 8
+
 // Per-client state stored in cl->clientData to avoid cross-client conflicts.
 typedef struct {
-    int lastButtonMask;       // last received pointer button mask from this client
-    double wheelAccumPx;      // accumulated scroll in pixels (+down, -up) for this client
-    BOOL wheelFlushScheduled; // whether a flush is pending for this client
-    BOOL isRepeaterClient;    // whether this client is a repeater
+    int lastButtonMask;                // last received pointer button mask from this client
+    double wheelAccumPx;               // accumulated scroll in pixels (+down, -up) for this client
+    BOOL wheelFlushScheduled;          // whether a flush is pending for this client
+    BOOL isRepeaterClient;             // whether this client is a repeater
+    char clientId8[CLIENT_ID_LEN + 1]; // cached 8-char client id (NUL-terminated)
 } TVClientState;
 
 NS_INLINE TVClientState *tvGetClientState(rfbClientPtr cl) { return cl ? (TVClientState *)cl->clientData : NULL; }
@@ -3226,7 +3229,7 @@ static BOOL gIsClipboardStarted = NO;
 static BOOL gRestoreAssist = NO;
 #endif
 
-// Global client states, populated via newClientHook/clientGone.
+// Global client states, populated via newClientHook/clientGoneHook.
 // Key: 8-char client id; Value: immutable snapshot dictionary.
 static NSMutableDictionary<NSString *, NSDictionary<NSString *, id> *> *gClientStates = nil;
 
@@ -3260,20 +3263,28 @@ static NSString *tvGenerateClientId8(int fd) {
     return [NSString stringWithFormat:@"%08x", v];
 }
 
-static void clientGone(rfbClientPtr cl) {
+static void clientGoneHook(rfbClientPtr cl) {
     // Free per-client state
     TVClientState *st = tvGetClientState(cl);
     BOOL isRepeaterClient = NO;
+    NSString *removeKey = nil;
     if (st) {
         isRepeaterClient = st->isRepeaterClient;
+        if (st->clientId8[0] != '\0') {
+            removeKey = [NSString stringWithUTF8String:st->clientId8];
+        }
         free(st);
         cl->clientData = NULL;
     }
 
-    // Remove by deterministic id derived from socket fd
-    NSString *removeKey = tvGenerateClientId8(cl->sock);
-    if (removeKey)
-        [gClientStates removeObjectForKey:removeKey];
+    // Remove by cached id (fallback to fd-derived if unavailable)
+    if (!removeKey)
+        removeKey = tvGenerateClientId8(cl->sock);
+    if (removeKey && gClientStates) {
+        @synchronized(gClientStates) {
+            [gClientStates removeObjectForKey:removeKey];
+        }
+    }
 
     // Decrement client count and stop capture if this was the last client.
     if (gClientCount > 0)
@@ -3317,7 +3328,7 @@ static void clientGone(rfbClientPtr cl) {
 }
 
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
-    cl->clientGoneHook = clientGone;
+    cl->clientGoneHook = clientGoneHook;
     cl->viewOnly = gViewOnly ? TRUE : FALSE;
 
     // Allocate per-client state bag
@@ -3326,6 +3337,7 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         st->lastButtonMask = 0;
         st->wheelAccumPx = 0;
         st->wheelFlushScheduled = NO;
+        st->clientId8[0] = '\0';
         cl->clientData = st;
     }
 
@@ -3334,6 +3346,15 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
 
     // Add to global client states
     NSString *clientId = tvGenerateClientId8(cl->sock);
+    if (st && clientId.length) {
+        // Cache into fixed buffer
+        const char *u8 = [clientId UTF8String];
+        if (u8) {
+            size_t n = strnlen(u8, 8);
+            memcpy(st->clientId8, u8, n);
+            st->clientId8[n] = '\0';
+        }
+    }
     NSString *host = (cl && cl->host) ? [NSString stringWithUTF8String:cl->host] : @"";
     NSDate *now = [NSDate date];
     NSDictionary *entry = @{
@@ -4083,7 +4104,8 @@ static void tvStartControlSocketIfNeeded(void) {
             socklen_t clen = sizeof(caddr);
             int cfd = accept(fd, (struct sockaddr *)&caddr, &clen);
             if (cfd < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
                 TVLog(@"Control socket: accept() error: %s", strerror(errno));
                 break;
             }
@@ -4111,18 +4133,22 @@ static void tvCtlWriteAll(int fd, const void *buf, size_t len) {
     while (left > 0) {
         ssize_t n = send(fd, p, left, 0);
         if (n < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             break;
         }
-        if (n == 0) break;
-        p += (size_t)n; left -= (size_t)n;
+        if (n == 0)
+            break;
+        p += (size_t)n;
+        left -= (size_t)n;
     }
 }
 
 static NSArray *tvSnapshotClients(void) {
     // Build JSON-safe snapshot
     NSMutableArray *arr = [NSMutableArray array];
-    if (!gClientStates) return arr;
+    if (!gClientStates)
+        return arr;
     NSDate *now = [NSDate date];
     // No dedicated lock object earlier; guard with @synchronized on dictionary itself.
     @synchronized(gClientStates) {
@@ -4134,11 +4160,13 @@ static NSArray *tvSnapshotClients(void) {
             NSDate *connectAt = info[@"connectAt"];
             double t0 = connectAt ? [connectAt timeIntervalSince1970] : [now timeIntervalSince1970];
             double dur = [[NSNumber numberWithDouble:([now timeIntervalSince1970] - t0)] doubleValue];
-            [arr addObject:@{ @"id": cid,
-                              @"host": host,
-                              @"viewOnly": viewOnly,
-                              @"connectedAt": @(t0),
-                              @"durationSec": @(dur) }];
+            [arr addObject:@{
+                @"id" : cid,
+                @"host" : host,
+                @"viewOnly" : viewOnly,
+                @"connectedAt" : @(t0),
+                @"durationSec" : @(dur)
+            }];
         }];
     }
     return arr;
@@ -4161,7 +4189,8 @@ static NSData *tvCtlTSVForList(void) {
 }
 
 static BOOL tvDisconnectClientById(NSString *cid) {
-    if (!cid || cid.length == 0 || !gScreen) return NO;
+    if (!cid || cid.length == 0 || !gScreen)
+        return NO;
     BOOL found = NO;
     rfbClientPtr cl = NULL;
     rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
@@ -4189,27 +4218,35 @@ void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
     const char *ip = inet_ntop(AF_INET, &caddr.sin_addr, ipbuf, sizeof(ipbuf));
     TVLog(@"Control socket: connection from %s:%d (fd=%d)", ip ? ip : "?", ntohs(caddr.sin_port), cfd);
 
-    struct timeval tv; tv.tv_sec = 2; tv.tv_usec = 0;
+    struct timeval tv;
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
     setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
     // Read a single line command
-    uint8_t buf[1024]; size_t off = 0;
+    uint8_t buf[1024];
+    size_t off = 0;
     for (;;) {
         ssize_t n = recv(cfd, buf + off, sizeof(buf) - off, 0);
         if (n < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             break;
         }
-        if (n == 0) break;
+        if (n == 0)
+            break;
         off += (size_t)n;
-        if (off >= sizeof(buf)) break;
-        if (memchr(buf, '\n', off)) break;
+        if (off >= sizeof(buf))
+            break;
+        if (memchr(buf, '\n', off))
+            break;
     }
 
     // Parse command
     NSString *cmd = [[NSString alloc] initWithBytes:buf length:off encoding:NSUTF8StringEncoding];
-    if (!cmd) cmd = @"";
+    if (!cmd)
+        cmd = @"";
     cmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 
     NSData *resp = nil;
@@ -4232,7 +4269,8 @@ void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
         resp = [@"ERR Unknown\n" dataUsingEncoding:NSUTF8StringEncoding];
     }
 
-    if (resp) tvCtlWriteAll(cfd, resp.bytes, resp.length);
+    if (resp)
+        tvCtlWriteAll(cfd, resp.bytes, resp.length);
     close(cfd);
 }
 
