@@ -23,6 +23,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, strong) NSBundle *bundle;
 @property(nonatomic, strong) UIColor *primaryColor;
+@property(nonatomic, strong) UINotificationFeedbackGenerator *notificationGenerator;
 
 @end
 

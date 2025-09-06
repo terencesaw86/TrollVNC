@@ -227,6 +227,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     TVNCClientListController *vc = [[TVNCClientListController alloc] init];
     vc.bundle = self.bundle;
     vc.primaryColor = self.primaryColor;
+    vc.notificationGenerator = self.notificationGenerator;
     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:vc];
     [self.navigationController presentViewController:navController animated:YES completion:nil];
 }

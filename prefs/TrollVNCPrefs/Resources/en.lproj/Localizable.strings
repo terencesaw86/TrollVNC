@@ -21,5 +21,8 @@
 "Repeater" = "Repeater";
 "Clients" = "Clients";
 "Disconnect" = "Disconnect";
+"Disconnect Now" = "Disconnect Now";
 "Connected %@" = "Connected %@";
 "View-Only" = "View-Only";
+"Copy ID" = "Copy ID";
+"Copy Host" = "Copy Host";

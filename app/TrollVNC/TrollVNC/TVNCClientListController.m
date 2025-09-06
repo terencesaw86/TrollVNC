@@ -273,4 +273,51 @@ static int TVNCConnect(void) {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
+// iOS 14 min: Provide long-press context menu with copy actions
+- (UIContextMenuConfiguration *)tableView:(UITableView *)tableView
+    contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
+                                        point:(CGPoint)point {
+    if (indexPath.row < 0 || indexPath.row >= self.clients.count)
+        return nil;
+    NSDictionary *c = self.clients[indexPath.row];
+    NSString *cid = c[@"id"] ?: @"";
+    NSString *host = c[@"host"] ?: @"";
+
+    return [UIContextMenuConfiguration
+        configurationWithIdentifier:nil
+                    previewProvider:nil
+                     actionProvider:^UIMenu *_Nullable(NSArray<UIMenuElement *> *_Nonnull suggestedActions) {
+                         UIAction *copyId =
+                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy ID", @"Localizable",
+                                                                                          self.bundle, nil)
+                                                 image:[UIImage systemImageNamed:@"doc.on.doc"]
+                                            identifier:nil
+                                               handler:^(__kindof UIAction *_Nonnull action) {
+                                                   [UIPasteboard generalPasteboard].string = cid;
+                                                   [self.notificationGenerator
+                                                       notificationOccurred:UINotificationFeedbackTypeSuccess];
+                                               }];
+                         UIAction *copyHost =
+                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy Host", @"Localizable",
+                                                                                          self.bundle, nil)
+                                                 image:[UIImage systemImageNamed:@"globe"]
+                                            identifier:nil
+                                               handler:^(__kindof UIAction *_Nonnull action) {
+                                                   [UIPasteboard generalPasteboard].string = host;
+                                                   [self.notificationGenerator
+                                                       notificationOccurred:UINotificationFeedbackTypeSuccess];
+                                               }];
+                         UIAction *disconnect =
+                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Disconnect Now", @"Localizable",
+                                                                                          self.bundle, nil)
+                                                 image:[UIImage systemImageNamed:@"xmark.circle"]
+                                            identifier:nil
+                                               handler:^(__kindof UIAction *_Nonnull action) {
+                                                   [self disconnectAtIndex:indexPath.row];
+                                               }];
+                         disconnect.attributes = UIMenuElementAttributesDestructive;
+                         return [UIMenu menuWithTitle:@"" children:@[ copyId, copyHost, disconnect ]];
+                     }];
+}
+
 @end

@@ -21,5 +21,8 @@
 "Repeater" = "中继器";
 "Clients" = "客户端";
 "Disconnect" = "断开";
+"Disconnect Now" = "立即断开";
 "Connected %@" = "已连接 %@";
 "View-Only" = "仅查看";
+"Copy ID" = "拷贝标识符";
+"Copy Host" = "拷贝主机名";
