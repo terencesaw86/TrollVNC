@@ -16,6 +16,8 @@
 */
 
 #import "TVNCClientListController.h"
+#import "TVNCClientCell.h"
+
 #import <UIKit/UIKit.h>
 #import <arpa/inet.h>
 #import <errno.h>
@@ -213,10 +215,12 @@ static int TVNCConnect(void) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    static NSString *cellId = @"clientCell";
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellId];
-    if (!cell)
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellId];
+    static NSString *cellId = @"TVNCClientCell";
+    TVNCClientCell *cell = (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:cellId];
+    if (!cell) {
+        cell = [[TVNCClientCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellId];
+        cell.bundle = self.bundle;
+    }
 
     NSDictionary *c = self.clients[indexPath.row];
     NSString *cid = c[@"id"] ?: @"";
@@ -224,8 +228,20 @@ static int TVNCConnect(void) {
     BOOL vo = [[c objectForKey:@"viewOnly"] boolValue] || [[c objectForKey:@"viewOnly"] isEqual:@"1"];
     double dur = [[c objectForKey:@"durationSec"] doubleValue];
 
-    cell.textLabel.text = [NSString stringWithFormat:@"%@  %@%@", cid, host, vo ? @"  (view-only)" : @""];
-    cell.detailTextLabel.text = [NSString stringWithFormat:@"%.1fs", dur];
+    // Relative subtitle with localization: "Connected %@"
+    NSString *subtitle = nil;
+    static NSRelativeDateTimeFormatter *sFmt;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sFmt = [NSRelativeDateTimeFormatter new];
+        sFmt.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
+    });
+    NSString *rel = [sFmt localizedStringFromTimeInterval:-dur];
+    subtitle = [NSString
+        stringWithFormat:NSLocalizedStringFromTableInBundle(@"Connected %@", @"Localizable", self.bundle, nil),
+                         rel ?: @"-"];
+
+    [cell configureWithId:cid host:host viewOnly:vo subtitle:subtitle primaryColor:self.primaryColor];
     cell.accessoryType = UITableViewCellAccessoryNone;
     return cell;
 }
@@ -251,6 +267,10 @@ static int TVNCConnect(void) {
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
     return YES;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
 
 @end

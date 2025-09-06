@@ -3329,7 +3329,8 @@ static void clientGoneHook(rfbClientPtr cl) {
 
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
     cl->clientGoneHook = clientGoneHook;
-    cl->viewOnly = gViewOnly ? TRUE : FALSE;
+    if (!cl->viewOnly && gViewOnly)
+        cl->viewOnly = TRUE;
 
     // Allocate per-client state bag
     TVClientState *st = (TVClientState *)calloc(1, sizeof(TVClientState));
@@ -3781,6 +3782,30 @@ static void setupRfbEventHandlers(void) {
     gScreen->kbdAddEvent = kbdAddEvent;
 }
 
+static rfbBool tvCheckPasswordByList(rfbClientPtr cl, const char *passwd, int len) {
+    rfbBool rc = rfbCheckPasswordByList(cl, passwd, len);
+
+    TVClientState *st = tvGetClientState(cl);
+    NSString *updateKey = nil;
+    if (st && st->clientId8[0] != '\0') {
+        updateKey = [NSString stringWithUTF8String:st->clientId8];
+    }
+
+    if (!updateKey)
+        updateKey = tvGenerateClientId8(cl->sock);
+    if (updateKey && gClientStates) {
+        @synchronized(gClientStates) {
+            NSMutableDictionary *entry = [gClientStates[updateKey] mutableCopy];
+            if (entry) {
+                entry[@"viewOnly"] = @(cl->viewOnly ? YES : NO);
+                gClientStates[updateKey] = [entry copy];
+            }
+        }
+    }
+
+    return rc;
+}
+
 static void setupRfbClassicAuthentication(void) {
     // Enable classic VNC authentication if environment variables are provided
     const char *envPwd = getenv("TROLLVNC_PASSWORD");
@@ -3822,7 +3847,7 @@ static void setupRfbClassicAuthentication(void) {
         // Index of first view-only password = number of full-access passwords
         // From that index onward (1-based in description, 0-based in array) are view-only.
         gScreen->authPasswdFirstViewOnly = fullCount;
-        gScreen->passwordCheck = rfbCheckPasswordByList;
+        gScreen->passwordCheck = tvCheckPasswordByList;
 
         TVLog(@"Classic VNC authentication enabled via env: full=%d, view-only=%d", fullCount, viewCount);
     }

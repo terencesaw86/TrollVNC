@@ -22,6 +22,7 @@
 		61C756C72E65BDAC00B2B371 /* TVNCViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 61C756B62E65BDAC00B2B371 /* TVNCViewController.m */; };
 		61C756CE2E65BE6F00B2B371 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 61C756CD2E65BE6F00B2B371 /* LaunchScreen.storyboard */; };
 		CC91EF902E6C2208002F5B2A /* TVNCClientListController.m in Sources */ = {isa = PBXBuildFile; fileRef = CC91EF8F2E6C2208002F5B2A /* TVNCClientListController.m */; };
+		CC91EF932E6CA6C5002F5B2A /* TVNCClientCell.m in Sources */ = {isa = PBXBuildFile; fileRef = CC91EF922E6CA6C5002F5B2A /* TVNCClientCell.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +56,8 @@
 		61C756D82E65BEA900B2B371 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/LaunchScreen.strings"; sourceTree = "<group>"; };
 		CC91EF8E2E6C2208002F5B2A /* TVNCClientListController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCClientListController.h; sourceTree = "<group>"; };
 		CC91EF8F2E6C2208002F5B2A /* TVNCClientListController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCClientListController.m; sourceTree = "<group>"; };
+		CC91EF912E6CA6C5002F5B2A /* TVNCClientCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCClientCell.h; sourceTree = "<group>"; };
+		CC91EF922E6CA6C5002F5B2A /* TVNCClientCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCClientCell.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +115,8 @@
 				61C756AC2E65BDAC00B2B371 /* StripedTextTableViewController.m */,
 				61C756AD2E65BDAC00B2B371 /* TaskProcess+ObjC.swift */,
 				61C756AE2E65BDAC00B2B371 /* TrollVNC.entitlements */,
+				CC91EF912E6CA6C5002F5B2A /* TVNCClientCell.h */,
+				CC91EF922E6CA6C5002F5B2A /* TVNCClientCell.m */,
 				CC91EF8E2E6C2208002F5B2A /* TVNCClientListController.h */,
 				CC91EF8F2E6C2208002F5B2A /* TVNCClientListController.m */,
 				61C756AF2E65BDAC00B2B371 /* TVNCHotspotManager.h */,
@@ -222,6 +227,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC91EF932E6CA6C5002F5B2A /* TVNCClientCell.m in Sources */,
 				61C756BF2E65BDAC00B2B371 /* AppDelegate.m in Sources */,
 				61C756C02E65BDAC00B2B371 /* main.m in Sources */,
 				61C756C12E65BDAC00B2B371 /* SceneDelegate.m in Sources */,

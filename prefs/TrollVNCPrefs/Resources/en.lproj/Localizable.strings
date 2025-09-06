@@ -21,3 +21,5 @@
 "Repeater" = "Repeater";
 "Clients" = "Clients";
 "Disconnect" = "Disconnect";
+"Connected %@" = "Connected %@";
+"View-Only" = "View-Only";
