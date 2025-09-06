@@ -139,10 +139,10 @@ NS_INLINE BOOL isRepeaterEnabled(void) {
 
 static void printUsageAndExit(const char *prog) {
     // Compact, grouped usage for quick reference. See README for detailed explanations.
-    static const char *cPackageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
-    static const char *cPackageVersion = MYSTRINGIFY(PACKAGE_VERSION);
+    static const char *sPackageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
+    static const char *sPackageVersion = MYSTRINGIFY(PACKAGE_VERSION);
 
-    fprintf(stderr, "TrollVNC (%s) v%s\n", cPackageScheme, cPackageVersion);
+    fprintf(stderr, "TrollVNC (%s) v%s\n", sPackageScheme, sPackageVersion);
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");

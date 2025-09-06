@@ -19,3 +19,5 @@
 "Reverse Connection: %@" = "反向连接：%@";
 "Viewer" = "查看器";
 "Repeater" = "中继器";
+"Clients" = "客户端";
+"Disconnect" = "断开";

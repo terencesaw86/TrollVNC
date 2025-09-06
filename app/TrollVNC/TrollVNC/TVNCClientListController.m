@@ -1,6 +1,18 @@
 /*
  This file is part of TrollVNC
  Copyright (c) 2025 82Flex <82flex@gmail.com> and contributors
+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 2
+ as published by the Free Software Foundation.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
 #import "TVNCClientListController.h"
@@ -12,32 +24,53 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
+static const int kTvCtlPort = 46752;
+
 @interface TVNCClientListController ()
-@property(nonatomic, strong) NSArray<NSDictionary *> *clients; // parsed rows
-@property(nonatomic, strong) UIRefreshControl *rc;
+
+@property(nonatomic, strong) NSArray<NSDictionary *> *clients;
+@property(nonatomic, strong) UIBarButtonItem *dismissItem;
+@property(nonatomic, strong) UIBarButtonItem *refreshItem;
+
 @end
 
 @implementation TVNCClientListController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Clients";
+
+    self.title = NSLocalizedStringFromTableInBundle(@"Clients", @"Localizable", self.bundle, nil);
     self.clients = @[];
 
-    UIRefreshControl *rc = [UIRefreshControl new];
-    [rc addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
-    self.rc = rc;
-    if (@available(iOS 10.0, *)) {
-        self.refreshControl = rc;
-    } else {
-        [self.tableView addSubview:rc];
-    }
+    UIRefreshControl *refreshControl = [UIRefreshControl new];
+    [refreshControl addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
+    self.refreshControl = refreshControl;
 
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Refresh"
-                                                                              style:UIBarButtonItemStylePlain
-                                                                             target:self
-                                                                             action:@selector(refresh)];
+    self.navigationItem.leftBarButtonItem = self.refreshItem;
+    self.navigationItem.rightBarButtonItem = self.dismissItem;
+
     [self refresh];
+}
+
+#pragma mark - Getters
+
+- (UIBarButtonItem *)dismissItem {
+    if (!_dismissItem) {
+        _dismissItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
+                                                                     target:self
+                                                                     action:@selector(dismiss)];
+    }
+    return _dismissItem;
+}
+
+- (UIBarButtonItem *)refreshItem {
+    if (!_refreshItem) {
+        _refreshItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
+                                                                     target:self
+                                                                     action:@selector(refresh)];
+        _refreshItem.tintColor = self.primaryColor;
+    }
+    return _refreshItem;
 }
 
 #pragma mark - Networking
@@ -88,7 +121,7 @@ static int TVNCConnect(void) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(46752);
+    addr.sin_port = htons(kTvCtlPort);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         close(fd);
@@ -97,35 +130,46 @@ static int TVNCConnect(void) {
     return fd;
 }
 
+- (void)dismiss {
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
 - (void)refresh {
-    [self.rc beginRefreshing];
+    [self.refreshControl beginRefreshing];
+
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         int fd = TVNCConnect();
         if (fd < 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self.rc endRefreshing];
+                [self.refreshControl endRefreshing];
                 self.clients = @[];
                 [self.tableView reloadData];
             });
             return;
         }
+
         TVNCSendLine(fd, @"list");
         NSData *data = TVNCReadAll(fd, 2.0);
         close(fd);
+
         NSString *tsv = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
         NSArray<NSString *> *lines = [tsv componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
         NSMutableArray *rows = [NSMutableArray array];
         BOOL first = YES;
+
         for (NSString *ln in lines) {
             if (ln.length == 0)
                 continue;
+
             if (first) {
                 first = NO;
                 continue;
             } // skip header
+
             NSArray *cols = [ln componentsSeparatedByString:@"\t"];
             if (cols.count < 5)
                 continue;
+
             [rows addObject:@{
                 @"id" : cols[0],
                 @"host" : cols[1],
@@ -134,8 +178,9 @@ static int TVNCConnect(void) {
                 @"durationSec" : cols[4]
             }];
         }
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.rc endRefreshing];
+            [self.refreshControl endRefreshing];
             self.clients = rows;
             [self.tableView reloadData];
         });
@@ -145,6 +190,7 @@ static int TVNCConnect(void) {
 - (void)disconnectAtIndex:(NSInteger)idx {
     if (idx < 0 || idx >= self.clients.count)
         return;
+
     NSString *cid = self.clients[idx][@"id"] ?: @"";
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         int fd = TVNCConnect();
@@ -153,6 +199,7 @@ static int TVNCConnect(void) {
             (void)TVNCReadAll(fd, 2.0);
             close(fd);
         }
+
         dispatch_async(dispatch_get_main_queue(), ^{
             [self refresh];
         });
@@ -184,17 +231,19 @@ static int TVNCConnect(void) {
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
-    trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath API_AVAILABLE(ios(11.0)) {
+    trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
+
     __weak typeof(self) weakSelf = self;
-    UIContextualAction *kick =
-        [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
-                                                title:@"Disconnect"
-                                              handler:^(__kindof UIContextualAction *action,
-                                                        __kindof UIView *sourceView, void (^completionHandler)(BOOL)) {
-                                                  [weakSelf disconnectAtIndex:indexPath.row];
-                                                  if (completionHandler)
-                                                      completionHandler(YES);
-                                              }];
+    UIContextualAction *kick = [UIContextualAction
+        contextualActionWithStyle:UIContextualActionStyleDestructive
+                            title:NSLocalizedStringFromTableInBundle(@"Disconnect", @"Localizable", self.bundle, nil)
+                          handler:^(__kindof UIContextualAction *action, __kindof UIView *sourceView,
+                                    void (^completionHandler)(BOOL)) {
+                              [weakSelf disconnectAtIndex:indexPath.row];
+                              if (completionHandler)
+                                  completionHandler(YES);
+                          }];
+
     UISwipeActionsConfiguration *config = [UISwipeActionsConfiguration configurationWithActions:@[ kick ]];
     config.performsFirstActionWithFullSwipe = YES;
     return config;

@@ -160,11 +160,24 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 }
 #endif
 
+/* clangd behavior workarounds */
+#define STRINGIFY(x) #x
+#define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
+#define MYNSSTRINGIFY(x)                                                                                               \
+    ^{                                                                                                                 \
+        NSString *str = [NSString stringWithUTF8String:EXPAND_AND_STRINGIFY(x)];                                       \
+        if ([str hasPrefix:@"\""])                                                                                     \
+            str = [str substringFromIndex:1];                                                                          \
+        if ([str hasSuffix:@"\""])                                                                                     \
+            str = [str substringToIndex:str.length - 1];                                                               \
+        return str;                                                                                                    \
+    }()
+
 - (NSArray *)specifiers {
     if (!_specifiers) {
         NSMutableArray<PSSpecifier *> *specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
         PSSpecifier *firstGroup = [specifiers firstObject];
-        NSString *packageScheme = @THEOS_PACKAGE_SCHEME;
+        NSString *packageScheme = MYNSSTRINGIFY(THEOS_PACKAGE_SCHEME);
         if (!packageScheme.length) {
             packageScheme = @"legacy";
         }
@@ -202,7 +215,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                 style:UIBarButtonItemStylePlain
                target:self
                action:@selector(showClients)];
-    applyItem.tintColor = _primaryColor;
+    clientsItem.tintColor = _primaryColor;
 
     self.navigationItem.rightBarButtonItems = @[
         applyItem,
@@ -212,6 +225,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 
 - (void)showClients {
     TVNCClientListController *vc = [[TVNCClientListController alloc] init];
+    vc.bundle = self.bundle;
+    vc.primaryColor = self.primaryColor;
     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:vc];
     [self.navigationController presentViewController:navController animated:YES completion:nil];
 }

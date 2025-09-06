@@ -20,6 +20,10 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @interface TVNCClientListController : UITableViewController
+
+@property(nonatomic, strong) NSBundle *bundle;
+@property(nonatomic, strong) UIColor *primaryColor;
+
 @end
 
 NS_ASSUME_NONNULL_END
