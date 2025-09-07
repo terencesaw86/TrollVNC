@@ -30,9 +30,11 @@ static const int kTvCtlPort = 46752;
 
 @interface TVNCClientListController ()
 
-@property(nonatomic, strong) NSArray<NSDictionary *> *clients;
 @property(nonatomic, strong) UIBarButtonItem *dismissItem;
 @property(nonatomic, strong) UIBarButtonItem *refreshItem;
+
+@property(nonatomic, strong) UITableViewDiffableDataSource<NSString *, NSString *> *dataSource; // section -> itemId
+@property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *clientLookup;     // id -> dict
 
 @end
 
@@ -42,7 +44,6 @@ static const int kTvCtlPort = 46752;
     [super viewDidLoad];
 
     self.title = NSLocalizedStringFromTableInBundle(@"Clients", @"Localizable", self.bundle, nil);
-    self.clients = @[];
 
     UIRefreshControl *refreshControl = [UIRefreshControl new];
     [refreshControl addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
@@ -50,6 +51,51 @@ static const int kTvCtlPort = 46752;
 
     self.navigationItem.leftBarButtonItem = self.refreshItem;
     self.navigationItem.rightBarButtonItem = self.dismissItem;
+
+    // Diffable data source
+    self.clientLookup = [NSMutableDictionary new];
+    __weak typeof(self) weakSelf = self;
+    self.dataSource = [[UITableViewDiffableDataSource alloc]
+        initWithTableView:self.tableView
+             cellProvider:^UITableViewCell *_Nullable(UITableView *tableView, NSIndexPath *indexPath,
+                                                      NSString *identifier) {
+                 TVNCClientCell *cell =
+                     (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:@"TVNCClientCell"];
+                 if (!cell) {
+                     cell = [[TVNCClientCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                  reuseIdentifier:@"TVNCClientCell"];
+                     cell.bundle = weakSelf.bundle;
+                 }
+
+                 NSDictionary *c = weakSelf.clientLookup[identifier] ?: @{};
+                 NSString *cid = c[@"id"] ?: identifier ?: @"";
+                 NSString *host = c[@"host"] ?: @"";
+                 BOOL vo = [[c objectForKey:@"viewOnly"] boolValue] || [[c objectForKey:@"viewOnly"] isEqual:@"1"];
+                 double dur = [[c objectForKey:@"durationSec"] doubleValue];
+
+                 static NSRelativeDateTimeFormatter *sFmt;
+                 static dispatch_once_t onceToken;
+                 dispatch_once(&onceToken, ^{
+                     sFmt = [NSRelativeDateTimeFormatter new];
+                     sFmt.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
+                 });
+
+                 NSString *rel = [sFmt localizedStringFromTimeInterval:-dur];
+                 NSString *subtitle =
+                     [NSString stringWithFormat:NSLocalizedStringFromTableInBundle(@"Connected %@", @"Localizable",
+                                                                                   weakSelf.bundle, nil),
+                                                rel ?: @"-"];
+
+                 [cell configureWithId:cid host:host viewOnly:vo subtitle:subtitle primaryColor:weakSelf.primaryColor];
+                 cell.accessoryType = UITableViewCellAccessoryNone;
+
+                 return cell;
+             }];
+
+    // Initial empty snapshot with one section
+    NSDiffableDataSourceSnapshot<NSString *, NSString *> *empty = [NSDiffableDataSourceSnapshot new];
+    [empty appendSectionsWithIdentifiers:@[ @"main" ]];
+    [self.dataSource applySnapshot:empty animatingDifferences:NO];
 
     [self refresh];
 }
@@ -144,8 +190,10 @@ static int TVNCConnect(void) {
         if (fd < 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.refreshControl endRefreshing];
-                self.clients = @[];
-                [self.tableView reloadData];
+                // Apply empty snapshot on error
+                NSDiffableDataSourceSnapshot<NSString *, NSString *> *empty = [NSDiffableDataSourceSnapshot new];
+                [empty appendSectionsWithIdentifiers:@[ @"main" ]];
+                [self.dataSource applySnapshot:empty animatingDifferences:YES];
             });
             return;
         }
@@ -183,17 +231,34 @@ static int TVNCConnect(void) {
 
         dispatch_async(dispatch_get_main_queue(), ^{
             [self.refreshControl endRefreshing];
-            self.clients = rows;
-            [self.tableView reloadData];
+
+            // Rebuild lookup and snapshot
+            [self.clientLookup removeAllObjects];
+
+            NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:rows.count];
+            for (NSDictionary *item in rows) {
+                NSString *cid = item[@"id"] ?: @"";
+                if (!cid.length)
+                    continue;
+                self.clientLookup[cid] = item;
+                [ids addObject:cid];
+            }
+
+            NSDiffableDataSourceSnapshot<NSString *, NSString *> *snap = [NSDiffableDataSourceSnapshot new];
+            [snap appendSectionsWithIdentifiers:@[ @"main" ]];
+            [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
+
+            [self.dataSource applySnapshot:snap animatingDifferences:YES];
         });
     });
 }
 
-- (void)disconnectAtIndex:(NSInteger)idx {
-    if (idx < 0 || idx >= self.clients.count)
+// Removed index-based disconnect; use -disconnectClientWithId: instead.
+
+- (void)disconnectClientWithId:(NSString *)cid {
+    if (cid.length == 0)
         return;
 
-    NSString *cid = self.clients[idx][@"id"] ?: @"";
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         int fd = TVNCConnect();
         if (fd >= 0) {
@@ -210,42 +275,7 @@ static int TVNCConnect(void) {
 
 #pragma mark - Table
 
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.clients.count;
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    static NSString *cellId = @"TVNCClientCell";
-    TVNCClientCell *cell = (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:cellId];
-    if (!cell) {
-        cell = [[TVNCClientCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:cellId];
-        cell.bundle = self.bundle;
-    }
-
-    NSDictionary *c = self.clients[indexPath.row];
-    NSString *cid = c[@"id"] ?: @"";
-    NSString *host = c[@"host"] ?: @"";
-    BOOL vo = [[c objectForKey:@"viewOnly"] boolValue] || [[c objectForKey:@"viewOnly"] isEqual:@"1"];
-    double dur = [[c objectForKey:@"durationSec"] doubleValue];
-
-    // Relative subtitle with localization: "Connected %@"
-    NSString *subtitle = nil;
-    static NSRelativeDateTimeFormatter *sFmt;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sFmt = [NSRelativeDateTimeFormatter new];
-        sFmt.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
-    });
-    NSString *rel = [sFmt localizedStringFromTimeInterval:-dur];
-    subtitle = [NSString
-        stringWithFormat:NSLocalizedStringFromTableInBundle(@"Connected %@", @"Localizable", self.bundle, nil),
-                         rel ?: @"-"];
-
-    [cell configureWithId:cid host:host viewOnly:vo subtitle:subtitle primaryColor:self.primaryColor];
-    cell.accessoryType = UITableViewCellAccessoryNone;
-    return cell;
-}
-
+// Diffable data source drives cells; no need to implement UITableViewDataSource methods here.
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
 
@@ -255,7 +285,8 @@ static int TVNCConnect(void) {
                             title:NSLocalizedStringFromTableInBundle(@"Disconnect", @"Localizable", self.bundle, nil)
                           handler:^(__kindof UIContextualAction *action, __kindof UIView *sourceView,
                                     void (^completionHandler)(BOOL)) {
-                              [weakSelf disconnectAtIndex:indexPath.row];
+                              NSString *cid = [weakSelf.dataSource itemIdentifierForIndexPath:indexPath] ?: @"";
+                              [weakSelf disconnectClientWithId:cid];
                               if (completionHandler)
                                   completionHandler(YES);
                           }];
@@ -277,44 +308,42 @@ static int TVNCConnect(void) {
 - (UIContextMenuConfiguration *)tableView:(UITableView *)tableView
     contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
                                         point:(CGPoint)point {
-    if (indexPath.row < 0 || indexPath.row >= self.clients.count)
-        return nil;
-    NSDictionary *c = self.clients[indexPath.row];
-    NSString *cid = c[@"id"] ?: @"";
-    NSString *host = c[@"host"] ?: @"";
+    NSString *cid = [self.dataSource itemIdentifierForIndexPath:indexPath];
+    if (cid.length == 0) return nil;
+    NSString *host = self.clientLookup[cid][@"host"] ?: @"";
 
     return [UIContextMenuConfiguration
         configurationWithIdentifier:nil
                     previewProvider:nil
                      actionProvider:^UIMenu *_Nullable(NSArray<UIMenuElement *> *_Nonnull suggestedActions) {
-                         UIAction *copyId =
-                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy ID", @"Localizable",
-                                                                                          self.bundle, nil)
-                                                 image:[UIImage systemImageNamed:@"doc.on.doc"]
-                                            identifier:nil
-                                               handler:^(__kindof UIAction *_Nonnull action) {
-                                                   [UIPasteboard generalPasteboard].string = cid;
-                                                   [self.notificationGenerator
-                                                       notificationOccurred:UINotificationFeedbackTypeSuccess];
-                                               }];
-                         UIAction *copyHost =
-                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy Host", @"Localizable",
-                                                                                          self.bundle, nil)
-                                                 image:[UIImage systemImageNamed:@"globe"]
-                                            identifier:nil
-                                               handler:^(__kindof UIAction *_Nonnull action) {
-                                                   [UIPasteboard generalPasteboard].string = host;
-                                                   [self.notificationGenerator
-                                                       notificationOccurred:UINotificationFeedbackTypeSuccess];
-                                               }];
-                         UIAction *disconnect =
-                             [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Disconnect Now", @"Localizable",
-                                                                                          self.bundle, nil)
-                                                 image:[UIImage systemImageNamed:@"xmark.circle"]
-                                            identifier:nil
-                                               handler:^(__kindof UIAction *_Nonnull action) {
-                                                   [self disconnectAtIndex:indexPath.row];
-                                               }];
+                         UIAction *copyId = [UIAction
+                             actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy ID", @"Localizable", self.bundle,
+                                                                                nil)
+                                       image:[UIImage systemImageNamed:@"doc.on.doc"]
+                                  identifier:nil
+                                     handler:^(__kindof UIAction *_Nonnull action) {
+                                         [UIPasteboard generalPasteboard].string = cid;
+                                         UINotificationFeedbackGenerator *gen = [UINotificationFeedbackGenerator new];
+                                         [gen notificationOccurred:UINotificationFeedbackTypeSuccess];
+                                     }];
+                         UIAction *copyHost = [UIAction
+                             actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy Host", @"Localizable",
+                                                                                self.bundle, nil)
+                                       image:[UIImage systemImageNamed:@"globe"]
+                                  identifier:nil
+                                     handler:^(__kindof UIAction *_Nonnull action) {
+                                         [UIPasteboard generalPasteboard].string = host;
+                                         UINotificationFeedbackGenerator *gen = [UINotificationFeedbackGenerator new];
+                                         [gen notificationOccurred:UINotificationFeedbackTypeSuccess];
+                                     }];
+                         UIAction *disconnect = [UIAction
+                             actionWithTitle:NSLocalizedStringFromTableInBundle(@"Disconnect Now", @"Localizable",
+                                                                                self.bundle, nil)
+                                       image:[UIImage systemImageNamed:@"xmark.circle"]
+                                  identifier:nil
+                                     handler:^(__kindof UIAction *_Nonnull action) {
+                                         [self disconnectClientWithId:cid];
+                                     }];
                          disconnect.attributes = UIMenuElementAttributesDestructive;
                          return [UIMenu menuWithTitle:@"" children:@[ copyId, copyHost, disconnect ]];
                      }];
