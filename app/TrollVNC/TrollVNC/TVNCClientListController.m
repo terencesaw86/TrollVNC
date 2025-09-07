@@ -30,6 +30,9 @@
 
 #pragma mark - Networking
 
+// Placeholder item id used when there are no clients
+static NSString *const kTVNCEmptyItemId = @"__empty__";
+
 static NSData *TVNCReadAll(int fd, double timeoutSec) {
     NSMutableData *md = [NSMutableData data];
     struct timeval tv;
@@ -124,6 +127,25 @@ static int TVNCConnect(void) {
         initWithTableView:self.tableView
              cellProvider:^UITableViewCell *_Nullable(UITableView *tableView, NSIndexPath *indexPath,
                                                       NSString *identifier) {
+                 // Empty placeholder cell
+                 if ([identifier isEqualToString:kTVNCEmptyItemId]) {
+                     static NSString *const kEmptyReuse = @"TVNCEmptyCell";
+
+                     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kEmptyReuse];
+                     if (!cell) {
+                         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
+                                                       reuseIdentifier:kEmptyReuse];
+                         cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                         cell.textLabel.textAlignment = NSTextAlignmentCenter;
+                         cell.textLabel.textColor = [UIColor secondaryLabelColor];
+                         cell.textLabel.numberOfLines = 0;
+                     }
+
+                     cell.textLabel.text = NSLocalizedStringFromTableInBundle(@"No clients connected", @"Localizable",
+                                                                              weakSelf.bundle, nil);
+                     return cell;
+                 }
+
                  TVNCClientCell *cell =
                      (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:@"TVNCClientCell"];
                  if (!cell) {
@@ -194,7 +216,7 @@ static int TVNCConnect(void) {
     if (!_refreshItem) {
         _refreshItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
                                                                      target:self
-                                                                     action:@selector(refreshManually)];
+                                                                     action:@selector(refresh)];
         _refreshItem.tintColor = self.primaryColor;
     }
     return _refreshItem;
@@ -268,20 +290,18 @@ static int TVNCConnect(void) {
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
-- (void)refreshManually {
-    [self.refreshControl beginRefreshing];
-    [self refresh];
-}
-
 - (void)refresh {
+    [self.refreshControl beginRefreshing];
+
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         int fd = TVNCConnect();
         if (fd < 0) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self.refreshControl endRefreshing];
-                // Apply empty snapshot on error
+                // Show placeholder row on error as well
                 NSDiffableDataSourceSnapshot<NSString *, NSString *> *empty = [NSDiffableDataSourceSnapshot new];
                 [empty appendSectionsWithIdentifiers:@[ @"main" ]];
+                [empty appendItemsWithIdentifiers:@[ kTVNCEmptyItemId ] intoSectionWithIdentifier:@"main"];
                 [self.dataSource applySnapshot:empty animatingDifferences:YES];
             });
             return;
@@ -335,10 +355,16 @@ static int TVNCConnect(void) {
 
             NSDiffableDataSourceSnapshot<NSString *, NSString *> *snap = [NSDiffableDataSourceSnapshot new];
             [snap appendSectionsWithIdentifiers:@[ @"main" ]];
-            [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
+            if (ids.count == 0) {
+                [snap appendItemsWithIdentifiers:@[ kTVNCEmptyItemId ] intoSectionWithIdentifier:@"main"];
+            } else {
+                [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
+            }
 
             // Force cell reconfiguration for items whose content (e.g., viewOnly) may have changed
-            [snap reloadItemsWithIdentifiers:ids];
+            if (ids.count > 0) {
+                [snap reloadItemsWithIdentifiers:ids];
+            }
 
             [self.dataSource applySnapshot:snap animatingDifferences:YES];
         });
@@ -371,6 +397,10 @@ static int TVNCConnect(void) {
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
     trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath {
 
+    NSString *itemId = [self.dataSource itemIdentifierForIndexPath:indexPath];
+    if ([itemId isEqualToString:kTVNCEmptyItemId])
+        return nil;
+
     __weak typeof(self) weakSelf = self;
     UIContextualAction *kick = [UIContextualAction
         contextualActionWithStyle:UIContextualActionStyleDestructive
@@ -389,6 +419,9 @@ static int TVNCConnect(void) {
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSString *itemId = [self.dataSource itemIdentifierForIndexPath:indexPath];
+    if ([itemId isEqualToString:kTVNCEmptyItemId])
+        return NO;
     return YES;
 }
 
@@ -401,10 +434,12 @@ static int TVNCConnect(void) {
     contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
                                         point:(CGPoint)point {
     NSString *cid = [self.dataSource itemIdentifierForIndexPath:indexPath];
+    if ([cid isEqualToString:kTVNCEmptyItemId])
+        return nil;
     if (cid.length == 0)
         return nil;
-    NSString *host = self.clientLookup[cid][@"host"] ?: @"";
 
+    NSString *host = self.clientLookup[cid][@"host"] ?: @"";
     return [UIContextMenuConfiguration
         configurationWithIdentifier:nil
                     previewProvider:nil
