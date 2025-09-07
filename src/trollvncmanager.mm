@@ -31,6 +31,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
+#import "Control.h"
 #import "Logging.h"
 #import "TRWatchDog.h"
 #import "libproc.h"
@@ -81,8 +82,6 @@ static void monitorSelfAndRestartIfVnodeDeleted(const char *executable) {
 
     dispatch_resume(monitorSource);
 }
-
-static const int kTvAlivePort = 46751;
 
 // Open a local IPv4 TCP listener on 127.0.0.1:port that accepts and
 // immediately closes connections (no response). This lets clients detect

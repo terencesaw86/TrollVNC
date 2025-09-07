@@ -42,6 +42,7 @@
 #import <vector>
 
 #import "ClipboardManager.h"
+#import "Control.h"
 #import "FBSOrientationObserver.h"
 #import "IOKitSPI.h"
 #import "Logging.h"
@@ -63,6 +64,7 @@ static BOOL gViewOnly = NO;
 static double gKeepAliveSec = 0.0; // 15..86400
 static BOOL gClipboardEnabled = YES;
 static BOOL gIsDaemonMode = NO; // set when launched with -daemon
+static int gTvCtlPort = 0;      // port for control connections (0 = disabled)
 
 static double gScale = 1.0; // 0 < scale <= 1.0, 1.0 = no scaling
 // Preferred frame rate range (0 = unspecified)
@@ -147,10 +149,10 @@ static void printUsageAndExit(const char *prog) {
 
     fprintf(stderr, "Basic:\n");
     fprintf(stderr, "  -p port    VNC TCP port (default: %d)\n", gPort);
+    fprintf(stderr, "  -c port    Client management TCP port (0=off, default: 0)\n");
     fprintf(stderr, "  -n name    Desktop name (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v         View-only (ignore input)\n");
-    fprintf(stderr, "  -A sec     Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n");
-    fprintf(stderr, "  -C on|off  Clipboard sync (default: on)\n\n");
+    fprintf(stderr, "  -A sec     Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n\n");
 
     fprintf(stderr, "Display/Perf:\n");
     fprintf(stderr, "  -s scale   Output scale 0<s<=1 (default: %.2f)\n", gScale);
@@ -173,15 +175,6 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -M scheme  Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K         Log keyboard events to stderr\n\n");
 
-    fprintf(stderr, "Accessibility:\n");
-    fprintf(stderr, "  -E on|off  Enable AssistiveTouch auto-activation (default: off)\n\n");
-
-    fprintf(stderr, "Cursor:\n");
-    fprintf(stderr, "  -U on|off  Enable server-side cursor X (default: off)\n\n");
-
-    fprintf(stderr, "Rotate/Orientation:\n");
-    fprintf(stderr, "  -O on|off  Observe iOS interface orientation and sync (default: off)\n\n");
-
     fprintf(stderr, "HTTP/WebSockets:\n");
     fprintf(stderr, "  -H port    Enable built-in HTTP server on port (0=off, default: 0)\n");
     fprintf(stderr, "  -D path    Absolute path for HTTP document root\n");
@@ -191,8 +184,14 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "Bonjour/mDNS:\n");
     fprintf(stderr, "  -B on|off  Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
 
-    fprintf(stderr, "Legacy features:\n");
-    fprintf(stderr, "  -T on|off  Enable TightVNC 1.x file transfer extension (default: off)\n\n");
+    fprintf(stderr, "Accessibility:\n");
+    fprintf(stderr, "  -E on|off  Enable AssistiveTouch auto-activation (default: off)\n");
+    fprintf(stderr, "  -O on|off  Observe iOS interface orientation and sync (default: off)\n");
+    fprintf(stderr, "  -U on|off  Enable server-side cursor X (default: off)\n\n");
+
+    fprintf(stderr, "Extensions:\n");
+    fprintf(stderr, "  -C on|off  Clipboard sync (default: on)\n");
+    fprintf(stderr, "  -T on|off  File transfer (default: off)\n\n");
 
 #if DEBUG
     fprintf(stderr, "Logging:\n");
@@ -753,6 +752,7 @@ static void parseCLI(int argc, const char *argv[]) {
     }
     if (isDaemon) {
         gIsDaemonMode = YES;
+        gTvCtlPort = kTvDefaultCtlPort;
         parseDaemonOptions();
         return;
     }
@@ -926,7 +926,7 @@ static void parseCLI(int argc, const char *argv[]) {
 #pragma clang diagnostic pop
 
     int opt;
-    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:T:Vh";
+    const char *optstr = "p:n:vA:c:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:T:Vh";
     optind = 1;
     while ((opt = getopt(__argc2, __argv2.data(), optstr)) != -1) {
         switch (opt) {
@@ -958,6 +958,16 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             gKeepAliveSec = sec;
             TVLog(@"CLI: KeepAlive interval set to %.3f sec (-A)", gKeepAliveSec);
+            break;
+        }
+        case 'c': {
+            long port = strtol(optarg, NULL, 10);
+            if (port <= 0 || port > 65535) {
+                TVPrintError("Invalid port: %s", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gTvCtlPort = (int)port;
+            TVLog(@"CLI: Mgmt port set to %d", gTvCtlPort);
             break;
         }
         case 'C': {
@@ -4045,7 +4055,6 @@ static void initializeAndRunRfbServer(void) {
 
 #pragma mark - Local Control Socket
 
-static const int kTvCtlPort = 46752;
 static int gTvCtlListenFd = -1;
 static dispatch_source_t gTvCtlAcceptSource = NULL;
 
@@ -4068,14 +4077,12 @@ static void tvStopControlSocket(void) {
 }
 
 static void tvStartControlSocketIfNeeded(void) {
-    if (!gIsDaemonMode)
-        return;
-    if (isRepeaterEnabled())
+    if (!gTvCtlPort || isRepeaterEnabled())
         return;
     if (gTvCtlAcceptSource)
         return; // already started
 
-    // Create listening socket bound to 127.0.0.1:kTvCtlPort
+    // Create listening socket bound to 127.0.0.1:gTvCtlPort
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
         TVPrintError("Control socket: socket() failed: %s", strerror(errno));
@@ -4092,11 +4099,11 @@ static void tvStartControlSocketIfNeeded(void) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)kTvCtlPort);
+    addr.sin_port = htons((uint16_t)gTvCtlPort);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        TVPrintError("Control socket: bind 127.0.0.1:%d failed: %s", kTvCtlPort, strerror(errno));
+        TVPrintError("Control socket: bind 127.0.0.1:%d failed: %s", gTvCtlPort, strerror(errno));
         close(fd);
         exit(EXIT_FAILURE);
     }
@@ -4146,7 +4153,7 @@ static void tvStartControlSocketIfNeeded(void) {
     });
 
     dispatch_resume(gTvCtlAcceptSource);
-    TVLog(@"Control socket listening on 127.0.0.1:%d (daemon=%@, repeater=%@)", kTvCtlPort,
+    TVLog(@"Control socket listening on 127.0.0.1:%d (daemon=%@, repeater=%@)", gTvCtlPort,
           gIsDaemonMode ? @"YES" : @"NO", isRepeaterEnabled() ? @"YES" : @"NO");
 }
 

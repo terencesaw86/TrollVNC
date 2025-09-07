@@ -23,10 +23,10 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 **Basic**:
 
 - `-p port`   TCP port for VNC (default: `5901`)
+- `-c port`   TCP port for client management (listening on localhost only; `0` disables, default: `0`)
 - `-n name`   Desktop name shown to clients (default: `TrollVNC`)
 - `-v`        View-only (ignore input)
 - `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`15..86400`, `0` disables, default: `0`)
-- `-C on|off` Clipboard sync (default: `on`)
 
 **Display/Performance**:
 
@@ -50,15 +50,6 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
 
-**Accessibility**:
-
-- `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
-
-**Cursor & Rotation**:
-
-- `-U on|off` Enable server-side cursor overlay (default: `off`)
-- `-O on|off` Sync UI orientation and rotate output (default: `off`)
-
 **HTTP/WebSockets**:
 
 - `-H port`   Enable built-in HTTP server on port (`0` disables; default `0`)
@@ -69,6 +60,17 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 **Discovery**:
 
 - `-B on|off` Enable Bonjour/mDNS advertisement for auto-discovery by viewers on the local network (default: `on`)
+
+**Accessibility**:
+
+- `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
+- `-O on|off` Sync UI orientation and rotate output (default: `off`)
+- `-U on|off` Enable server-side cursor overlay (default: `off`)
+
+**Extensions**:
+
+- `-C on|off` Enable UltraVNC UTF-8 clipboard extension (default: `on`)
+- `-T on|off` Enable TightVNC 1.x file transfer extension (default: `off`)
 
 **Logging**:
 
