@@ -194,7 +194,7 @@ static int TVNCConnect(void) {
     if (!_refreshItem) {
         _refreshItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
                                                                      target:self
-                                                                     action:@selector(refresh)];
+                                                                     action:@selector(refreshManually)];
         _refreshItem.tintColor = self.primaryColor;
     }
     return _refreshItem;
@@ -268,9 +268,12 @@ static int TVNCConnect(void) {
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
-- (void)refresh {
+- (void)refreshManually {
     [self.refreshControl beginRefreshing];
+    [self refresh];
+}
 
+- (void)refresh {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         int fd = TVNCConnect();
         if (fd < 0) {
