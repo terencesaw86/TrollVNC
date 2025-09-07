@@ -33,6 +33,10 @@
 // Placeholder item id used when there are no clients
 static NSString *const kTVNCEmptyItemId = @"__empty__";
 
+static inline BOOL TVNCIsEmptyItemId(NSString *_Nullable itemId) {
+    return itemId != nil && [itemId isEqualToString:kTVNCEmptyItemId];
+}
+
 static NSData *TVNCReadAll(int fd, double timeoutSec) {
     NSMutableData *md = [NSMutableData data];
     struct timeval tv;
@@ -127,56 +131,7 @@ static int TVNCConnect(void) {
         initWithTableView:self.tableView
              cellProvider:^UITableViewCell *_Nullable(UITableView *tableView, NSIndexPath *indexPath,
                                                       NSString *identifier) {
-                 // Empty placeholder cell
-                 if ([identifier isEqualToString:kTVNCEmptyItemId]) {
-                     static NSString *const kEmptyReuse = @"TVNCEmptyCell";
-
-                     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kEmptyReuse];
-                     if (!cell) {
-                         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault
-                                                       reuseIdentifier:kEmptyReuse];
-                         cell.selectionStyle = UITableViewCellSelectionStyleNone;
-                         cell.textLabel.textAlignment = NSTextAlignmentCenter;
-                         cell.textLabel.textColor = [UIColor secondaryLabelColor];
-                         cell.textLabel.numberOfLines = 0;
-                     }
-
-                     cell.textLabel.text = NSLocalizedStringFromTableInBundle(@"No clients connected", @"Localizable",
-                                                                              weakSelf.bundle, nil);
-                     return cell;
-                 }
-
-                 TVNCClientCell *cell =
-                     (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:@"TVNCClientCell"];
-                 if (!cell) {
-                     cell = [[TVNCClientCell alloc] initWithStyle:UITableViewCellStyleDefault
-                                                  reuseIdentifier:@"TVNCClientCell"];
-                     cell.bundle = weakSelf.bundle;
-                 }
-
-                 NSDictionary *c = weakSelf.clientLookup[identifier] ?: @{};
-                 NSString *cid = c[@"id"] ?: identifier ?: @"";
-                 NSString *host = c[@"host"] ?: @"";
-                 BOOL vo = [[c objectForKey:@"viewOnly"] boolValue] || [[c objectForKey:@"viewOnly"] isEqual:@"1"];
-                 double dur = [[c objectForKey:@"durationSec"] doubleValue];
-
-                 static NSRelativeDateTimeFormatter *sFmt;
-                 static dispatch_once_t onceToken;
-                 dispatch_once(&onceToken, ^{
-                     sFmt = [NSRelativeDateTimeFormatter new];
-                     sFmt.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
-                 });
-
-                 NSString *rel = [sFmt localizedStringFromTimeInterval:-dur];
-                 NSString *subtitle =
-                     [NSString stringWithFormat:NSLocalizedStringFromTableInBundle(@"Connected %@", @"Localizable",
-                                                                                   weakSelf.bundle, nil),
-                                                rel ?: @"-"];
-
-                 [cell configureWithId:cid host:host viewOnly:vo subtitle:subtitle primaryColor:weakSelf.primaryColor];
-                 cell.accessoryType = UITableViewCellAccessoryNone;
-
-                 return cell;
+                 return [weakSelf cellForTableView:tableView indexPath:indexPath itemId:identifier];
              }];
 
     // Initial empty snapshot with one section
@@ -216,7 +171,7 @@ static int TVNCConnect(void) {
     if (!_refreshItem) {
         _refreshItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
                                                                      target:self
-                                                                     action:@selector(refresh)];
+                                                                     action:@selector(refreshManually)];
         _refreshItem.tintColor = self.primaryColor;
     }
     return _refreshItem;
@@ -246,18 +201,7 @@ static int TVNCConnect(void) {
     dispatch_source_t src = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, q);
     __weak typeof(self) weakSelf = self;
     dispatch_source_set_event_handler(src, ^{
-        uint8_t buf[256];
-        ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
-        if (n <= 0) {
-            [weakSelf stopSubscription];
-            return;
-        }
-        buf[n] = '\0';
-        NSString *s = [[NSString alloc] initWithBytes:buf length:(NSUInteger)n encoding:NSUTF8StringEncoding] ?: @"";
-        // Any line containing "changed" triggers a refresh
-        if ([s rangeOfString:@"changed"].location != NSNotFound) {
-            [weakSelf refresh];
-        }
+        [weakSelf onSubscriptionReadable];
     });
 
     dispatch_source_set_cancel_handler(src, ^{
@@ -291,84 +235,12 @@ static int TVNCConnect(void) {
 }
 
 - (void)refresh {
+    [self reloadDataFromServer];
+}
+
+- (void)refreshManually {
     [self.refreshControl beginRefreshing];
-
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        int fd = TVNCConnect();
-        if (fd < 0) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.refreshControl endRefreshing];
-                // Show placeholder row on error as well
-                NSDiffableDataSourceSnapshot<NSString *, NSString *> *empty = [NSDiffableDataSourceSnapshot new];
-                [empty appendSectionsWithIdentifiers:@[ @"main" ]];
-                [empty appendItemsWithIdentifiers:@[ kTVNCEmptyItemId ] intoSectionWithIdentifier:@"main"];
-                [self.dataSource applySnapshot:empty animatingDifferences:YES];
-            });
-            return;
-        }
-
-        TVNCSendLine(fd, @"list");
-        NSData *data = TVNCReadAll(fd, 2.0);
-        close(fd);
-
-        NSString *tsv = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
-        NSArray<NSString *> *lines = [tsv componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-        NSMutableArray *rows = [NSMutableArray array];
-        BOOL first = YES;
-
-        for (NSString *ln in lines) {
-            if (ln.length == 0)
-                continue;
-
-            if (first) {
-                first = NO;
-                continue;
-            } // skip header
-
-            NSArray *cols = [ln componentsSeparatedByString:@"\t"];
-            if (cols.count < 5)
-                continue;
-
-            [rows addObject:@{
-                @"id" : cols[0],
-                @"host" : cols[1],
-                @"viewOnly" : cols[2],
-                @"connectedAt" : cols[3],
-                @"durationSec" : cols[4]
-            }];
-        }
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self.refreshControl endRefreshing];
-
-            // Rebuild lookup and snapshot
-            [self.clientLookup removeAllObjects];
-
-            NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:rows.count];
-            for (NSDictionary *item in rows) {
-                NSString *cid = item[@"id"] ?: @"";
-                if (!cid.length)
-                    continue;
-                self.clientLookup[cid] = item;
-                [ids addObject:cid];
-            }
-
-            NSDiffableDataSourceSnapshot<NSString *, NSString *> *snap = [NSDiffableDataSourceSnapshot new];
-            [snap appendSectionsWithIdentifiers:@[ @"main" ]];
-            if (ids.count == 0) {
-                [snap appendItemsWithIdentifiers:@[ kTVNCEmptyItemId ] intoSectionWithIdentifier:@"main"];
-            } else {
-                [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
-            }
-
-            // Force cell reconfiguration for items whose content (e.g., viewOnly) may have changed
-            if (ids.count > 0) {
-                [snap reloadItemsWithIdentifiers:ids];
-            }
-
-            [self.dataSource applySnapshot:snap animatingDifferences:YES];
-        });
-    });
+    [self reloadDataFromServer];
 }
 
 // Removed index-based disconnect; use -disconnectClientWithId: instead.
@@ -389,6 +261,153 @@ static int TVNCConnect(void) {
             [self refresh];
         });
     });
+}
+
+#pragma mark - Helpers (Cells)
+
+- (UITableViewCell *)cellForTableView:(UITableView *)tableView
+                            indexPath:(NSIndexPath *)indexPath
+                               itemId:(NSString *)identifier {
+    if (TVNCIsEmptyItemId(identifier)) {
+        return [self dequeuePlaceholderCellForTableView:tableView];
+    }
+    return [self dequeueClientCellForTableView:tableView itemId:identifier];
+}
+
+- (UITableViewCell *)dequeuePlaceholderCellForTableView:(UITableView *)tableView {
+    static NSString *const kEmptyReuse = @"TVNCEmptyCell";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:kEmptyReuse];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:kEmptyReuse];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.textLabel.textAlignment = NSTextAlignmentCenter;
+        cell.textLabel.textColor = [UIColor secondaryLabelColor];
+        cell.textLabel.numberOfLines = 0;
+    }
+    cell.textLabel.text = NSLocalizedStringFromTableInBundle(@"No clients connected", @"Localizable", self.bundle, nil);
+    return cell;
+}
+
+- (UITableViewCell *)dequeueClientCellForTableView:(UITableView *)tableView itemId:(NSString *)identifier {
+    TVNCClientCell *cell = (TVNCClientCell *)[tableView dequeueReusableCellWithIdentifier:@"TVNCClientCell"];
+    if (!cell) {
+        cell = [[TVNCClientCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"TVNCClientCell"];
+        cell.bundle = self.bundle;
+    }
+
+    NSDictionary *c = self.clientLookup[identifier] ?: @{};
+    NSString *cid = c[@"id"] ?: identifier ?: @"";
+    NSString *host = c[@"host"] ?: @"";
+    BOOL vo = [[c objectForKey:@"viewOnly"] boolValue] || [[c objectForKey:@"viewOnly"] isEqual:@"1"];
+    double dur = [[c objectForKey:@"durationSec"] doubleValue];
+
+    static NSRelativeDateTimeFormatter *sFmt;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sFmt = [NSRelativeDateTimeFormatter new];
+        sFmt.unitsStyle = NSRelativeDateTimeFormatterUnitsStyleFull;
+    });
+
+    NSString *rel = [sFmt localizedStringFromTimeInterval:-dur];
+    NSString *subtitle = [NSString
+        stringWithFormat:NSLocalizedStringFromTableInBundle(@"Connected %@", @"Localizable", self.bundle, nil),
+                         rel ?: @"-"];
+
+    [cell configureWithId:cid host:host viewOnly:vo subtitle:subtitle primaryColor:self.primaryColor];
+    cell.accessoryType = UITableViewCellAccessoryNone;
+    return cell;
+}
+
+#pragma mark - Helpers (Networking)
+
+- (NSArray<NSDictionary *> *)parseTSV:(NSString *)tsv {
+    if (tsv.length == 0)
+        return @[];
+    NSArray<NSString *> *lines = [tsv componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+    NSMutableArray<NSDictionary *> *rows =
+        [NSMutableArray arrayWithCapacity:MAX((NSInteger)0, (NSInteger)lines.count - 1)];
+    BOOL first = YES;
+    for (NSString *ln in lines) {
+        if (ln.length == 0)
+            continue;
+        if (first) {
+            first = NO;
+            continue;
+        } // skip header
+        NSArray *cols = [ln componentsSeparatedByString:@"\t"];
+        if (cols.count < 5)
+            continue;
+        [rows addObject:@{
+            @"id" : cols[0],
+            @"host" : cols[1],
+            @"viewOnly" : cols[2],
+            @"connectedAt" : cols[3],
+            @"durationSec" : cols[4]
+        }];
+    }
+    return rows;
+}
+
+- (void)applyRows:(NSArray<NSDictionary *> *)rows {
+    [self.clientLookup removeAllObjects];
+    NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:rows.count];
+    for (NSDictionary *item in rows) {
+        NSString *cid = item[@"id"] ?: @"";
+        if (!cid.length)
+            continue;
+        self.clientLookup[cid] = item;
+        [ids addObject:cid];
+    }
+
+    NSDiffableDataSourceSnapshot<NSString *, NSString *> *snap = [NSDiffableDataSourceSnapshot new];
+    [snap appendSectionsWithIdentifiers:@[ @"main" ]];
+    if (ids.count == 0) {
+        [snap appendItemsWithIdentifiers:@[ kTVNCEmptyItemId ] intoSectionWithIdentifier:@"main"];
+    } else {
+        [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
+        [snap reloadItemsWithIdentifiers:ids]; // force reconfigure for content changes
+    }
+    [self.dataSource applySnapshot:snap animatingDifferences:YES];
+}
+
+- (void)reloadDataFromServer {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        int fd = TVNCConnect();
+        if (fd < 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self.refreshControl endRefreshing];
+                [self applyRows:@[]];
+            });
+            return;
+        }
+        TVNCSendLine(fd, @"list");
+        NSData *data = TVNCReadAll(fd, 2.0);
+        close(fd);
+        NSString *tsv = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
+        NSArray<NSDictionary *> *rows = [self parseTSV:tsv];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.refreshControl endRefreshing];
+            [self applyRows:rows];
+        });
+    });
+}
+
+- (void)onSubscriptionReadable {
+    int fd = self.subFd;
+    if (fd <= 0) {
+        return;
+    }
+    uint8_t buf[256];
+    ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
+    if (n <= 0) {
+        [self stopSubscription];
+        return;
+    }
+    buf[n] = '\0';
+    // Any line containing "changed" triggers a refresh
+    if (memmem(buf, (size_t)n, "changed", 7) != NULL) {
+        [self refresh];
+    }
 }
 
 #pragma mark - Table
