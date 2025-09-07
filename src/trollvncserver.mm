@@ -59,12 +59,12 @@
 
 static BOOL gEnabled = YES;
 static int gPort = 5901;
+static int gTvCtlPort = 0; // port for control connections (0 = disabled)
 static NSString *gDesktopName = @"TrollVNC";
 static BOOL gViewOnly = NO;
 static double gKeepAliveSec = 0.0; // 15..86400
 static BOOL gClipboardEnabled = YES;
 static BOOL gIsDaemonMode = NO; // set when launched with -daemon
-static int gTvCtlPort = 0;      // port for control connections (0 = disabled)
 
 static double gScale = 1.0; // 0 < scale <= 1.0, 1.0 = no scaling
 // Preferred frame rate range (0 = unspecified)
@@ -3228,16 +3228,17 @@ static void startBonjour(void) {
     }
 }
 
-#pragma mark - Client Handlers
+#pragma mark - Control Socket
 
-static int gClientCount = 0; // Number of connected clients
+static int gTvCtlListenFd = -1;
+static dispatch_source_t gTvCtlAcceptSource = NULL;
 
-static BOOL gIsCaptureStarted = NO;
-static BOOL gIsClipboardStarted = NO;
+// Number of connected clients
+static int gClientCount = 0;
 
-#if !TARGET_OS_SIMULATOR
-static BOOL gRestoreAssist = NO;
-#endif
+// Subscribers for control change notifications (store as NSNumber wrapping fd)
+static NSMutableSet<NSNumber *> *gTvCtlSubscribers = nil;
+static dispatch_source_t gTvCtlDebounceTimer = NULL; // debounce timer for change notifications
 
 // Global client states, populated via newClientHook/clientGoneHook.
 // Key: 8-char client id; Value: immutable snapshot dictionary.
@@ -3272,6 +3273,370 @@ static NSString *tvGenerateClientId8(int fd) {
     uint32_t v = (uint32_t)(x & 0xFFFFFFFFu);
     return [NSString stringWithFormat:@"%08x", v];
 }
+
+static int tvSetNonBlocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+        return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void tvStopControlSocket(void) {
+    if (gTvCtlAcceptSource) {
+        dispatch_source_cancel(gTvCtlAcceptSource);
+        gTvCtlAcceptSource = NULL;
+    }
+
+    if (gTvCtlDebounceTimer) {
+        dispatch_source_cancel(gTvCtlDebounceTimer);
+        gTvCtlDebounceTimer = NULL;
+    }
+
+    // Close all subscriber sockets and clear set
+    if (gTvCtlSubscribers) {
+        @synchronized(gTvCtlSubscribers) {
+            for (NSNumber *num in gTvCtlSubscribers) {
+                int fd = [num intValue];
+                if (fd >= 0)
+                    close(fd);
+            }
+            [gTvCtlSubscribers removeAllObjects];
+        }
+    }
+
+    if (gTvCtlListenFd >= 0) {
+        close(gTvCtlListenFd);
+        gTvCtlListenFd = -1;
+    }
+}
+
+static void tvStartControlSocketIfNeeded(void) {
+    if (!gTvCtlPort || isRepeaterEnabled())
+        return;
+    if (gTvCtlAcceptSource)
+        return; // already started
+
+    // Create listening socket bound to 127.0.0.1:gTvCtlPort
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        TVPrintError("Control socket: socket() failed: %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+#ifdef SO_NOSIGPIPE
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)gTvCtlPort);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        TVPrintError("Control socket: bind 127.0.0.1:%d failed: %s", gTvCtlPort, strerror(errno));
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(fd, 8) < 0) {
+        TVPrintError("Control socket: listen() failed: %s", strerror(errno));
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (tvSetNonBlocking(fd) < 0) {
+        TVPrintError("Control socket: failed to set O_NONBLOCK: %s", strerror(errno));
+        // Continue anyway
+    }
+
+    gTvCtlListenFd = fd;
+
+    static dispatch_queue_t sTVCtlQueue = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sTVCtlQueue = dispatch_queue_create("com.82flex.trollvnc.control", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
+    });
+
+    gTvCtlAcceptSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, sTVCtlQueue);
+    // Helper forward declaration
+    void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr);
+    dispatch_source_set_event_handler(gTvCtlAcceptSource, ^{
+        for (;;) {
+            struct sockaddr_in caddr;
+            socklen_t clen = sizeof(caddr);
+            int cfd = accept(fd, (struct sockaddr *)&caddr, &clen);
+            if (cfd < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                TVLog(@"Control socket: accept() error: %s", strerror(errno));
+                break;
+            }
+            tvCtlHandleConnection(cfd, caddr);
+        }
+    });
+
+    dispatch_source_set_cancel_handler(gTvCtlAcceptSource, ^{
+        if (gTvCtlListenFd >= 0) {
+            close(gTvCtlListenFd);
+            gTvCtlListenFd = -1;
+        }
+    });
+
+    dispatch_resume(gTvCtlAcceptSource);
+    TVLog(@"Control socket listening on 127.0.0.1:%d (daemon=%@, repeater=%@)", gTvCtlPort,
+          gIsDaemonMode ? @"YES" : @"NO", isRepeaterEnabled() ? @"YES" : @"NO");
+}
+
+// ---------- Control Protocol Implementation ----------
+
+static void tvCtlWriteAll(int fd, const void *buf, size_t len) {
+    const uint8_t *p = (const uint8_t *)buf;
+    size_t left = len;
+    while (left > 0) {
+        ssize_t n = send(fd, p, left, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        if (n == 0)
+            break;
+        p += (size_t)n;
+        left -= (size_t)n;
+    }
+}
+
+// --- Subscription helpers ---
+static void tvCtlAddSubscriber(int fd) {
+    if (fd < 0)
+        return;
+    (void)tvSetNonBlocking(fd);
+#ifdef SO_NOSIGPIPE
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+    if (!gTvCtlSubscribers)
+        gTvCtlSubscribers = [[NSMutableSet alloc] init];
+    @synchronized(gTvCtlSubscribers) {
+        [gTvCtlSubscribers addObject:@(fd)];
+    }
+    TVLog(@"Control socket: subscribed fd=%d (total=%lu)", fd, (unsigned long)gTvCtlSubscribers.count);
+}
+
+static void tvCtlRemoveSubscriber(int fd, BOOL closeFd) {
+    if (!gTvCtlSubscribers)
+        return;
+    @synchronized(gTvCtlSubscribers) {
+        [gTvCtlSubscribers removeObject:@(fd)];
+    }
+    if (closeFd && fd >= 0)
+        close(fd);
+    TVLog(@"Control socket: unsubscribed fd=%d", fd);
+}
+
+static void tvCtlBroadcastChanged(void) {
+    if (!gTvCtlSubscribers || gTvCtlSubscribers.count == 0)
+        return;
+    const char *msg = "changed\n";
+    size_t len = strlen(msg);
+    NSMutableArray<NSNumber *> *dead = [NSMutableArray array];
+    @synchronized(gTvCtlSubscribers) {
+        for (NSNumber *num in gTvCtlSubscribers) {
+            int fd = [num intValue];
+            ssize_t n = send(fd, msg, len, 0);
+            if (n != (ssize_t)len) {
+                [dead addObject:num];
+            }
+        }
+        if (dead.count) {
+            for (NSNumber *num in dead) {
+                int fd = [num intValue];
+                (void)close(fd);
+                [gTvCtlSubscribers removeObject:num];
+            }
+        }
+    }
+}
+
+static void tvCtlScheduleBroadcastChanged(void) {
+    // Coalesce rapid changes to ~150ms
+    if (gTvCtlDebounceTimer) {
+        dispatch_source_cancel(gTvCtlDebounceTimer);
+        gTvCtlDebounceTimer = NULL;
+    }
+    dispatch_queue_t q = dispatch_get_main_queue();
+    dispatch_source_t t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
+    gTvCtlDebounceTimer = t;
+    uint64_t delayNs = (uint64_t)(150 * NSEC_PER_MSEC);
+    dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, delayNs / 4);
+    dispatch_source_set_event_handler(t, ^{
+        tvCtlBroadcastChanged();
+        if (gTvCtlDebounceTimer) {
+            dispatch_source_cancel(gTvCtlDebounceTimer);
+            gTvCtlDebounceTimer = NULL;
+        }
+    });
+    dispatch_resume(t);
+}
+
+static NSArray *tvSnapshotClients(void) {
+    // Build JSON-safe snapshot
+    NSMutableArray *arr = [NSMutableArray array];
+    if (!gClientStates)
+        return arr;
+    NSDate *now = [NSDate date];
+    // No dedicated lock object earlier; guard with @synchronized on dictionary itself.
+    @synchronized(gClientStates) {
+        [gClientStates enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSDictionary *info, BOOL *stop) {
+            (void)stop;
+            NSString *cid = info[@"id"] ?: key;
+            NSString *host = info[@"host"] ?: @"";
+            NSNumber *viewOnly = info[@"viewOnly"] ?: @(NO);
+            NSDate *connectAt = info[@"connectAt"];
+            double t0 = connectAt ? [connectAt timeIntervalSince1970] : [now timeIntervalSince1970];
+            double dur = [[NSNumber numberWithDouble:([now timeIntervalSince1970] - t0)] doubleValue];
+            [arr addObject:@{
+                @"id" : cid,
+                @"host" : host,
+                @"viewOnly" : viewOnly,
+                @"connectedAt" : @(t0),
+                @"durationSec" : @(dur)
+            }];
+        }];
+    }
+    return arr;
+}
+
+static NSData *tvCtlTSVForList(void) {
+    NSArray *clients = tvSnapshotClients();
+    NSMutableString *out = [NSMutableString string];
+    // Header
+    [out appendString:@"id\thost\tviewOnly\tconnectedAt\tdurationSec\n"];
+    for (NSDictionary *c in clients) {
+        NSString *cid = c[@"id"] ?: @"";
+        NSString *host = c[@"host"] ?: @"";
+        BOOL vo = [c[@"viewOnly"] boolValue];
+        double t0 = [c[@"connectedAt"] doubleValue];
+        double dur = [c[@"durationSec"] doubleValue];
+        [out appendFormat:@"%@\t%@\t%@\t%.0f\t%.3f\n", cid, host, vo ? @"1" : @"0", t0, dur];
+    }
+    return [out dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+static BOOL tvDisconnectClientById(NSString *cid) {
+    if (!cid || cid.length == 0 || !gScreen)
+        return NO;
+    BOOL found = NO;
+    rfbClientPtr cl = NULL;
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    while ((cl = rfbClientIteratorNext(it))) {
+        NSString *kid = tvGenerateClientId8(cl->sock);
+        if ([kid isEqualToString:cid]) {
+            found = YES;
+            rfbCloseClient(cl);
+            break;
+        }
+    }
+    rfbReleaseClientIterator(it);
+    return found;
+}
+
+static NSData *tvCtlTextForKick(NSString *cid) {
+    BOOL ok = tvDisconnectClientById(cid);
+    const char *raw = ok ? "OK\n" : "NOT_FOUND\n";
+    return [NSData dataWithBytes:raw length:strlen(raw)];
+}
+
+void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
+    // Log peer and set short timeouts
+    char ipbuf[INET_ADDRSTRLEN] = {0};
+    const char *ip = inet_ntop(AF_INET, &caddr.sin_addr, ipbuf, sizeof(ipbuf));
+    TVLog(@"Control socket: connection from %s:%d (fd=%d)", ip ? ip : "?", ntohs(caddr.sin_port), cfd);
+
+    struct timeval tv;
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    // Read a single line command
+    uint8_t buf[1024];
+    size_t off = 0;
+    for (;;) {
+        ssize_t n = recv(cfd, buf + off, sizeof(buf) - off, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        if (n == 0)
+            break;
+        off += (size_t)n;
+        if (off >= sizeof(buf))
+            break;
+        if (memchr(buf, '\n', off))
+            break;
+    }
+
+    // Parse command
+    NSString *cmd = [[NSString alloc] initWithBytes:buf length:off encoding:NSUTF8StringEncoding];
+    if (!cmd)
+        cmd = @"";
+    cmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    NSData *resp = nil;
+    BOOL keepOpen = NO;
+    if (cmd.length == 0) {
+        resp = [@"ERR Empty\n" dataUsingEncoding:NSUTF8StringEncoding];
+    } else if ([cmd isEqualToString:@"count"]) {
+        NSString *s = [NSString stringWithFormat:@"%d\n", gClientCount];
+        resp = [s dataUsingEncoding:NSUTF8StringEncoding];
+    } else if ([cmd isEqualToString:@"list"]) {
+        resp = tvCtlTSVForList();
+    } else if ([cmd isEqualToString:@"subscribe on"]) {
+        tvCtlAddSubscriber(cfd);
+        const char *ok = "OK\n";
+        resp = [NSData dataWithBytes:ok length:strlen(ok)];
+        keepOpen = YES; // keep connection open for pushes
+    } else if ([cmd isEqualToString:@"subscribe off"]) {
+        tvCtlRemoveSubscriber(cfd, NO);
+        const char *ok = "OK\n";
+        resp = [NSData dataWithBytes:ok length:strlen(ok)];
+    } else if ([cmd hasPrefix:@"disconnect "] || [cmd hasPrefix:@"kick "]) {
+        NSArray *parts = [cmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSString *cid = parts.count >= 2 ? parts[1] : @"";
+        if (cid.length != 8) {
+            resp = [@"ERR InvalidID\n" dataUsingEncoding:NSUTF8StringEncoding];
+        } else {
+            resp = tvCtlTextForKick(cid);
+        }
+    } else {
+        resp = [@"ERR Unknown\n" dataUsingEncoding:NSUTF8StringEncoding];
+    }
+
+    if (resp)
+        tvCtlWriteAll(cfd, resp.bytes, resp.length);
+
+    if (keepOpen) {
+        // Do not close; subscriber lifecycle managed elsewhere
+        return;
+    }
+
+    close(cfd);
+}
+
+#pragma mark - Client Handlers
+
+static BOOL gIsCaptureStarted = NO;
+static BOOL gIsClipboardStarted = NO;
+
+#if !TARGET_OS_SIMULATOR
+static BOOL gRestoreAssist = NO;
+#endif
 
 static void clientGoneHook(rfbClientPtr cl) {
     // Free per-client state
@@ -3331,6 +3696,9 @@ static void clientGoneHook(rfbClientPtr cl) {
     // Update TXT with possibly changed state (e.g., viewOnly unaffected, but keep consistent)
     refreshBonjourTXTRecord();
 
+    // Notify subscribers after removal (debounced)
+    tvCtlScheduleBroadcastChanged();
+
     // Stop the main run loop if this was a repeater client
     if (isRepeaterClient) {
         CFRunLoopStop(CFRunLoopGetMain());
@@ -3378,6 +3746,9 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
     if (!gClientStates)
         gClientStates = [[NSMutableDictionary alloc] init];
     gClientStates[clientId] = entry;
+
+    // Notify subscribers (debounced)
+    tvCtlScheduleBroadcastChanged();
 
     if (!gIsCaptureStarted && gClientCount > 0 && gFrameHandler) {
         // Start capture when entering non-zero client population.
@@ -3813,6 +4184,9 @@ static rfbBool tvCheckPasswordByList(rfbClientPtr cl, const char *passwd, int le
         }
     }
 
+    // Notify subscribers about property change (debounced)
+    tvCtlScheduleBroadcastChanged();
+
     return rc;
 }
 
@@ -4051,259 +4425,6 @@ static void initializeAndRunRfbServer(void) {
 
     // Start Bonjour advertisement after server is ready
     startBonjour();
-}
-
-#pragma mark - Local Control Socket
-
-static int gTvCtlListenFd = -1;
-static dispatch_source_t gTvCtlAcceptSource = NULL;
-
-static int tvSetNonBlocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return -1;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-}
-
-static void tvStopControlSocket(void) {
-    if (gTvCtlAcceptSource) {
-        dispatch_source_cancel(gTvCtlAcceptSource);
-        gTvCtlAcceptSource = NULL;
-    }
-    if (gTvCtlListenFd >= 0) {
-        close(gTvCtlListenFd);
-        gTvCtlListenFd = -1;
-    }
-}
-
-static void tvStartControlSocketIfNeeded(void) {
-    if (!gTvCtlPort || isRepeaterEnabled())
-        return;
-    if (gTvCtlAcceptSource)
-        return; // already started
-
-    // Create listening socket bound to 127.0.0.1:gTvCtlPort
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        TVPrintError("Control socket: socket() failed: %s", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
-
-    int yes = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-#ifdef SO_NOSIGPIPE
-    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
-#endif
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_len = sizeof(addr);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons((uint16_t)gTvCtlPort);
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
-
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        TVPrintError("Control socket: bind 127.0.0.1:%d failed: %s", gTvCtlPort, strerror(errno));
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(fd, 8) < 0) {
-        TVPrintError("Control socket: listen() failed: %s", strerror(errno));
-        close(fd);
-        exit(EXIT_FAILURE);
-    }
-
-    if (tvSetNonBlocking(fd) < 0) {
-        TVPrintError("Control socket: failed to set O_NONBLOCK: %s", strerror(errno));
-        // Continue anyway
-    }
-
-    gTvCtlListenFd = fd;
-
-    static dispatch_queue_t sTVCtlQueue = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sTVCtlQueue = dispatch_queue_create("com.82flex.trollvnc.control", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
-    });
-
-    gTvCtlAcceptSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, sTVCtlQueue);
-    // Helper forward declaration
-    void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr);
-    dispatch_source_set_event_handler(gTvCtlAcceptSource, ^{
-        for (;;) {
-            struct sockaddr_in caddr;
-            socklen_t clen = sizeof(caddr);
-            int cfd = accept(fd, (struct sockaddr *)&caddr, &clen);
-            if (cfd < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK)
-                    break;
-                TVLog(@"Control socket: accept() error: %s", strerror(errno));
-                break;
-            }
-            tvCtlHandleConnection(cfd, caddr);
-        }
-    });
-
-    dispatch_source_set_cancel_handler(gTvCtlAcceptSource, ^{
-        if (gTvCtlListenFd >= 0) {
-            close(gTvCtlListenFd);
-            gTvCtlListenFd = -1;
-        }
-    });
-
-    dispatch_resume(gTvCtlAcceptSource);
-    TVLog(@"Control socket listening on 127.0.0.1:%d (daemon=%@, repeater=%@)", gTvCtlPort,
-          gIsDaemonMode ? @"YES" : @"NO", isRepeaterEnabled() ? @"YES" : @"NO");
-}
-
-// ---------- Control Protocol Implementation ----------
-
-static void tvCtlWriteAll(int fd, const void *buf, size_t len) {
-    const uint8_t *p = (const uint8_t *)buf;
-    size_t left = len;
-    while (left > 0) {
-        ssize_t n = send(fd, p, left, 0);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-        if (n == 0)
-            break;
-        p += (size_t)n;
-        left -= (size_t)n;
-    }
-}
-
-static NSArray *tvSnapshotClients(void) {
-    // Build JSON-safe snapshot
-    NSMutableArray *arr = [NSMutableArray array];
-    if (!gClientStates)
-        return arr;
-    NSDate *now = [NSDate date];
-    // No dedicated lock object earlier; guard with @synchronized on dictionary itself.
-    @synchronized(gClientStates) {
-        [gClientStates enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSDictionary *info, BOOL *stop) {
-            (void)stop;
-            NSString *cid = info[@"id"] ?: key;
-            NSString *host = info[@"host"] ?: @"";
-            NSNumber *viewOnly = info[@"viewOnly"] ?: @(NO);
-            NSDate *connectAt = info[@"connectAt"];
-            double t0 = connectAt ? [connectAt timeIntervalSince1970] : [now timeIntervalSince1970];
-            double dur = [[NSNumber numberWithDouble:([now timeIntervalSince1970] - t0)] doubleValue];
-            [arr addObject:@{
-                @"id" : cid,
-                @"host" : host,
-                @"viewOnly" : viewOnly,
-                @"connectedAt" : @(t0),
-                @"durationSec" : @(dur)
-            }];
-        }];
-    }
-    return arr;
-}
-
-static NSData *tvCtlTSVForList(void) {
-    NSArray *clients = tvSnapshotClients();
-    NSMutableString *out = [NSMutableString string];
-    // Header
-    [out appendString:@"id\thost\tviewOnly\tconnectedAt\tdurationSec\n"];
-    for (NSDictionary *c in clients) {
-        NSString *cid = c[@"id"] ?: @"";
-        NSString *host = c[@"host"] ?: @"";
-        BOOL vo = [c[@"viewOnly"] boolValue];
-        double t0 = [c[@"connectedAt"] doubleValue];
-        double dur = [c[@"durationSec"] doubleValue];
-        [out appendFormat:@"%@\t%@\t%@\t%.0f\t%.3f\n", cid, host, vo ? @"1" : @"0", t0, dur];
-    }
-    return [out dataUsingEncoding:NSUTF8StringEncoding];
-}
-
-static BOOL tvDisconnectClientById(NSString *cid) {
-    if (!cid || cid.length == 0 || !gScreen)
-        return NO;
-    BOOL found = NO;
-    rfbClientPtr cl = NULL;
-    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
-    while ((cl = rfbClientIteratorNext(it))) {
-        NSString *kid = tvGenerateClientId8(cl->sock);
-        if ([kid isEqualToString:cid]) {
-            found = YES;
-            rfbCloseClient(cl);
-            break;
-        }
-    }
-    rfbReleaseClientIterator(it);
-    return found;
-}
-
-static NSData *tvCtlTextForKick(NSString *cid) {
-    BOOL ok = tvDisconnectClientById(cid);
-    const char *raw = ok ? "OK\n" : "NOT_FOUND\n";
-    return [NSData dataWithBytes:raw length:strlen(raw)];
-}
-
-void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
-    // Log peer and set short timeouts
-    char ipbuf[INET_ADDRSTRLEN] = {0};
-    const char *ip = inet_ntop(AF_INET, &caddr.sin_addr, ipbuf, sizeof(ipbuf));
-    TVLog(@"Control socket: connection from %s:%d (fd=%d)", ip ? ip : "?", ntohs(caddr.sin_port), cfd);
-
-    struct timeval tv;
-    tv.tv_sec = 2;
-    tv.tv_usec = 0;
-    setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-
-    // Read a single line command
-    uint8_t buf[1024];
-    size_t off = 0;
-    for (;;) {
-        ssize_t n = recv(cfd, buf + off, sizeof(buf) - off, 0);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            break;
-        }
-        if (n == 0)
-            break;
-        off += (size_t)n;
-        if (off >= sizeof(buf))
-            break;
-        if (memchr(buf, '\n', off))
-            break;
-    }
-
-    // Parse command
-    NSString *cmd = [[NSString alloc] initWithBytes:buf length:off encoding:NSUTF8StringEncoding];
-    if (!cmd)
-        cmd = @"";
-    cmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-    NSData *resp = nil;
-    if (cmd.length == 0) {
-        resp = [@"ERR Empty\n" dataUsingEncoding:NSUTF8StringEncoding];
-    } else if ([cmd isEqualToString:@"count"]) {
-        NSString *s = [NSString stringWithFormat:@"%d\n", gClientCount];
-        resp = [s dataUsingEncoding:NSUTF8StringEncoding];
-    } else if ([cmd isEqualToString:@"list"]) {
-        resp = tvCtlTSVForList();
-    } else if ([cmd hasPrefix:@"disconnect "] || [cmd hasPrefix:@"kick "]) {
-        NSArray *parts = [cmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        NSString *cid = parts.count >= 2 ? parts[1] : @"";
-        if (cid.length != 8) {
-            resp = [@"ERR InvalidID\n" dataUsingEncoding:NSUTF8StringEncoding];
-        } else {
-            resp = tvCtlTextForKick(cid);
-        }
-    } else {
-        resp = [@"ERR Unknown\n" dataUsingEncoding:NSUTF8StringEncoding];
-    }
-
-    if (resp)
-        tvCtlWriteAll(cfd, resp.bytes, resp.length);
-    close(cfd);
 }
 
 static void handleSignal(int signum) {

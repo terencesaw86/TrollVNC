@@ -28,6 +28,65 @@
 
 #import "Control.h"
 
+#pragma mark - Networking
+
+static NSData *TVNCReadAll(int fd, double timeoutSec) {
+    NSMutableData *md = [NSMutableData data];
+    struct timeval tv;
+    tv.tv_sec = (int)timeoutSec;
+    tv.tv_usec = (int)((timeoutSec - tv.tv_sec) * 1e6);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    uint8_t buf[2048];
+    for (;;) {
+        ssize_t n = recv(fd, buf, sizeof(buf), 0);
+        if (n <= 0)
+            break;
+        [md appendBytes:buf length:(NSUInteger)n];
+        if (n < (ssize_t)sizeof(buf))
+            break;
+    }
+    return md;
+}
+
+static int TVNCSendLine(int fd, NSString *line) {
+    NSString *ln = [line hasSuffix:@"\n"] ? line : [line stringByAppendingString:@"\n"];
+    NSData *d = [ln dataUsingEncoding:NSUTF8StringEncoding];
+    const uint8_t *p = d.bytes;
+    size_t left = d.length;
+    while (left > 0) {
+        ssize_t n = send(fd, p, left, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (n == 0)
+            break;
+        p += (size_t)n;
+        left -= (size_t)n;
+    }
+    return 0;
+}
+
+static int TVNCConnect(void) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0)
+        return -1;
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(kTvDefaultCtlPort);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
+#pragma mark - Private Interface
+
 @interface TVNCClientListController ()
 
 @property(nonatomic, strong) UIBarButtonItem *dismissItem;
@@ -36,7 +95,13 @@
 @property(nonatomic, strong) UITableViewDiffableDataSource<NSString *, NSString *> *dataSource; // section -> itemId
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *clientLookup;     // id -> dict
 
+// Subscription (long-lived connection)
+@property(nonatomic, assign) int subFd;
+@property(nonatomic, strong) dispatch_source_t subReadSource;
+
 @end
+
+#pragma mark - Implementation
 
 @implementation TVNCClientListController
 
@@ -100,6 +165,20 @@
     [self refresh];
 }
 
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self startSubscriptionIfNeeded];
+}
+
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    [self stopSubscription];
+}
+
+- (void)dealloc {
+    [self stopSubscription];
+}
+
 #pragma mark - Getters
 
 - (UIBarButtonItem *)dismissItem {
@@ -121,62 +200,69 @@
     return _refreshItem;
 }
 
-#pragma mark - Networking
+#pragma mark - Subscription (Plan B)
 
-static NSData *TVNCReadAll(int fd, double timeoutSec) {
-    NSMutableData *md = [NSMutableData data];
-    struct timeval tv;
-    tv.tv_sec = (int)timeoutSec;
-    tv.tv_usec = (int)((timeoutSec - tv.tv_sec) * 1e6);
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    uint8_t buf[2048];
-    for (;;) {
-        ssize_t n = recv(fd, buf, sizeof(buf), 0);
-        if (n <= 0)
-            break;
-        [md appendBytes:buf length:(NSUInteger)n];
-        if (n < (ssize_t)sizeof(buf))
-            break;
-    }
-    return md;
-}
+- (void)startSubscriptionIfNeeded {
+    if (self.subFd > 0 || self.subReadSource)
+        return;
 
-static int TVNCSendLine(int fd, NSString *line) {
-    NSString *ln = [line hasSuffix:@"\n"] ? line : [line stringByAppendingString:@"\n"];
-    NSData *d = [ln dataUsingEncoding:NSUTF8StringEncoding];
-    const uint8_t *p = d.bytes;
-    size_t left = d.length;
-    while (left > 0) {
-        ssize_t n = send(fd, p, left, 0);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            return -1;
-        }
-        if (n == 0)
-            break;
-        p += (size_t)n;
-        left -= (size_t)n;
-    }
-    return 0;
-}
-
-static int TVNCConnect(void) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int fd = TVNCConnect();
     if (fd < 0)
-        return -1;
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_len = sizeof(addr);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(kTvDefaultCtlPort);
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        return;
+
+    if (TVNCSendLine(fd, @"subscribe on") < 0) {
         close(fd);
-        return -1;
+        return;
     }
-    return fd;
+
+    // Best-effort read initial OK
+    (void)TVNCReadAll(fd, 0.5);
+
+    self.subFd = fd;
+
+    dispatch_queue_t q = dispatch_get_main_queue();
+    dispatch_source_t src = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, q);
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_set_event_handler(src, ^{
+        uint8_t buf[256];
+        ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
+        if (n <= 0) {
+            [weakSelf stopSubscription];
+            return;
+        }
+        buf[n] = '\0';
+        NSString *s = [[NSString alloc] initWithBytes:buf length:(NSUInteger)n encoding:NSUTF8StringEncoding] ?: @"";
+        // Any line containing "changed" triggers a refresh
+        if ([s rangeOfString:@"changed"].location != NSNotFound) {
+            [weakSelf refresh];
+        }
+    });
+
+    dispatch_source_set_cancel_handler(src, ^{
+        if (weakSelf.subFd > 0) {
+            close(weakSelf.subFd);
+            weakSelf.subFd = 0;
+        }
+    });
+
+    self.subReadSource = src;
+    dispatch_resume(src);
 }
+
+- (void)stopSubscription {
+    if (self.subReadSource) {
+        dispatch_source_cancel(self.subReadSource);
+        self.subReadSource = nil;
+    }
+    if (self.subFd > 0) {
+        // Best-effort to inform server (non-fatal if it fails)
+        (void)TVNCSendLine(self.subFd, @"subscribe off");
+        close(self.subFd);
+        self.subFd = 0;
+    }
+}
+
+#pragma mark - Actions
 
 - (void)dismiss {
     [self dismissViewControllerAnimated:YES completion:nil];
@@ -247,6 +333,9 @@ static int TVNCConnect(void) {
             NSDiffableDataSourceSnapshot<NSString *, NSString *> *snap = [NSDiffableDataSourceSnapshot new];
             [snap appendSectionsWithIdentifiers:@[ @"main" ]];
             [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
+
+            // Force cell reconfiguration for items whose content (e.g., viewOnly) may have changed
+            [snap reloadItemsWithIdentifiers:ids];
 
             [self.dataSource applySnapshot:snap animatingDifferences:YES];
         });
