@@ -26,7 +26,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
-static const int kTvCtlPort = 46752;
+#import "Control.h"
 
 @interface TVNCClientListController ()
 
@@ -169,7 +169,7 @@ static int TVNCConnect(void) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(kTvCtlPort);
+    addr.sin_port = htons(kTvDefaultCtlPort);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         close(fd);
@@ -309,7 +309,8 @@ static int TVNCConnect(void) {
     contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath
                                         point:(CGPoint)point {
     NSString *cid = [self.dataSource itemIdentifierForIndexPath:indexPath];
-    if (cid.length == 0) return nil;
+    if (cid.length == 0)
+        return nil;
     NSString *host = self.clientLookup[cid][@"host"] ?: @"";
 
     return [UIContextMenuConfiguration
