@@ -57,6 +57,7 @@
     }
 
     self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.view.tintColor = self.primaryColor;
 
     self.searchController = ({
         UISearchController *searchController = [[UISearchController alloc] initWithSearchResultsController:nil];
@@ -505,6 +506,7 @@
         _shareItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
                                                                    target:self
                                                                    action:@selector(shareItemTapped:)];
+        _shareItem.tintColor = self.primaryColor;
     }
     return _shareItem;
 }
@@ -514,6 +516,7 @@
         _trashItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemTrash
                                                                    target:self
                                                                    action:@selector(trashItemTapped:)];
+        _trashItem.tintColor = self.primaryColor;
     }
     return _trashItem;
 }
@@ -523,6 +526,7 @@
         _dismissItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                                                                      target:self
                                                                      action:@selector(dismissItemTapped:)];
+        _dismissItem.tintColor = self.primaryColor;
     }
     return _dismissItem;
 }

@@ -97,7 +97,7 @@ static int TVNCConnect(void) {
 @interface TVNCClientListController ()
 
 @property(nonatomic, strong) UIBarButtonItem *dismissItem;
-@property(nonatomic, strong) UIBarButtonItem *refreshItem;
+@property(nonatomic, strong) UIBarButtonItem *disconnectItem;
 
 @property(nonatomic, strong) UITableViewDiffableDataSource<NSString *, NSString *> *dataSource; // section -> itemId
 @property(nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *clientLookup;     // id -> dict
@@ -121,7 +121,7 @@ static int TVNCConnect(void) {
     [refreshControl addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
     self.refreshControl = refreshControl;
 
-    self.navigationItem.leftBarButtonItem = self.refreshItem;
+    self.navigationItem.leftBarButtonItem = self.disconnectItem;
     self.navigationItem.rightBarButtonItem = self.dismissItem;
 
     // Diffable data source
@@ -167,14 +167,17 @@ static int TVNCConnect(void) {
     return _dismissItem;
 }
 
-- (UIBarButtonItem *)refreshItem {
-    if (!_refreshItem) {
-        _refreshItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
-                                                                     target:self
-                                                                     action:@selector(refreshManually)];
-        _refreshItem.tintColor = self.primaryColor;
+- (UIBarButtonItem *)disconnectItem {
+    if (!_disconnectItem) {
+        NSString *title = NSLocalizedStringFromTableInBundle(@"Disconnect All", @"Localizable", self.bundle, nil);
+        _disconnectItem = [[UIBarButtonItem alloc] initWithTitle:title
+                                                           style:UIBarButtonItemStylePlain
+                                                          target:self
+                                                          action:@selector(disconnectAll)];
+        _disconnectItem.tintColor = self.primaryColor;
+        _disconnectItem.enabled = NO;
     }
-    return _refreshItem;
+    return _disconnectItem;
 }
 
 #pragma mark - Subscription (Plan B)
@@ -238,11 +241,6 @@ static int TVNCConnect(void) {
     [self reloadDataFromServer];
 }
 
-- (void)refreshManually {
-    [self.refreshControl beginRefreshing];
-    [self reloadDataFromServer];
-}
-
 // Removed index-based disconnect; use -disconnectClientWithId: instead.
 
 - (void)disconnectClientWithId:(NSString *)cid {
@@ -253,6 +251,22 @@ static int TVNCConnect(void) {
         int fd = TVNCConnect();
         if (fd >= 0) {
             TVNCSendLine(fd, [NSString stringWithFormat:@"disconnect %@", cid]);
+            (void)TVNCReadAll(fd, 2.0);
+            close(fd);
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self refresh];
+        });
+    });
+}
+
+- (void)disconnectAll {
+    [self.disconnectItem setEnabled:NO];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        int fd = TVNCConnect();
+        if (fd >= 0) {
+            TVNCSendLine(fd, @"disconnect ALL");
             (void)TVNCReadAll(fd, 2.0);
             close(fd);
         }
@@ -350,6 +364,7 @@ static int TVNCConnect(void) {
 
 - (void)applyRows:(NSArray<NSDictionary *> *)rows {
     [self.clientLookup removeAllObjects];
+
     NSMutableArray<NSString *> *ids = [NSMutableArray arrayWithCapacity:rows.count];
     for (NSDictionary *item in rows) {
         NSString *cid = item[@"id"] ?: @"";
@@ -367,7 +382,9 @@ static int TVNCConnect(void) {
         [snap appendItemsWithIdentifiers:ids intoSectionWithIdentifier:@"main"];
         [snap reloadItemsWithIdentifiers:ids]; // force reconfigure for content changes
     }
+
     [self.dataSource applySnapshot:snap animatingDifferences:YES];
+    [self.disconnectItem setEnabled:(ids.count > 0)];
 }
 
 - (void)reloadDataFromServer {
@@ -380,9 +397,11 @@ static int TVNCConnect(void) {
             });
             return;
         }
+
         TVNCSendLine(fd, @"list");
         NSData *data = TVNCReadAll(fd, 2.0);
         close(fd);
+
         NSString *tsv = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
         NSArray<NSDictionary *> *rows = [self parseTSV:tsv];
         dispatch_async(dispatch_get_main_queue(), ^{

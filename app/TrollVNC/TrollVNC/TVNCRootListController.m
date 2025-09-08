@@ -202,6 +202,14 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     [[UISlider appearanceWhenContainedInInstancesOfClasses:@[
         [self class],
     ]] setMinimumTrackTintColor:_primaryColor];
+    [self.view setTintColor:_primaryColor];
+
+    self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc]
+        initWithTitle:NSLocalizedStringFromTableInBundle(@"TrollVNC", @"Localizable", self.bundle, nil)
+                style:UIBarButtonItemStylePlain
+               target:nil
+               action:nil];
+    self.navigationItem.backBarButtonItem.tintColor = _primaryColor;
 
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
         initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
@@ -278,6 +286,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     } else if ([httpPortVal isKindOfClass:[NSString class]]) {
         httpPort = [(NSString *)httpPortVal intValue];
     }
+
     BOOL portInvalid = (port < 1024 || port > 65535);
     BOOL httpInvalid = (httpPort != 0 && (httpPort < 1024 || httpPort > 65535));
     if (portInvalid || httpInvalid) {
@@ -286,10 +295,12 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
             @"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.",
             @"Localizable", self.bundle, nil);
         NSString *ok = NSLocalizedStringFromTableInBundle(@"OK", @"Localizable", self.bundle, nil);
+
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:t
                                                                        message:msg
                                                                 preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:ok style:UIAlertActionStyleDefault handler:nil]];
+
         [self presentViewController:alert animated:YES completion:nil];
         return; // do not restart now
     }
@@ -361,6 +372,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     NSLog(@"XXLogs path: %@", logsPath);
 
     StripedTextTableViewController *logsVC = [[StripedTextTableViewController alloc] initWithPath:logsPath];
+    logsVC.primaryColor = self.primaryColor;
 
     [logsVC setAutoReload:YES];
     [logsVC setMaximumNumberOfRows:1000];

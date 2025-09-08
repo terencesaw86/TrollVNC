@@ -306,7 +306,7 @@
 			<key>label</key>
 			<string>Modifier Mapping</string>
 			<key>detail</key>
-			<string>PSListItemsController</string>
+			<string>TVNCListItemsController</string>
 			<key>default</key>
 			<string>std</string>
 			<key>shortTitles</key>
@@ -697,7 +697,7 @@
 			<key>label</key>
 			<string>Mode</string>
 			<key>detail</key>
-			<string>PSListItemsController</string>
+			<string>TVNCListItemsController</string>
 			<key>default</key>
 			<string>none</string>
 			<key>shortTitles</key>

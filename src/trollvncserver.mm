@@ -3551,6 +3551,18 @@ static NSData *tvCtlTextForKick(NSString *cid) {
     return [NSData dataWithBytes:raw length:strlen(raw)];
 }
 
+static BOOL tvDisconnectAllClients(void) {
+    if (!gScreen)
+        return NO;
+    rfbClientPtr cl = NULL;
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    while ((cl = rfbClientIteratorNext(it))) {
+        rfbCloseClient(cl);
+    }
+    rfbReleaseClientIterator(it);
+    return YES;
+}
+
 void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
     // Log peer and set short timeouts
     char ipbuf[INET_ADDRSTRLEN] = {0};
@@ -3609,7 +3621,10 @@ void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
     } else if ([cmd hasPrefix:@"disconnect "] || [cmd hasPrefix:@"kick "]) {
         NSArray *parts = [cmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         NSString *cid = parts.count >= 2 ? parts[1] : @"";
-        if (cid.length != 8) {
+        if ([cid isEqualToString:@"ALL"]) {
+            tvDisconnectAllClients();
+            resp = [@"OK\n" dataUsingEncoding:NSUTF8StringEncoding];
+        } else if (cid.length != 8) {
             resp = [@"ERR InvalidID\n" dataUsingEncoding:NSUTF8StringEncoding];
         } else {
             resp = tvCtlTextForKick(cid);
