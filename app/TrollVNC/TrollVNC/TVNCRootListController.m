@@ -229,7 +229,14 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                action:@selector(showClients)];
     clientsItem.tintColor = _primaryColor;
 
-    if (self.navigationController.childViewControllers.firstObject == self) {
+#if THEBOOTSTRAP
+    BOOL isApp = YES;
+#else
+    BOOL isApp = NO;
+#endif
+
+    BOOL isPad = ([UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad);
+    if (isApp || isPad) {
         self.navigationItem.leftBarButtonItem = clientsItem;
         self.navigationItem.rightBarButtonItem = applyItem;
     } else {
