@@ -396,7 +396,6 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 
     [logsVC setRowPrefixRegularExpression:rowRegex];
     [logsVC setRowSeparator:@"\r\n"];
-    [logsVC setModalInPresentation:YES];
     [logsVC setTitle:NSLocalizedStringFromTableInBundle(@"View Logs", @"Localizable", self.bundle, nil)];
     [logsVC setLocalizationBundle:self.bundle];
 
