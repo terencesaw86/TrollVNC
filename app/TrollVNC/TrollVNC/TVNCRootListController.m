@@ -217,10 +217,15 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                action:@selector(showClients)];
     clientsItem.tintColor = _primaryColor;
 
-    self.navigationItem.rightBarButtonItems = @[
-        applyItem,
-        clientsItem,
-    ];
+    if (self.navigationController.childViewControllers.firstObject == self) {
+        self.navigationItem.leftBarButtonItem = clientsItem;
+        self.navigationItem.rightBarButtonItem = applyItem;
+    } else {
+        self.navigationItem.rightBarButtonItems = @[
+            applyItem,
+            clientsItem,
+        ];
+    }
 }
 
 - (void)showClients {
