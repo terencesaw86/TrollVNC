@@ -15,10 +15,11 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import "BulletinManager.h"
-
 #import <Foundation/Foundation.h>
 #import <UserNotifications/UserNotifications.h>
+
+#import "BulletinManager.h"
+#import "Logging.h"
 
 #define BANNER_CATEGORY "com.82flex.trollvnc.notification-category.standard"
 
@@ -123,6 +124,7 @@
 }
 
 - (void)revokeSingleNotification {
+    [self resetBadgeCount];
     if (mSingleNotificationIdentifier) {
         [mNotificationCenter removePendingNotificationRequestsWithIdentifiers:@[ mSingleNotificationIdentifier ]];
         [mNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[ mSingleNotificationIdentifier ]];
@@ -134,6 +136,23 @@
     mSingleNotificationIdentifier = nil;
     [mNotificationCenter removeAllPendingNotificationRequests];
     [mNotificationCenter removeAllDeliveredNotifications];
+}
+
+#pragma mark - Private Methods
+
+- (void)resetBadgeCount {
+#if THEBOOTSTRAP
+    if (@available(iOS 16, *)) {
+        [mNotificationCenter setBadgeCount:0
+                     withCompletionHandler:^(NSError *_Nullable error) {
+                         if (error) {
+                             TVLog(@"Error setting badge count: %@", error);
+                         }
+                     }];
+    } else {
+        [self updateSingleBannerWithContent:@"" badgeCount:0 userInfo:nil];
+    }
+#endif
 }
 
 @end

@@ -3784,7 +3784,9 @@ static void tvPublishUserSingleNotifs(void) {
     BulletinManager *mgr = [BulletinManager sharedManager];
 
     if (gClientCount == 0) {
-        [mgr revokeSingleNotification];
+        dispatch_async(dispatch_get_main_queue(), ^(void) {
+            [mgr revokeSingleNotification];
+        });
         return;
     }
 
@@ -4249,6 +4251,11 @@ static void prepareScreenCapturer(void) {
     gFrameHandler = ^(CMSampleBufferRef _Nonnull sampleBuffer) {
         handleFramebuffer(sampleBuffer);
     };
+}
+
+static void prepareBulletinManager(void) {
+    BulletinManager *mgr = [BulletinManager sharedManager];
+    [mgr revokeSingleNotification];
 }
 
 static void setupGeometry(void) {
@@ -4927,6 +4934,7 @@ int main(int argc, const char *argv[]) {
         setupRfbHttpServer();
         setupRfbFileTransferExtension();
 
+        prepareBulletinManager();
         prepareClipboardManager();
         prepareScreenCapturer();
 

@@ -90,7 +90,12 @@ static inline void TVNCRestartVNCService(void) {
     // Try to terminate trollvncserver; launchd should respawn it if configured.
     TVNCEnumerateProcesses(^(pid_t pid, NSString *executablePath, BOOL *stop) {
         if ([executablePath.lastPathComponent isEqualToString:@"trollvncserver"]) {
-            kill(pid, SIGTERM);
+            int rc = kill(pid, SIGTERM);
+            if (rc == 0) {
+#if THEBOOTSTRAP
+                [UIApplication.sharedApplication setApplicationIconBadgeNumber:0];
+#endif
+            }
         }
     });
 }
@@ -204,11 +209,10 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     ]] setMinimumTrackTintColor:_primaryColor];
     [self.view setTintColor:_primaryColor];
 
-    self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc]
-        initWithTitle:@"TrollVNC"
-                style:UIBarButtonItemStylePlain
-               target:nil
-               action:nil];
+    self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"TrollVNC"
+                                                                             style:UIBarButtonItemStylePlain
+                                                                            target:nil
+                                                                            action:nil];
     self.navigationItem.backBarButtonItem.tintColor = _primaryColor;
 
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
@@ -351,6 +355,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                                                     notificationOccurred:UINotificationFeedbackTypeSuccess];
                                                 [weakSelf.view endEditing:YES];
                                             }]];
+
     [self presentViewController:alert animated:YES completion:nil];
 }
 
