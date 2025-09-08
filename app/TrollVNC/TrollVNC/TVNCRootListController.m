@@ -205,7 +205,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     [self.view setTintColor:_primaryColor];
 
     self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc]
-        initWithTitle:NSLocalizedStringFromTableInBundle(@"TrollVNC", @"Localizable", self.bundle, nil)
+        initWithTitle:@"TrollVNC"
                 style:UIBarButtonItemStylePlain
                target:nil
                action:nil];
