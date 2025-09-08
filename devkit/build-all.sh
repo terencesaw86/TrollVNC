@@ -3,17 +3,17 @@
 set -e
 
 # shellcheck disable=SC1091
-source tools/bootstrap.sh
+source devkit/bootstrap.sh
 FINALPACKAGE=1 gmake clean package
 
 # shellcheck disable=SC1091
-source tools/default.sh
+source devkit/default.sh
 FINALPACKAGE=1 gmake clean package
 
 # shellcheck disable=SC1091
-source tools/rootless.sh
+source devkit/rootless.sh
 FINALPACKAGE=1 gmake clean package
 
 # shellcheck disable=SC1091
-source tools/roothide.sh
+source devkit/roothide.sh
 FINALPACKAGE=1 gmake clean package
