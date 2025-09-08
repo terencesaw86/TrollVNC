@@ -1,30 +1,94 @@
-"Apply" = "应用";
-"Apply Changes" = "应用更改";
-"Are you sure you want to restart the VNC service?" = "确定要重启 VNC 服务吗？";
-"Cancel" = "取消";
-"Restart" = "重启";
-"Invalid Port" = "端口无效";
-"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP 端口必须在 1024..65535（HTTP 也可为 0 表示禁用）。服务器将回退到默认端口。";
-"OK" = "好的";
-"View Logs" = "查看日志";
-"Cannot parse text with UTF-8 encoding: “%@”." = "无法解析 UTF-8 编码的文本：“%@”。";
-"The content of text file “%@” is empty." = "文本文件 “%@” 的内容为空。";
-"Confirm" = "确认";
-"Do you want to clear this log file “%@”?" = "你想要清空此日志文件 “%@” 吗？";
+/* No comment provided by engineer. */
 "%@ rows not loaded" = "%@ 行未加载";
-"Copy" = "拷贝";
-"Launching" = "启动中";
-"Current IP Address: %@" = "当前 IP 地址：%@";
-"unavailable" = "不可用";
-"Reverse Connection: %@" = "反向连接：%@";
-"Viewer" = "查看器";
-"Repeater" = "中继器";
+
+/* No comment provided by engineer. */
+"Apply" = "应用";
+
+/* No comment provided by engineer. */
+"Apply Changes" = "应用更改";
+
+/* No comment provided by engineer. */
+"Are you sure you want to restart the VNC service?" = "确定要重启 VNC 服务吗？";
+
+/* No comment provided by engineer. */
+"Cancel" = "取消";
+
+/* No comment provided by engineer. */
+"Cannot parse text with UTF-8 encoding: “%@”." = "无法解析 UTF-8 编码的文本：“%@”。";
+
+/* No comment provided by engineer. */
 "Clients" = "客户端";
-"Disconnect" = "断开";
-"Disconnect Now" = "立即断开";
+
+/* No comment provided by engineer. */
+"Confirm" = "确认";
+
+/* No comment provided by engineer. */
 "Connected %@" = "已连接 %@";
-"View-Only" = "仅查看";
-"Copy ID" = "拷贝标识符";
+
+/* No comment provided by engineer. */
+"Copy" = "拷贝";
+
+/* No comment provided by engineer. */
 "Copy Host" = "拷贝主机名";
-"No clients connected" = "没有客户端连接";
+
+/* No comment provided by engineer. */
+"Copy ID" = "拷贝标识符";
+
+/* No comment provided by engineer. */
+"Current IP Address: %@" = "当前 IP 地址：%@";
+
+/* No comment provided by engineer. */
+"Disconnect" = "断开";
+
+/* No comment provided by engineer. */
 "Disconnect All" = "断开所有连接";
+
+/* No comment provided by engineer. */
+"Disconnect Now" = "立即断开";
+
+/* No comment provided by engineer. */
+"Do you want to clear this log file “%@”?" = "你想要清空此日志文件 “%@” 吗？";
+
+/* No comment provided by engineer. */
+"Invalid Port" = "端口无效";
+
+"Launching" = "启动中";
+
+/* No comment provided by engineer. */
+"No clients connected" = "没有客户端连接";
+
+/* No comment provided by engineer. */
+"OK" = "好的";
+
+/* No comment provided by engineer. */
+"Repeater" = "中继器";
+
+/* No comment provided by engineer. */
+"Restart" = "重启";
+
+/* No comment provided by engineer. */
+"Reverse Connection: %@" = "反向连接：%@";
+
+/* No comment provided by engineer. */
+"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP 端口必须在 1024..65535（HTTP 也可为 0 表示禁用）。服务器将回退到默认端口。";
+
+/* No comment provided by engineer. */
+"The content of text file “%@” is empty." = "文本文件 “%@” 的内容为空。";
+
+/* No comment provided by engineer. */
+"unavailable" = "不可用";
+
+/* No comment provided by engineer. */
+"View Logs" = "查看日志";
+
+/* No comment provided by engineer. */
+"View-Only" = "仅查看";
+
+/* No comment provided by engineer. */
+"Viewer" = "查看器";
+
+/* No comment provided by engineer. */
+"TrollVNC" = "";
+
+/* No comment provided by engineer. */
+"TrollVNC (%@) v%@" = "";

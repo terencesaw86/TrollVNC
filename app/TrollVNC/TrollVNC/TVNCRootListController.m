@@ -399,7 +399,6 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     [logsVC setModalInPresentation:YES];
     [logsVC setTitle:NSLocalizedStringFromTableInBundle(@"View Logs", @"Localizable", self.bundle, nil)];
     [logsVC setLocalizationBundle:self.bundle];
-    [logsVC setLocalizationTableName:@"Localizable"];
 
     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:logsVC];
     [self presentViewController:navController animated:YES completion:nil];

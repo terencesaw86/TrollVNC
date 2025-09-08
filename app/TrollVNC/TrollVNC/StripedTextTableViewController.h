@@ -49,7 +49,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(nonatomic, strong) UIColor *primaryColor;
 @property(nonatomic, strong) NSBundle *localizationBundle;
-@property(nonatomic, copy) NSString *localizationTableName;
 
 @end
 

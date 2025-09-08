@@ -150,22 +150,22 @@
     }
     NSString *stringPart = [[NSString alloc] initWithData:dataPart encoding:NSUTF8StringEncoding];
     if (!stringPart) {
-        self.textRows = [NSArray
-            arrayWithObjects:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
-                                                            @"Cannot parse text with UTF-8 encoding: “%@”.",
-                                                            self.localizationTableName, self.localizationBundle, @""),
-                                                        [entryPath lastPathComponent]],
-                             nil];
+        self.textRows =
+            [NSArray arrayWithObjects:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
+                                                                     @"Cannot parse text with UTF-8 encoding: “%@”.",
+                                                                     @"Localizable", self.localizationBundle, @""),
+                                                                 [entryPath lastPathComponent]],
+                                      nil];
         [self.tableView reloadData];
         return;
     }
     if (stringPart.length == 0) {
-        self.textRows = [NSArray
-            arrayWithObjects:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
-                                                            @"The content of text file “%@” is empty.",
-                                                            self.localizationTableName, self.localizationBundle, @""),
-                                                        [entryPath lastPathComponent]],
-                             nil];
+        self.textRows =
+            [NSArray arrayWithObjects:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
+                                                                     @"The content of text file “%@” is empty.",
+                                                                     @"Localizable", self.localizationBundle, @""),
+                                                                 [entryPath lastPathComponent]],
+                                      nil];
         [self.tableView reloadData];
     } else {
         NSMutableArray<NSString *> *rowTexts = nil;
@@ -300,30 +300,27 @@
 
 - (void)trashItemTapped:(UIBarButtonItem *)sender {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:NSLocalizedStringFromTableInBundle(@"Confirm", self.localizationTableName,
-                                                                    self.localizationBundle, @"")
-                         message:[NSString
-                                     stringWithFormat:NSLocalizedStringFromTableInBundle(
-                                                          @"Do you want to clear this log file “%@”?",
-                                                          self.localizationTableName, self.localizationBundle, @""),
-                                                      [self.entryPath lastPathComponent]]
+        alertControllerWithTitle:NSLocalizedStringFromTableInBundle(@"Confirm", @"Localizable", self.localizationBundle,
+                                                                    @"")
+                         message:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
+                                                                @"Do you want to clear this log file “%@”?",
+                                                                @"Localizable", self.localizationBundle, @""),
+                                                            [self.entryPath lastPathComponent]]
                   preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction
-                         actionWithTitle:NSLocalizedStringFromTableInBundle(@"Cancel", self.localizationTableName,
-                                                                            self.localizationBundle, @"")
-                                   style:UIAlertActionStyleCancel
-                                 handler:^(UIAlertAction *_Nonnull action){
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Cancel", @"Localizable",
+                                                                                       self.localizationBundle, @"")
+                                              style:UIAlertActionStyleCancel
+                                            handler:^(UIAlertAction *_Nonnull action){
 
-                                 }]];
+                                            }]];
     __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction
-                         actionWithTitle:NSLocalizedStringFromTableInBundle(@"Confirm", self.localizationTableName,
-                                                                            self.localizationBundle, @"")
-                                   style:UIAlertActionStyleDefault
-                                 handler:^(UIAlertAction *_Nonnull action) {
-                                     [[NSData data] writeToFile:[weakSelf entryPath] atomically:YES];
-                                     [weakSelf loadTextDataFromEntry];
-                                 }]];
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Confirm", @"Localizable",
+                                                                                       self.localizationBundle, @"")
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(UIAlertAction *_Nonnull action) {
+                                                [[NSData data] writeToFile:[weakSelf entryPath] atomically:YES];
+                                                [weakSelf loadTextDataFromEntry];
+                                            }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -420,7 +417,7 @@
         };
         NSAttributedString *rowText = [[NSAttributedString alloc]
             initWithString:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(@"%@ rows not loaded",
-                                                                                         self.localizationTableName,
+                                                                                         @"Localizable",
                                                                                          self.localizationBundle, @""),
                                                       [self.decimalNumberFormatter
                                                           stringFromNumber:@(self.numberOfTextRowsNotLoaded)]]
@@ -464,7 +461,7 @@
             NSString *content =
                 (self.searchController.isActive ? self.filteredTextRows[indexPath.row] : self.textRows[indexPath.row]);
             NSArray<UIAction *> *cellActions = @[
-                [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy", self.localizationTableName,
+                [UIAction actionWithTitle:NSLocalizedStringFromTableInBundle(@"Copy", @"Localizable",
                                                                              self.localizationBundle, @"")
                                     image:[UIImage systemImageNamed:@"doc.on.doc"]
                                identifier:nil

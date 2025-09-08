@@ -1,0 +1,27 @@
+[update]
+tasks = ["interfaces", "code", "normalize"]
+
+[update.interfaces]
+path = "TrollVNCPrefs"
+defaultToBase = false
+ignoreEmptyStrings = false
+unstripped = false
+
+[update.code]
+codePath = "TrollVNCPrefs"
+localizablePath = "."
+customFunction = "LocalizedStringResource"
+defaultToKeys = false
+additive = true
+unstripped = false
+
+[update.normalize]
+path = "TrollVNCPrefs"
+sourceLocale = "zh-Hans"
+harmonizeWithSource = true
+sortByKeys = true
+
+[lint]
+path = "TrollVNCPrefs"
+duplicateKeys = true
+emptyValues = true
