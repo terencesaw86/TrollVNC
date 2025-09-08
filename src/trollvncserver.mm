@@ -41,6 +41,7 @@
 #import <unistd.h>
 #import <vector>
 
+#import "BulletinManager.h"
 #import "ClipboardManager.h"
 #import "Control.h"
 #import "FBSOrientationObserver.h"
