@@ -63,9 +63,14 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 
 **Accessibility**:
 
+- `-O on|off` Sync UI orientation and rotate output (default: `on`)
 - `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
-- `-O on|off` Sync UI orientation and rotate output (default: `off`)
 - `-U on|off` Enable server-side cursor overlay (default: `off`)
+
+**Notifications**:
+
+- `-i on|off` Enable a single user notification when the first client connects (default: `on`)
+- `-I on|off` Enable user notifications for client connect/disconnect (default: `on`)
 
 **Extensions**:
 
@@ -110,7 +115,7 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 
 > Touch, scroll, and button mappings respect the current rotation when `-O on` is used.
 
-**AssistiveTouch auto-activation (`-E on`)**:
+**AssistiveTouch Auto-Activation (`-E on`)**:
 
 - When the first client connects, TrollVNC enables AssistiveTouch if it’s currently off; when the last client disconnects,
   it restores the previous state (disables it only if TrollVNC enabled it).

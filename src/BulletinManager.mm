@@ -89,10 +89,12 @@
         [mNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[ mSingleNotificationIdentifier ]];
     }
 
+    UNNotificationTrigger *trigger = [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:0.33 repeats:NO];
+
     mSingleNotificationIdentifier = [[NSUUID UUID] UUIDString];
     UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:mSingleNotificationIdentifier
                                                                           content:content
-                                                                          trigger:nil];
+                                                                          trigger:trigger];
 
     [mNotificationCenter addNotificationRequest:request withCompletionHandler:nil];
 }
@@ -118,6 +120,14 @@
                                                                           trigger:nil];
 
     [mNotificationCenter addNotificationRequest:request withCompletionHandler:nil];
+}
+
+- (void)revokeSingleNotification {
+    if (mSingleNotificationIdentifier) {
+        [mNotificationCenter removePendingNotificationRequestsWithIdentifiers:@[ mSingleNotificationIdentifier ]];
+        [mNotificationCenter removeDeliveredNotificationsWithIdentifiers:@[ mSingleNotificationIdentifier ]];
+        mSingleNotificationIdentifier = nil;
+    }
 }
 
 - (void)revokeAllNotifications {

@@ -1,6 +1,12 @@
 /* No comment provided by engineer. */
 "%@ rows not loaded" = "%@ 行未加载";
 
+/* trollvncserver */
+"A VNC client connected from %@." = "来自 %@ 的 VNC 客户端已连接。";
+
+/* trollvncserver */
+"A VNC client disconnected from %@." = "来自 %@ 的 VNC 客户端已断开连接。";
+
 /* No comment provided by engineer. */
 "Apply" = "应用";
 
@@ -52,6 +58,7 @@
 /* No comment provided by engineer. */
 "Invalid Port" = "端口无效";
 
+/* No comment provided by engineer. */
 "Launching" = "启动中";
 
 /* No comment provided by engineer. */
@@ -74,6 +81,12 @@
 
 /* No comment provided by engineer. */
 "The content of text file “%@” is empty." = "文本文件 “%@” 的内容为空。";
+
+/* trollvncserver */
+"There are %d active VNC clients." = "有 %d 个活动的 VNC 客户端。";
+
+/* trollvncserver */
+"There is %d active VNC client." = "有 %d 个活动的 VNC 客户端。";
 
 /* No comment provided by engineer. */
 "unavailable" = "不可用";

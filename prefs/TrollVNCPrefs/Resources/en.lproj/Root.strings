@@ -6,6 +6,8 @@
 
 "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery." = "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery.";
 
+"8 characters max." = "8 characters max.";
+
 "A repeater ID is required for the “UltraVNC Repeater” mode." = "A repeater ID is required for the “UltraVNC Repeater” mode.";
 
 "Absolute path to static web client files. Leave empty to use built-in assets." = "Absolute path to static web client files. Leave empty to use built-in assets.";
@@ -41,6 +43,8 @@
 "Configure basic server options." = "Configure basic server options.";
 
 "Configure the built-in web client server." = "Configure the built-in web client server.";
+
+"Connect/Disconnect Notifications" = "Connect/Disconnect Notifications";
 
 "Cursor & Orientation" = "Cursor & Orientation";
 
@@ -152,7 +156,11 @@
 
 "Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters." = "Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters.";
 
+"Show notifications when clients connect or disconnect." = "Show notifications when clients connect or disconnect.";
+
 "Shown to VNC clients" = "Shown to VNC clients";
+
+"Silence Notifications" = "Silence Notifications";
 
 "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max." = "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max.";
 

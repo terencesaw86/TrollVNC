@@ -8,20 +8,20 @@ ignoreEmptyStrings = false
 unstripped = false
 
 [update.code]
-codePath = "prefs/TrollVNCPrefs"
-localizablePath = "."
+codePath = "."
+localizablePath = "prefs"
 customFunction = "LocalizedStringResource"
-defaultToKeys = false
+defaultToKeys = true
 additive = true
 unstripped = false
 
 [update.normalize]
-path = "prefs/TrollVNCPrefs"
+path = "."
 sourceLocale = "zh-Hans"
 harmonizeWithSource = true
 sortByKeys = true
 
 [lint]
-path = "prefs/TrollVNCPrefs"
+path = "."
 duplicateKeys = true
 emptyValues = true

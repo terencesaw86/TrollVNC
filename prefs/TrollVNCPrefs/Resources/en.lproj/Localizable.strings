@@ -1,6 +1,12 @@
 /* No comment provided by engineer. */
 "%@ rows not loaded" = "%@ rows not loaded";
 
+/* trollvncserver */
+"A VNC client connected from %@." = "A VNC client connected from %@.";
+
+/* trollvncserver */
+"A VNC client disconnected from %@." = "A VNC client disconnected from %@.";
+
 /* No comment provided by engineer. */
 "Apply" = "Apply";
 
@@ -52,6 +58,7 @@
 /* No comment provided by engineer. */
 "Invalid Port" = "Invalid Port";
 
+/* No comment provided by engineer. */
 "Launching" = "Launching";
 
 /* No comment provided by engineer. */
@@ -74,6 +81,12 @@
 
 /* No comment provided by engineer. */
 "The content of text file “%@” is empty." = "The content of text file “%@” is empty.";
+
+/* trollvncserver */
+"There are %d active VNC clients." = "There are %d active VNC clients.";
+
+/* trollvncserver */
+"There is %d active VNC client." = "There is %d active VNC client.";
 
 /* No comment provided by engineer. */
 "TrollVNC" = "TrollVNC";

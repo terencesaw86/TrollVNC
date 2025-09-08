@@ -32,6 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
                            badgeCount:(NSInteger)badgeCount
                              userInfo:(NSDictionary *_Nullable)userInfo;
 
+- (void)revokeSingleNotification;
 - (void)revokeAllNotifications;
 
 @end

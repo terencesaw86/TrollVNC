@@ -6,6 +6,8 @@
 
 "0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery." = "0.1–1.0。缩小可降低带宽/CPU 占用；1.0 保持像素级清晰。请在画质、延迟与电量之间取得平衡。";
 
+"8 characters max." = "最多 8 个字符";
+
 "A repeater ID is required for the “UltraVNC Repeater” mode." = "“UltraVNC 中继器” 模式需要一个中继器 ID。";
 
 "Absolute path to static web client files. Leave empty to use built-in assets." = "静态 Web 客户端文件的绝对路径。留空使用内置资源。";
@@ -41,6 +43,8 @@
 "Configure basic server options." = "配置基础服务器选项。";
 
 "Configure the built-in web client server." = "配置内置 Web 客户端服务器。";
+
+"Connect/Disconnect Notifications" = "连接/断开连接通知";
 
 "Cursor & Orientation" = "光标与方向";
 
@@ -152,7 +156,11 @@
 
 "Set a VNC password for full control. Leaving empty disables authentication (not recommended). Classic VNC authentication uses only the first 8 characters." = "设置具有完全控制权限的 VNC 密码。留空将关闭认证（不推荐）。经典 VNC 认证方式仅使用前 8 个字符。";
 
+"Show notifications when clients connect or disconnect." = "当客户端连接或断开连接时显示通知。";
+
 "Shown to VNC clients" = "在客户端显示";
+
+"Silence Notifications" = "静默通知";
 
 "Single fps (e.g. 60), range min-max (e.g. 30-60), or full spec min:pref:max (e.g. 30:60:120). iOS 15+ uses range; iOS 14 uses preferred/max." = "单一帧率（如 60），范围 min-max（如 30-60），或完整规格 min:pref:max（如 30:60:120）。iOS 15+ 使用范围；iOS 14 使用偏好/最大。";
 

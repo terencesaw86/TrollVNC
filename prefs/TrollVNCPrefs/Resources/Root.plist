@@ -103,6 +103,8 @@
 			<string>FullPassword</string>
 			<key>label</key>
 			<string>Full-access Password</string>
+			<key>placeholder</key>
+			<string>8 characters max.</string>
 		</dict>
 
 		<!-- 4) View-only Password -->
@@ -123,7 +125,11 @@
 			<string>ViewOnlyPassword</string>
 			<key>label</key>
 			<string>View-only Password</string>
+			<key>placeholder</key>
+			<string>8 characters max.</string>
 		</dict>
+
+		<!-- 5) Clipboard Sync -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -167,7 +173,41 @@
 			<false/>
 		</dict>
 
-		<!-- 7) Keep-Alive (sec) -->
+		<!-- 7.1) User Notifications -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string></string>
+			<key>footerText</key>
+			<string>Show notifications when clients connect or disconnect.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>SingleNotifEnabled</string>
+			<key>label</key>
+			<string>Silence Notifications</string>
+			<key>default</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>ClientNotifsEnabled</string>
+			<key>label</key>
+			<string>Connect/Disconnect Notifications</string>
+			<key>default</key>
+			<true/>
+		</dict>
+
+		<!-- 7.2) Keep-Alive (sec) -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -219,7 +259,7 @@
 			<true/>
 		</dict>
 
-		<!-- 9) Frame Rate (F) -->
+		<!-- 9) Frame Rate -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -262,7 +302,7 @@
 			<key>label</key>
 			<string>Sync Interface Orientation</string>
 			<key>default</key>
-			<false/>
+			<true/>
 		</dict>
 
 		<!-- 11) Natural Scroll Direction -->
@@ -328,33 +368,7 @@
 			<string>Standard: Alt as Option, Super as Command. On macOS clients, Alt as Command (altcmd) is recommended.</string>
 		</dict>
 
-		<!-- 13) Wheel Step (px) -->
-		<dict>
-			<key>cell</key>
-			<string>PSGroupCell</string>
-			<key>label</key>
-			<string>Wheel Step (px)</string>
-			<key>footerText</key>
-			<string>Pixels per wheel tick sent to clients. Higher = faster scroll.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
-			<key>defaults</key>
-			<string>com.82flex.trollvnc</string>
-			<key>key</key>
-			<string>WheelStepPx</string>
-			<key>default</key>
-			<real>48.0</real>
-			<key>min</key>
-			<real>0.0</real>
-			<key>max</key>
-			<real>1000.0</real>
-			<key>showValue</key>
-			<true/>
-		</dict>
-
-		<!-- 14.1) Assistive Touch -->
+		<!-- 13) Assistive Touch -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -376,7 +390,7 @@
 			<false/>
 		</dict>
 
-		<!-- 14.2) Server-Side Cursor -->
+		<!-- 14) Server-Side Cursor -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
@@ -554,7 +568,33 @@
 			<false/>
 		</dict>
 
-		<!-- 21) Wheel Tuning (advanced) -->
+		<!-- 21.1) Wheel Step (px) -->
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Wheel Step (px)</string>
+			<key>footerText</key>
+			<string>Pixels per wheel tick sent to clients. Higher = faster scroll.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>defaults</key>
+			<string>com.82flex.trollvnc</string>
+			<key>key</key>
+			<string>WheelStepPx</string>
+			<key>default</key>
+			<real>48.0</real>
+			<key>min</key>
+			<real>0.0</real>
+			<key>max</key>
+			<real>1000.0</real>
+			<key>showValue</key>
+			<true/>
+		</dict>
+
+		<!-- 21.2) Wheel Tuning (advanced) -->
 		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
