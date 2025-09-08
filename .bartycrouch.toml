@@ -2,13 +2,13 @@
 tasks = ["interfaces", "code", "normalize"]
 
 [update.interfaces]
-path = "TrollVNCPrefs"
+path = "app"
 defaultToBase = false
 ignoreEmptyStrings = false
 unstripped = false
 
 [update.code]
-codePath = "TrollVNCPrefs"
+codePath = "prefs/TrollVNCPrefs"
 localizablePath = "."
 customFunction = "LocalizedStringResource"
 defaultToKeys = false
@@ -16,12 +16,12 @@ additive = true
 unstripped = false
 
 [update.normalize]
-path = "TrollVNCPrefs"
+path = "prefs/TrollVNCPrefs"
 sourceLocale = "zh-Hans"
 harmonizeWithSource = true
 sortByKeys = true
 
 [lint]
-path = "TrollVNCPrefs"
+path = "prefs/TrollVNCPrefs"
 duplicateKeys = true
 emptyValues = true
