@@ -10,9 +10,10 @@ TrollVNC is a VNC server for iOS devices, allowing remote access and control of 
 
 ## Usage
 
-1. Download “TrollVNC” from Releases and install it on your iOS device.
-2. Configure the VNC server settings from “Settings” → “TrollVNC” or the standalone “TrollVNC” app as needed.
-3. Or, run the following command on iOS device or simulator:
+1. Fork this repo and run GitHub workflow “Build TrollVNC”.
+2. Download “TrollVNC” from Releases and install it on your iOS device.
+3. Configure the VNC server settings from “Settings” → “TrollVNC” or the standalone “TrollVNC” app as needed.
+4. Or, run the following command on iOS device or simulator:
 
 ```sh
 trollvncserver -p 5901 -n "My iPhone" [options]
