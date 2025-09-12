@@ -47,6 +47,10 @@
 	</array>
 	<key>com.apple.developer.team-identifier</key>
 	<string>GXZ23M5TP2</string>
+	<key>com.apple.developer.usernotifications.critical-alerts</key>
+	<true/>
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 	<key>com.apple.frontboard.launchapplications</key>
 	<true/>
 	<key>com.apple.frontboard.shutdown</key>
@@ -293,6 +297,12 @@
 	<true/>
 	<key>com.apple.private.system-keychain</key>
 	<true/>
+	<key>com.apple.private.usernotifications.bundle-identifiers</key>
+	<true/>
+	<key>com.apple.private.usernotifications.settings</key>
+	<array>
+		<string>critical-alerts</string>
+	</array>
 	<key>com.apple.rootless.critical</key>
 	<true/>
 	<key>com.apple.rootless.datavault.metadata</key>
@@ -498,6 +508,14 @@
 	<key>com.apple.springboard.opensensitiveurl</key>
 	<true/>
 	<key>com.apple.springboard.openurlswhenlocked</key>
+	<true/>
+	<key>com.apple.usernotification.notificationregistrarproxy</key>
+	<true/>
+	<key>com.apple.usernotification.notificationschedulerproxy</key>
+	<true/>
+	<key>com.apple.usernotification.proxy</key>
+	<true/>
+	<key>com.apple.usernotifications.legacy-extension</key>
 	<true/>
 	<key>file-read-data</key>
 	<true/>

@@ -15,12 +15,5 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
-
-NS_ASSUME_NONNULL_BEGIN
-
-@interface TVNCRootListController : PSListController
-
-@end
-
-NS_ASSUME_NONNULL_END
+static const int kTvAlivePort = 46751;
+static const int kTvDefaultCtlPort = 46752;

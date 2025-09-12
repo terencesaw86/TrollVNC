@@ -31,6 +31,7 @@
 #import <sys/socket.h>
 #import <unistd.h>
 
+#import "Control.h"
 #import "Logging.h"
 #import "TRWatchDog.h"
 #import "libproc.h"
@@ -111,11 +112,7 @@ static void openLocalDummyService(uint16_t port) {
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) != 1) {
-        fprintf(stderr, "[dummy-listener] inet_pton failed\n");
-        close(fd);
-        return;
-    }
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         fprintf(stderr, "[dummy-listener] bind(127.0.0.1:%u) failed: %s\n", (unsigned)port, strerror(errno));
@@ -319,7 +316,7 @@ int main(int argc, const char *argv[]) {
 
     // Open a passive local probe port for clients to detect availability.
     // IPv4 127.0.0.1:46751, no response; accept and close.
-    openLocalDummyService(46751);
+    openLocalDummyService(kTvAlivePort);
 
     CFRunLoopRun();
     @autoreleasepool {

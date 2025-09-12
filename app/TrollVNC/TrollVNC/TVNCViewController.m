@@ -8,6 +8,8 @@
 #import "TVNCViewController.h"
 #import "TVNCServiceCoordinator.h"
 
+#import <UserNotifications/UserNotifications.h>
+
 @interface TVNCViewController ()
 
 @property(nonatomic, weak) UIAlertController *alertController;
@@ -38,6 +40,16 @@
     if (_isAlertPresented) {
         return;
     }
+
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
+        if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
+            [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge)
+                                  completionHandler:^(BOOL granted, NSError * _Nullable error) {
+                // No UI changes needed here; could log if desired.
+            }];
+        }
+    }];
 
     if ([[TVNCServiceCoordinator sharedCoordinator] isServiceRunning]) {
         _isAlertPresented = YES;

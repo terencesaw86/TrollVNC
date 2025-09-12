@@ -15,11 +15,11 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
+#import <Preferences/PSListItemsController.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface TVNCRootListController : PSListController
+@interface TVNCListItemsController : PSListItemsController
 
 @end
 

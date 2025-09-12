@@ -15,11 +15,23 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
+#import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface TVNCRootListController : PSListController
+@interface TVNCClientCell : UITableViewCell
+
+@property(nonatomic, strong) NSBundle *bundle;
+@property(nonatomic, strong, readonly) UILabel *idLabel;       // 8-char ID (bold, monospaced)
+@property(nonatomic, strong, readonly) UILabel *hostLabel;     // host/IP
+@property(nonatomic, strong, readonly) UILabel *subtitleLabel; // relative connection time
+@property(nonatomic, strong, readonly) UIImageView *badgeView; // view-only badge
+
+- (void)configureWithId:(NSString *)cid
+                   host:(NSString *)host
+               viewOnly:(BOOL)viewOnly
+               subtitle:(NSString *)subtitle
+           primaryColor:(nullable UIColor *)primaryColor;
 
 @end
 

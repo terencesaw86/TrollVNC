@@ -22,21 +22,28 @@
 #import <Accelerate/Accelerate.h>
 #import <Foundation/Foundation.h>
 
+#import <arpa/inet.h>
 #import <atomic>
 #import <climits>
 #import <cstdio>
 #import <cstdlib>
 #import <cstring>
+#import <errno.h>
+#import <fcntl.h>
 #import <mach-o/dyld.h>
+#import <netinet/in.h>
 #import <pthread.h>
 #import <rfb/keysym.h>
 #import <rfb/rfb.h>
 #import <string>
+#import <sys/socket.h>
 #import <sys/sysctl.h>
 #import <unistd.h>
 #import <vector>
 
+#import "BulletinManager.h"
 #import "ClipboardManager.h"
+#import "Control.h"
 #import "FBSOrientationObserver.h"
 #import "IOKitSPI.h"
 #import "Logging.h"
@@ -53,10 +60,12 @@
 
 static BOOL gEnabled = YES;
 static int gPort = 5901;
+static int gTvCtlPort = 0; // port for control connections (0 = disabled)
 static NSString *gDesktopName = @"TrollVNC";
 static BOOL gViewOnly = NO;
 static double gKeepAliveSec = 0.0; // 15..86400
 static BOOL gClipboardEnabled = YES;
+static BOOL gIsDaemonMode = NO; // set when launched with -daemon
 
 static double gScale = 1.0; // 0 < scale <= 1.0, 1.0 = no scaling
 // Preferred frame rate range (0 = unspecified)
@@ -89,7 +98,7 @@ static int gModMapScheme = 0;
 static BOOL gAutoAssistEnabled = NO;
 static BOOL gCursorEnabled = NO;
 static BOOL gKeyEventLogging = NO;
-static BOOL gOrientationSyncEnabled = NO;
+static BOOL gOrientationSyncEnabled = YES;
 
 // Classic VNC authentication
 static char **gAuthPasswdVec = NULL;        // owns the vector
@@ -114,6 +123,10 @@ static char *gRepeaterHost = NULL;
 static int gRepeaterPort = 5500;
 static int gRepeaterId = 12345679;
 
+// User notifications
+static BOOL gUserClientNotifsEnabled = YES;
+static BOOL gUserSingleNotifsEnabled = YES;
+
 NS_INLINE BOOL isRepeaterEnabled(void) {
     return gRepeaterMode > 0 && gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
 }
@@ -133,18 +146,18 @@ NS_INLINE BOOL isRepeaterEnabled(void) {
 
 static void printUsageAndExit(const char *prog) {
     // Compact, grouped usage for quick reference. See README for detailed explanations.
-    static const char *cPackageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
-    static const char *cPackageVersion = MYSTRINGIFY(PACKAGE_VERSION);
+    static const char *sPackageScheme = MYSTRINGIFY(THEOS_PACKAGE_SCHEME);
+    static const char *sPackageVersion = MYSTRINGIFY(PACKAGE_VERSION);
 
-    fprintf(stderr, "TrollVNC (%s) v%s\n", cPackageScheme, cPackageVersion);
+    fprintf(stderr, "TrollVNC (%s) v%s\n", sPackageScheme, sPackageVersion);
     fprintf(stderr, "Usage: %s [-p port] [-n name] [options]\n\n", prog);
 
     fprintf(stderr, "Basic:\n");
     fprintf(stderr, "  -p port    VNC TCP port (default: %d)\n", gPort);
+    fprintf(stderr, "  -c port    Client management TCP port (0=off, default: 0)\n");
     fprintf(stderr, "  -n name    Desktop name (default: %s)\n", [gDesktopName UTF8String]);
     fprintf(stderr, "  -v         View-only (ignore input)\n");
-    fprintf(stderr, "  -A sec     Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n");
-    fprintf(stderr, "  -C on|off  Clipboard sync (default: on)\n\n");
+    fprintf(stderr, "  -A sec     Keep-alive interval to prevent sleep; only when clients > 0 (15..86400, 0=off)\n\n");
 
     fprintf(stderr, "Display/Perf:\n");
     fprintf(stderr, "  -s scale   Output scale 0<s<=1 (default: %.2f)\n", gScale);
@@ -167,15 +180,6 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "  -M scheme  Modifier mapping: std|altcmd (default: std)\n");
     fprintf(stderr, "  -K         Log keyboard events to stderr\n\n");
 
-    fprintf(stderr, "Accessibility:\n");
-    fprintf(stderr, "  -E on|off  Enable AssistiveTouch auto-activation (default: off)\n\n");
-
-    fprintf(stderr, "Cursor:\n");
-    fprintf(stderr, "  -U on|off  Enable server-side cursor X (default: off)\n\n");
-
-    fprintf(stderr, "Rotate/Orientation:\n");
-    fprintf(stderr, "  -O on|off  Observe iOS interface orientation and sync (default: off)\n\n");
-
     fprintf(stderr, "HTTP/WebSockets:\n");
     fprintf(stderr, "  -H port    Enable built-in HTTP server on port (0=off, default: 0)\n");
     fprintf(stderr, "  -D path    Absolute path for HTTP document root\n");
@@ -185,8 +189,18 @@ static void printUsageAndExit(const char *prog) {
     fprintf(stderr, "Bonjour/mDNS:\n");
     fprintf(stderr, "  -B on|off  Advertise on local network via Bonjour (_rfb._tcp, _http._tcp) (default: on)\n\n");
 
-    fprintf(stderr, "Legacy features:\n");
-    fprintf(stderr, "  -T on|off  Enable TightVNC 1.x file transfer extension (default: off)\n\n");
+    fprintf(stderr, "Accessibility:\n");
+    fprintf(stderr, "  -O on|off  Observe iOS interface orientation and sync (default: on)\n");
+    fprintf(stderr, "  -E on|off  Enable AssistiveTouch auto-activation (default: off)\n");
+    fprintf(stderr, "  -U on|off  Enable server-side cursor X (default: off)\n\n");
+
+    fprintf(stderr, "Notifications:\n");
+    fprintf(stderr, "  -i on|off  Single notification when first client connects (default: on)\n");
+    fprintf(stderr, "  -I on|off  User notifications for client connect/disconnect (default: on)\n\n");
+
+    fprintf(stderr, "Extensions:\n");
+    fprintf(stderr, "  -C on|off  Clipboard sync (default: on)\n");
+    fprintf(stderr, "  -T on|off  File transfer (default: off)\n\n");
 
 #if DEBUG
     fprintf(stderr, "Logging:\n");
@@ -473,6 +487,12 @@ static void parseDaemonOptions(void) {
     NSNumber *fileN = [prefs objectForKey:@"FileTransferEnabled"];
     if ([fileN isKindOfClass:[NSNumber class]])
         gFileTransferEnabled = fileN.boolValue;
+    NSNumber *singleNotifN = [prefs objectForKey:@"SingleNotifEnabled"];
+    if ([singleNotifN isKindOfClass:[NSNumber class]])
+        gUserSingleNotifsEnabled = singleNotifN.boolValue;
+    NSNumber *clientNotifsN = [prefs objectForKey:@"ClientNotifsEnabled"];
+    if ([clientNotifsN isKindOfClass:[NSNumber class]])
+        gUserClientNotifsEnabled = clientNotifsN.boolValue;
 
     // Modifier mapping
     NSString *modMap = [prefs objectForKey:@"ModifierMap"];
@@ -746,6 +766,8 @@ static void parseCLI(int argc, const char *argv[]) {
         }
     }
     if (isDaemon) {
+        gIsDaemonMode = YES;
+        gTvCtlPort = kTvDefaultCtlPort;
         parseDaemonOptions();
         return;
     }
@@ -912,11 +934,14 @@ static void parseCLI(int argc, const char *argv[]) {
     int __argc2 = (int)__filtered.size();
     std::vector<char *> __argv2;
     __argv2.reserve(__filtered.size());
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++11-extensions"
     for (const char *s : __filtered)
         __argv2.push_back(const_cast<char *>(s));
+#pragma clang diagnostic pop
 
     int opt;
-    const char *optstr = "p:n:vA:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:H:D:e:k:B:T:Vh";
+    const char *optstr = "p:n:vA:c:C:s:F:d:Q:t:P:R:aW:w:NM:KU:O:I:i:H:D:e:k:B:T:Vh";
     optind = 1;
     while ((opt = getopt(__argc2, __argv2.data(), optstr)) != -1) {
         switch (opt) {
@@ -948,6 +973,16 @@ static void parseCLI(int argc, const char *argv[]) {
             }
             gKeepAliveSec = sec;
             TVLog(@"CLI: KeepAlive interval set to %.3f sec (-A)", gKeepAliveSec);
+            break;
+        }
+        case 'c': {
+            long port = strtol(optarg, NULL, 10);
+            if (port <= 0 || port > 65535) {
+                TVPrintError("Invalid port: %s", optarg);
+                exit(EXIT_FAILURE);
+            }
+            gTvCtlPort = (int)port;
+            TVLog(@"CLI: Mgmt port set to %d", gTvCtlPort);
             break;
         }
         case 'C': {
@@ -1180,6 +1215,34 @@ static void parseCLI(int argc, const char *argv[]) {
                 TVLog(@"CLI: Orientation observer disabled (-O %s)", [@(val) UTF8String]);
             } else {
                 TVPrintError("Invalid -O value: %s (expected on|off|1|0|true|false)", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        case 'I': {
+            const char *val = optarg ? optarg : "off";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gUserClientNotifsEnabled = YES;
+                TVLog(@"CLI: Client user notifications enabled (-I %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gUserClientNotifsEnabled = NO;
+                TVLog(@"CLI: Client user notifications disabled (-I %s)", [@(val) UTF8String]);
+            } else {
+                TVPrintError("Invalid -I value: %s (expected on|off|1|0|true|false)", val);
+                exit(EXIT_FAILURE);
+            }
+            break;
+        }
+        case 'i': {
+            const char *val = optarg ? optarg : "off";
+            if (strcasecmp(val, "on") == 0 || strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0) {
+                gUserSingleNotifsEnabled = YES;
+                TVLog(@"CLI: Single user notifications enabled (-i %s)", [@(val) UTF8String]);
+            } else if (strcasecmp(val, "off") == 0 || strcmp(val, "0") == 0 || strcasecmp(val, "false") == 0) {
+                gUserSingleNotifsEnabled = NO;
+                TVLog(@"CLI: Single user notifications disabled (-i %s)", [@(val) UTF8String]);
+            } else {
+                TVPrintError("Invalid -i value: %s (expected on|off|1|0|true|false)", val);
                 exit(EXIT_FAILURE);
             }
             break;
@@ -2844,12 +2907,15 @@ NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
 - (void)_updateTouchPoints:(CGPoint *)points count:(NSUInteger)count;
 @end
 
+#define CLIENT_ID_LEN 8
+
 // Per-client state stored in cl->clientData to avoid cross-client conflicts.
 typedef struct {
-    int lastButtonMask;       // last received pointer button mask from this client
-    double wheelAccumPx;      // accumulated scroll in pixels (+down, -up) for this client
-    BOOL wheelFlushScheduled; // whether a flush is pending for this client
-    BOOL isRepeaterClient;    // whether this client is a repeater
+    int lastButtonMask;                // last received pointer button mask from this client
+    double wheelAccumPx;               // accumulated scroll in pixels (+down, -up) for this client
+    BOOL wheelFlushScheduled;          // whether a flush is pending for this client
+    BOOL isRepeaterClient;             // whether this client is a repeater
+    char clientId8[CLIENT_ID_LEN + 1]; // cached 8-char client id (NUL-terminated)
 } TVClientState;
 
 NS_INLINE TVClientState *tvGetClientState(rfbClientPtr cl) { return cl ? (TVClientState *)cl->clientData : NULL; }
@@ -3031,8 +3097,8 @@ static void ptrAddEvent(int buttonMask, int x, int y, rfbClientPtr cl) {
 static NSNetService *gBonjourService = nil;     // VNC service (_rfb._tcp.)
 static NSNetService *gBonjourHttpService = nil; // Optional HTTP service (_http._tcp.)
 
-// Compute a short, per-boot stable hash suffix (6 hex chars) from system uptime
-static NSString *tvBootHash6(void) {
+// Compute a short, per-boot stable hash suffix (8 hex chars) from boot time
+static NSString *tvBootHash8(void) {
     static NSString *suf = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -3063,20 +3129,20 @@ static NSString *tvBootHash6(void) {
                 h *= p;
             }
         }
-        unsigned int shortHash = (unsigned int)(h & 0xFFFFFFu); // 24-bit
-        suf = [NSString stringWithFormat:@"%06x", shortHash];
+        unsigned int shortHash = (unsigned int)(h & 0xFFFFFFFFu); // 32-bit
+        suf = [NSString stringWithFormat:@"%08x", shortHash];
     });
     return suf;
 }
 
-// Compose Bonjour service name as gDesktopName + 6-char boot hash, clamped to 63 bytes
+// Compose Bonjour service name as gDesktopName + 8-char boot hash, clamped to 63 bytes
 static NSString *tvBonjourServiceName(NSString *baseName) {
     NSString *name = baseName ?: @"TrollVNC";
-    NSString *suffix = tvBootHash6();
+    NSString *suffix = tvBootHash8();
     // mDNS single-label length limit is 63 bytes (UTF-8). We reserve suffix bytes.
     const NSUInteger maxBytes = 63;
     NSData *data = [name dataUsingEncoding:NSUTF8StringEncoding];
-    // Reserve bytes for "-" + 6-char suffix (ASCII)
+    // Reserve bytes for "-" + 8-char suffix (ASCII)
     NSUInteger reserve = suffix.length + 1; // hyphen + suffix
     if (reserve >= maxBytes) {
         // Pathological, but keep at least the suffix
@@ -3205,9 +3271,583 @@ static void startBonjour(void) {
     }
 }
 
-#pragma mark - Client Handlers
+#pragma mark - Control Socket
 
-static int gClientCount = 0; // Number of connected clients
+static int gTvCtlListenFd = -1;
+static dispatch_source_t gTvCtlAcceptSource = NULL;
+
+// Number of connected clients
+static int gClientCount = 0;
+
+// Subscribers for control change notifications (store as NSNumber wrapping fd)
+static NSMutableSet<NSNumber *> *gTvCtlSubscribers = nil;
+static dispatch_source_t gTvCtlDebounceTimer = NULL; // debounce timer for change notifications
+
+// Global client states, populated via newClientHook/clientGoneHook.
+// Key: 8-char client id; Value: immutable snapshot dictionary.
+static NSMutableDictionary<NSString *, NSDictionary<NSString *, id> *> *gClientStates = nil;
+
+// Generate a stable-length 8-char id for a given socket fd (deterministic per fd).
+static NSString *tvGenerateClientId8(int fd) {
+    static uint64_t sSeed = 0;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // Mix boot hash and time for seed
+        NSString *boot = tvBonjourServiceName(@""); // 8-char suffix only when baseName is empty
+        uint64_t h = 1469598103934665603ULL;
+        for (NSUInteger i = 0; i < boot.length; i++) {
+            unichar c = [boot characterAtIndex:i];
+            h ^= (uint8_t)(c & 0xFF);
+            h *= 1099511628211ULL;
+        }
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        h ^= (uint64_t)tv.tv_sec;
+        h *= 1099511628211ULL;
+        h ^= (uint64_t)tv.tv_usec;
+        h *= 1099511628211ULL;
+        sSeed = h;
+    });
+    uint64_t x = sSeed ^ (uint64_t)(uint32_t)fd;
+    // xorshift mix to spread bits
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    uint32_t v = (uint32_t)(x & 0xFFFFFFFFu);
+    return [NSString stringWithFormat:@"%08x", v];
+}
+
+static int tvSetNonBlocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+        return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void tvStopControlSocket(void) {
+    if (gTvCtlAcceptSource) {
+        dispatch_source_cancel(gTvCtlAcceptSource);
+        gTvCtlAcceptSource = NULL;
+    }
+
+    if (gTvCtlDebounceTimer) {
+        dispatch_source_cancel(gTvCtlDebounceTimer);
+        gTvCtlDebounceTimer = NULL;
+    }
+
+    // Close all subscriber sockets and clear set
+    if (gTvCtlSubscribers) {
+        @synchronized(gTvCtlSubscribers) {
+            for (NSNumber *num in gTvCtlSubscribers) {
+                int fd = [num intValue];
+                if (fd >= 0)
+                    close(fd);
+            }
+            [gTvCtlSubscribers removeAllObjects];
+        }
+    }
+
+    if (gTvCtlListenFd >= 0) {
+        close(gTvCtlListenFd);
+        gTvCtlListenFd = -1;
+    }
+}
+
+static void tvStartControlSocketIfNeeded(void) {
+    if (!gTvCtlPort || isRepeaterEnabled())
+        return;
+    if (gTvCtlAcceptSource)
+        return; // already started
+
+    // Create listening socket bound to 127.0.0.1:gTvCtlPort
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) {
+        TVPrintError("Control socket: socket() failed: %s", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+#ifdef SO_NOSIGPIPE
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)gTvCtlPort);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
+
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        TVPrintError("Control socket: bind 127.0.0.1:%d failed: %s", gTvCtlPort, strerror(errno));
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(fd, 8) < 0) {
+        TVPrintError("Control socket: listen() failed: %s", strerror(errno));
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if (tvSetNonBlocking(fd) < 0) {
+        TVPrintError("Control socket: failed to set O_NONBLOCK: %s", strerror(errno));
+        // Continue anyway
+    }
+
+    gTvCtlListenFd = fd;
+
+    static dispatch_queue_t sTVCtlQueue = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sTVCtlQueue = dispatch_queue_create("com.82flex.trollvnc.control", DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL);
+    });
+
+    gTvCtlAcceptSource = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, (uintptr_t)fd, 0, sTVCtlQueue);
+    // Helper forward declaration
+    void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr);
+    dispatch_source_set_event_handler(gTvCtlAcceptSource, ^{
+        for (;;) {
+            struct sockaddr_in caddr;
+            socklen_t clen = sizeof(caddr);
+            int cfd = accept(fd, (struct sockaddr *)&caddr, &clen);
+            if (cfd < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                    break;
+                TVLog(@"Control socket: accept() error: %s", strerror(errno));
+                break;
+            }
+            tvCtlHandleConnection(cfd, caddr);
+        }
+    });
+
+    dispatch_source_set_cancel_handler(gTvCtlAcceptSource, ^{
+        if (gTvCtlListenFd >= 0) {
+            close(gTvCtlListenFd);
+            gTvCtlListenFd = -1;
+        }
+    });
+
+    dispatch_resume(gTvCtlAcceptSource);
+    TVLog(@"Control socket listening on 127.0.0.1:%d (daemon=%@, repeater=%@)", gTvCtlPort,
+          gIsDaemonMode ? @"YES" : @"NO", isRepeaterEnabled() ? @"YES" : @"NO");
+}
+
+// ---------- Control Protocol Implementation ----------
+
+static void tvCtlWriteAll(int fd, const void *buf, size_t len) {
+    const uint8_t *p = (const uint8_t *)buf;
+    size_t left = len;
+    while (left > 0) {
+        ssize_t n = send(fd, p, left, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        if (n == 0)
+            break;
+        p += (size_t)n;
+        left -= (size_t)n;
+    }
+}
+
+// --- Subscription helpers ---
+static void tvCtlAddSubscriber(int fd) {
+    if (fd < 0)
+        return;
+    (void)tvSetNonBlocking(fd);
+#ifdef SO_NOSIGPIPE
+    int yes = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof(yes));
+#endif
+    if (!gTvCtlSubscribers)
+        gTvCtlSubscribers = [[NSMutableSet alloc] init];
+    @synchronized(gTvCtlSubscribers) {
+        [gTvCtlSubscribers addObject:@(fd)];
+    }
+    TVLog(@"Control socket: subscribed fd=%d (total=%lu)", fd, (unsigned long)gTvCtlSubscribers.count);
+}
+
+static void tvCtlRemoveSubscriber(int fd, BOOL closeFd) {
+    if (!gTvCtlSubscribers)
+        return;
+    @synchronized(gTvCtlSubscribers) {
+        [gTvCtlSubscribers removeObject:@(fd)];
+    }
+    if (closeFd && fd >= 0)
+        close(fd);
+    TVLog(@"Control socket: unsubscribed fd=%d", fd);
+}
+
+static void tvCtlBroadcastChanged(void) {
+    if (!gTvCtlSubscribers || gTvCtlSubscribers.count == 0)
+        return;
+    const char *msg = "changed\n";
+    size_t len = strlen(msg);
+    NSMutableArray<NSNumber *> *dead = [NSMutableArray array];
+    @synchronized(gTvCtlSubscribers) {
+        for (NSNumber *num in gTvCtlSubscribers) {
+            int fd = [num intValue];
+            ssize_t n = send(fd, msg, len, 0);
+            if (n != (ssize_t)len) {
+                [dead addObject:num];
+            }
+        }
+        if (dead.count) {
+            for (NSNumber *num in dead) {
+                int fd = [num intValue];
+                (void)close(fd);
+                [gTvCtlSubscribers removeObject:num];
+            }
+        }
+    }
+}
+
+static void tvCtlScheduleBroadcastChanged(void) {
+    // Coalesce rapid changes to ~150ms
+    if (gTvCtlDebounceTimer) {
+        dispatch_source_cancel(gTvCtlDebounceTimer);
+        gTvCtlDebounceTimer = NULL;
+    }
+
+    dispatch_queue_t q = dispatch_get_main_queue();
+    dispatch_source_t t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
+    gTvCtlDebounceTimer = t;
+
+    uint64_t delayNs = (uint64_t)(150 * NSEC_PER_MSEC);
+    dispatch_source_set_timer(t, dispatch_time(DISPATCH_TIME_NOW, delayNs), DISPATCH_TIME_FOREVER, delayNs / 4);
+    dispatch_source_set_event_handler(t, ^{
+        tvCtlBroadcastChanged();
+        if (gTvCtlDebounceTimer) {
+            dispatch_source_cancel(gTvCtlDebounceTimer);
+            gTvCtlDebounceTimer = NULL;
+        }
+    });
+
+    dispatch_resume(t);
+}
+
+static NSArray *tvSnapshotClients(void) {
+    // Build JSON-safe snapshot
+    NSMutableArray *arr = [NSMutableArray array];
+    if (!gClientStates)
+        return arr;
+
+    NSDate *now = [NSDate date];
+    // No dedicated lock object earlier; guard with @synchronized on dictionary itself.
+    @synchronized(gClientStates) {
+        [gClientStates enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSDictionary *info, BOOL *stop) {
+            (void)stop;
+            NSString *cid = info[@"id"] ?: key;
+            NSString *host = info[@"host"] ?: @"";
+            NSNumber *viewOnly = info[@"viewOnly"] ?: @(NO);
+            NSDate *connectAt = info[@"connectAt"];
+
+            double t0 = connectAt ? [connectAt timeIntervalSince1970] : [now timeIntervalSince1970];
+            double dur = [[NSNumber numberWithDouble:([now timeIntervalSince1970] - t0)] doubleValue];
+            [arr addObject:@{
+                @"id" : cid,
+                @"host" : host,
+                @"viewOnly" : viewOnly,
+                @"connectedAt" : @(t0),
+                @"durationSec" : @(dur)
+            }];
+        }];
+    }
+
+    return arr;
+}
+
+static NSData *tvCtlTSVForList(void) {
+    NSArray *clients = tvSnapshotClients();
+    NSMutableString *out = [NSMutableString string];
+
+    // Header
+    [out appendString:@"id\thost\tviewOnly\tconnectedAt\tdurationSec\n"];
+    for (NSDictionary *c in clients) {
+        NSString *cid = c[@"id"] ?: @"";
+        NSString *host = c[@"host"] ?: @"";
+        BOOL vo = [c[@"viewOnly"] boolValue];
+        double t0 = [c[@"connectedAt"] doubleValue];
+        double dur = [c[@"durationSec"] doubleValue];
+        [out appendFormat:@"%@\t%@\t%@\t%.0f\t%.3f\n", cid, host, vo ? @"1" : @"0", t0, dur];
+    }
+
+    return [out dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+static BOOL tvDisconnectClientById(NSString *cid) {
+    if (!cid || cid.length == 0 || !gScreen)
+        return NO;
+
+    BOOL found = NO;
+    rfbClientPtr cl = NULL;
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    while ((cl = rfbClientIteratorNext(it))) {
+        NSString *kid = tvGenerateClientId8(cl->sock);
+        if ([kid isEqualToString:cid]) {
+            found = YES;
+            rfbCloseClient(cl);
+            break;
+        }
+    }
+
+    rfbReleaseClientIterator(it);
+    return found;
+}
+
+static NSData *tvCtlTextForKick(NSString *cid) {
+    BOOL ok = tvDisconnectClientById(cid);
+    const char *raw = ok ? "OK\n" : "NOT_FOUND\n";
+    return [NSData dataWithBytes:raw length:strlen(raw)];
+}
+
+static BOOL tvDisconnectAllClients(void) {
+    if (!gScreen)
+        return NO;
+
+    rfbClientPtr cl = NULL;
+    rfbClientIteratorPtr it = rfbGetClientIterator(gScreen);
+    while ((cl = rfbClientIteratorNext(it))) {
+        rfbCloseClient(cl);
+    }
+
+    rfbReleaseClientIterator(it);
+    return YES;
+}
+
+void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
+    // Log peer and set short timeouts
+    char ipbuf[INET_ADDRSTRLEN] = {0};
+    const char *ip = inet_ntop(AF_INET, &caddr.sin_addr, ipbuf, sizeof(ipbuf));
+    TVLog(@"Control socket: connection from %s:%d (fd=%d)", ip ? ip : "?", ntohs(caddr.sin_port), cfd);
+
+    struct timeval tv;
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+    // Read a single line command
+    uint8_t buf[1024];
+    size_t off = 0;
+    for (;;) {
+        ssize_t n = recv(cfd, buf + off, sizeof(buf) - off, 0);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            break;
+        }
+        if (n == 0)
+            break;
+        off += (size_t)n;
+        if (off >= sizeof(buf))
+            break;
+        if (memchr(buf, '\n', off))
+            break;
+    }
+
+    // Parse command
+    NSString *cmd = [[NSString alloc] initWithBytes:buf length:off encoding:NSUTF8StringEncoding];
+    if (!cmd)
+        cmd = @"";
+    cmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    NSData *resp = nil;
+    BOOL keepOpen = NO;
+    if (cmd.length == 0) {
+        resp = [@"ERR Empty\n" dataUsingEncoding:NSUTF8StringEncoding];
+    } else if ([cmd isEqualToString:@"count"]) {
+        NSString *s = [NSString stringWithFormat:@"%d\n", gClientCount];
+        resp = [s dataUsingEncoding:NSUTF8StringEncoding];
+    } else if ([cmd isEqualToString:@"list"]) {
+        resp = tvCtlTSVForList();
+    } else if ([cmd isEqualToString:@"subscribe on"]) {
+        tvCtlAddSubscriber(cfd);
+        const char *ok = "OK\n";
+        resp = [NSData dataWithBytes:ok length:strlen(ok)];
+        keepOpen = YES; // keep connection open for pushes
+    } else if ([cmd isEqualToString:@"subscribe off"]) {
+        tvCtlRemoveSubscriber(cfd, NO);
+        const char *ok = "OK\n";
+        resp = [NSData dataWithBytes:ok length:strlen(ok)];
+    } else if ([cmd hasPrefix:@"disconnect "] || [cmd hasPrefix:@"kick "]) {
+        NSArray *parts = [cmd componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        NSString *cid = parts.count >= 2 ? parts[1] : @"";
+        if ([cid isEqualToString:@"ALL"]) {
+            tvDisconnectAllClients();
+            resp = [@"OK\n" dataUsingEncoding:NSUTF8StringEncoding];
+        } else if (cid.length != 8) {
+            resp = [@"ERR InvalidID\n" dataUsingEncoding:NSUTF8StringEncoding];
+        } else {
+            resp = tvCtlTextForKick(cid);
+        }
+    } else {
+        resp = [@"ERR Unknown\n" dataUsingEncoding:NSUTF8StringEncoding];
+    }
+
+    if (resp)
+        tvCtlWriteAll(cfd, resp.bytes, resp.length);
+
+    if (keepOpen) {
+        // Do not close; subscriber lifecycle managed elsewhere
+        return;
+    }
+
+    close(cfd);
+}
+
+#pragma mark - User Notifications
+
+static NSString *tvExecutablePath(void) {
+    static NSString *sPath = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // Resolve executable path
+        uint32_t sz = 0;
+        _NSGetExecutablePath(NULL, &sz); // query size
+        char *exeBuf = (char *)malloc(sz > 0 ? sz : PATH_MAX);
+        if (!exeBuf)
+            return;
+        if (_NSGetExecutablePath(exeBuf, &sz) != 0) {
+            // Fallback: leave exeBuf as-is
+        }
+
+        // Canonicalize
+        char realBuf[PATH_MAX];
+        const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
+        NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
+        free(exeBuf);
+
+        sPath = exe ?: [[NSProcessInfo processInfo] arguments][0];
+    });
+    return sPath;
+}
+
+static NSBundle *tvResourcesBundle(void) {
+    static NSBundle *sBundle = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+#if THEBOOTSTRAP
+        NSString *exe = tvExecutablePath();
+        NSString *dir = [exe stringByDeletingLastPathComponent];
+        NSBundle *mainBundle = [NSBundle bundleWithPath:dir];
+        if (!mainBundle)
+            return;
+
+        NSString *resPath = [mainBundle pathForResource:@"TrollVNCPrefs" ofType:@"bundle"];
+        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
+        if (!resBundle)
+            return;
+
+        sBundle = resBundle;
+#else
+        NSString *exe = tvExecutablePath();
+        NSString *exeDir = [exe stringByDeletingLastPathComponent];
+        NSString *resRel = @"../../Library/PreferenceBundles/TrollVNCPrefs.bundle";
+        NSString *resPath = [[exeDir stringByAppendingPathComponent:resRel] stringByStandardizingPath];
+        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
+        if (!resBundle)
+            return;
+
+        sBundle = resBundle;
+#endif
+
+        NSArray<NSString *> *languages =
+            [[NSUserDefaults standardUserDefaults] objectForKey:@"AppleLanguages"] ?: @"en";
+
+        NSString *localizablePath = nil;
+        for (NSString *localization in [NSBundle preferredLocalizationsFromArray:[sBundle localizations]
+                                                                  forPreferences:languages]) {
+            localizablePath = [sBundle pathForResource:@"Localizable"
+                                                ofType:@"strings"
+                                           inDirectory:nil
+                                       forLocalization:localization];
+            if (localizablePath && localizablePath.length > 0)
+                break;
+        }
+
+        NSString *lprojPath = [localizablePath stringByDeletingLastPathComponent];
+        if (lprojPath && lprojPath.length > 0) {
+            sBundle = [NSBundle bundleWithPath:lprojPath];
+        }
+    });
+    return sBundle;
+}
+
+static void tvPublishUserSingleNotifs(void) {
+    if (!gUserSingleNotifsEnabled)
+        return;
+
+    BulletinManager *mgr = [BulletinManager sharedManager];
+
+    if (gClientCount == 0) {
+        dispatch_async(dispatch_get_main_queue(), ^(void) {
+            [mgr revokeSingleNotification];
+        });
+        return;
+    }
+
+    NSDictionary *userInfo = @{
+        @"clientCount" : @(gClientCount),
+    };
+
+    NSString *localizedContentTmpl;
+    localizedContentTmpl = (gClientCount == 1)
+                               ? NSLocalizedStringFromTableInBundle(@"There is %d active VNC client.", @"Localizable",
+                                                                    tvResourcesBundle(), @"trollvncserver")
+                               : NSLocalizedStringFromTableInBundle(@"There are %d active VNC clients.", @"Localizable",
+                                                                    tvResourcesBundle(), @"trollvncserver");
+
+    NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, gClientCount];
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        [mgr updateSingleBannerWithContent:localizedContent badgeCount:gClientCount userInfo:userInfo];
+    });
+}
+
+static void tvPublishClientConnectedNotif(NSString *host) {
+    if (!gUserClientNotifsEnabled || !host || host.length == 0)
+        return;
+
+    BulletinManager *mgr = [BulletinManager sharedManager];
+
+    NSDictionary *userInfo = @{
+        @"clientHost" : host,
+    };
+
+    NSString *localizedContentTmpl;
+    localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client connected from %@.", @"Localizable",
+                                                              tvResourcesBundle(), @"trollvncserver");
+
+    NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        [mgr popBannerWithContent:localizedContent userInfo:userInfo];
+    });
+}
+
+static void tvPublishClientDisconnectedNotif(NSString *host) {
+    if (!gUserClientNotifsEnabled || !host || host.length == 0)
+        return;
+
+    BulletinManager *mgr = [BulletinManager sharedManager];
+
+    NSDictionary *userInfo = @{
+        @"clientHost" : host,
+    };
+
+    NSString *localizedContentTmpl;
+    localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client disconnected from %@.", @"Localizable",
+                                                              tvResourcesBundle(), @"trollvncserver");
+
+    NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
+    dispatch_async(dispatch_get_main_queue(), ^(void) {
+        [mgr popBannerWithContent:localizedContent userInfo:userInfo];
+    });
+}
+
+#pragma mark - Client Handlers
 
 static BOOL gIsCaptureStarted = NO;
 static BOOL gIsClipboardStarted = NO;
@@ -3216,21 +3856,35 @@ static BOOL gIsClipboardStarted = NO;
 static BOOL gRestoreAssist = NO;
 #endif
 
-static void clientGone(rfbClientPtr cl) {
+static void clientGoneHook(rfbClientPtr cl) {
     // Free per-client state
     TVClientState *st = tvGetClientState(cl);
     BOOL isRepeaterClient = NO;
+    NSString *removeKey = nil;
     if (st) {
         isRepeaterClient = st->isRepeaterClient;
+        if (st->clientId8[0] != '\0') {
+            removeKey = [NSString stringWithUTF8String:st->clientId8];
+        }
         free(st);
         cl->clientData = NULL;
+    }
+
+    // Remove by cached id (fallback to fd-derived if unavailable)
+    if (!removeKey)
+        removeKey = tvGenerateClientId8(cl->sock);
+    if (removeKey && gClientStates) {
+        @synchronized(gClientStates) {
+            [gClientStates removeObjectForKey:removeKey];
+        }
     }
 
     // Decrement client count and stop capture if this was the last client.
     if (gClientCount > 0)
         gClientCount--;
 
-    TVLog(@"Client disconnected, active clients=%d", gClientCount);
+    NSString *host = (cl && cl->host) ? [NSString stringWithUTF8String:cl->host] : @"";
+    TVLog(@"Client %@ disconnected, active clients=%d", host, gClientCount);
 
     if (gIsCaptureStarted && gClientCount == 0) {
         [[ScreenCapturer sharedCapturer] endCapture];
@@ -3261,6 +3915,15 @@ static void clientGone(rfbClientPtr cl) {
     // Update TXT with possibly changed state (e.g., viewOnly unaffected, but keep consistent)
     refreshBonjourTXTRecord();
 
+    // Notify subscribers after removal (debounced)
+    tvCtlScheduleBroadcastChanged();
+
+    // Update user notification
+    tvPublishUserSingleNotifs();
+
+    // Notify client disconnected
+    tvPublishClientDisconnectedNotif(host);
+
     // Stop the main run loop if this was a repeater client
     if (isRepeaterClient) {
         CFRunLoopStop(CFRunLoopGetMain());
@@ -3268,8 +3931,9 @@ static void clientGone(rfbClientPtr cl) {
 }
 
 static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
-    cl->clientGoneHook = clientGone;
-    cl->viewOnly = gViewOnly ? TRUE : FALSE;
+    cl->clientGoneHook = clientGoneHook;
+    if (!cl->viewOnly && gViewOnly)
+        cl->viewOnly = TRUE;
 
     // Allocate per-client state bag
     TVClientState *st = (TVClientState *)calloc(1, sizeof(TVClientState));
@@ -3277,11 +3941,48 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         st->lastButtonMask = 0;
         st->wheelAccumPx = 0;
         st->wheelFlushScheduled = NO;
+        st->clientId8[0] = '\0';
         cl->clientData = st;
     }
 
     gClientCount++;
     TVLog(@"Client connected, active clients=%d", gClientCount);
+
+    // Add to global client states
+    NSString *clientId = tvGenerateClientId8(cl->sock);
+    if (st && clientId.length) {
+        // Cache into fixed buffer
+        const char *u8 = [clientId UTF8String];
+        if (u8) {
+            size_t n = strnlen(u8, 8);
+            memcpy(st->clientId8, u8, n);
+            st->clientId8[n] = '\0';
+        }
+    }
+    NSString *host = (cl && cl->host) ? [NSString stringWithUTF8String:cl->host] : @"";
+    NSDate *now = [NSDate date];
+    NSDictionary *entry = @{
+        @"id" : clientId,
+        @"host" : host,
+        @"viewOnly" : @(cl->viewOnly ? YES : NO),
+        @"connectAt" : now,
+    };
+
+    if (!gClientStates)
+        gClientStates = [[NSMutableDictionary alloc] init];
+    gClientStates[clientId] = entry;
+
+    // Update TXT (e.g., potential dynamic flags in future)
+    refreshBonjourTXTRecord();
+
+    // Notify subscribers (debounced)
+    tvCtlScheduleBroadcastChanged();
+
+    // Update user notification
+    tvPublishUserSingleNotifs();
+
+    // Notify client connected
+    tvPublishClientConnectedNotif(host);
 
     if (!gIsCaptureStarted && gClientCount > 0 && gFrameHandler) {
         // Start capture when entering non-zero client population.
@@ -3309,9 +4010,6 @@ static enum rfbNewClientAction newClientHook(rfbClientPtr cl) {
         [[STHIDEventGenerator sharedGenerator] setKeepAliveInterval:gKeepAliveSec];
         TVLog(@"KeepAlive started with interval (%.3f sec)", gKeepAliveSec);
     }
-
-    // Update TXT (e.g., potential dynamic flags in future)
-    refreshBonjourTXTRecord();
 
     return RFB_CLIENT_ACCEPT;
 }
@@ -3555,6 +4253,11 @@ static void prepareScreenCapturer(void) {
     };
 }
 
+static void prepareBulletinManager(void) {
+    BulletinManager *mgr = [BulletinManager sharedManager];
+    [mgr revokeSingleNotification];
+}
+
 static void setupGeometry(void) {
     NSDictionary *props = [[ScreenCapturer sharedCapturer] renderProperties];
     gSrcWidth = [props[(__bridge NSString *)kIOSurfaceWidth] intValue];
@@ -3696,6 +4399,33 @@ static void setupRfbEventHandlers(void) {
     gScreen->kbdAddEvent = kbdAddEvent;
 }
 
+static rfbBool tvCheckPasswordByList(rfbClientPtr cl, const char *passwd, int len) {
+    rfbBool rc = rfbCheckPasswordByList(cl, passwd, len);
+
+    TVClientState *st = tvGetClientState(cl);
+    NSString *updateKey = nil;
+    if (st && st->clientId8[0] != '\0') {
+        updateKey = [NSString stringWithUTF8String:st->clientId8];
+    }
+
+    if (!updateKey)
+        updateKey = tvGenerateClientId8(cl->sock);
+    if (updateKey && gClientStates) {
+        @synchronized(gClientStates) {
+            NSMutableDictionary *entry = [gClientStates[updateKey] mutableCopy];
+            if (entry) {
+                entry[@"viewOnly"] = @(cl->viewOnly ? YES : NO);
+                gClientStates[updateKey] = [entry copy];
+            }
+        }
+    }
+
+    // Notify subscribers about property change (debounced)
+    tvCtlScheduleBroadcastChanged();
+
+    return rc;
+}
+
 static void setupRfbClassicAuthentication(void) {
     // Enable classic VNC authentication if environment variables are provided
     const char *envPwd = getenv("TROLLVNC_PASSWORD");
@@ -3737,7 +4467,7 @@ static void setupRfbClassicAuthentication(void) {
         // Index of first view-only password = number of full-access passwords
         // From that index onward (1-based in description, 0-based in array) are view-only.
         gScreen->authPasswdFirstViewOnly = fullCount;
-        gScreen->passwordCheck = rfbCheckPasswordByList;
+        gScreen->passwordCheck = tvCheckPasswordByList;
 
         TVLog(@"Classic VNC authentication enabled via env: full=%d, view-only=%d", fullCount, viewCount);
     }
@@ -3780,20 +4510,7 @@ static void setupRfbHttpServer(void) {
         } else {
             // Compute httpDir relative to executable: ../share/trollvnc/webclients
             do {
-                // Resolve executable path
-                uint32_t sz = 0;
-                _NSGetExecutablePath(NULL, &sz); // query size
-                char *exeBuf = (char *)malloc(sz > 0 ? sz : 1024);
-                if (!exeBuf)
-                    break;
-                if (_NSGetExecutablePath(exeBuf, &sz) != 0) {
-                    // Fallback: leave exeBuf as-is
-                }
-
-                // Canonicalize
-                char realBuf[PATH_MAX];
-                const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
-                NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
+                NSString *exe = tvExecutablePath();
                 NSString *exeDir = [exe stringByDeletingLastPathComponent];
                 NSString *webRel;
 #ifdef THEBOOTSTRAP
@@ -3807,8 +4524,6 @@ static void setupRfbHttpServer(void) {
                     gScreen->httpDir = strdup(fs);
                     TVLog(@"HTTP server config: port=%d, dir=%@, proxyConnect=YES", gHttpPort, webPath);
                 }
-
-                free(exeBuf);
             } while (0);
         }
     } else {
@@ -4049,6 +4764,15 @@ static void dropPrivileges(void) {
 }
 
 static void cleanupAndExit(int code) {
+    // Stop auto discovery
+    stopBonjour();
+
+    // Clear all user notifications
+    [[BulletinManager sharedManager] revokeAllNotifications];
+
+    // Stop control socket if any
+    tvStopControlSocket();
+
     // Stop event thread if running
     tvStopRfbEventThread();
 
@@ -4061,8 +4785,6 @@ static void cleanupAndExit(int code) {
         rfbScreenCleanup(gScreen);
         gScreen = NULL;
     }
-
-    stopBonjour();
 
     // There’s no need to free other resources because we’re going to exit the process. Yay!
     exit(code);
@@ -4212,6 +4934,7 @@ int main(int argc, const char *argv[]) {
         setupRfbHttpServer();
         setupRfbFileTransferExtension();
 
+        prepareBulletinManager();
         prepareClipboardManager();
         prepareScreenCapturer();
 
@@ -4220,6 +4943,8 @@ int main(int argc, const char *argv[]) {
 
         installSignalHandlers();
         installTerminationHandlers();
+
+        tvStartControlSocketIfNeeded();
     }
 
     CFRunLoopRun();

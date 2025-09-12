@@ -15,12 +15,15 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
+#import "TVNCListItemsController.h"
 
-NS_ASSUME_NONNULL_BEGIN
+@implementation TVNCListItemsController
 
-@interface TVNCRootListController : PSListController
+- (void)viewDidLoad {
+    [super viewDidLoad];
+
+    UIColor *primaryColor = [UIColor colorWithRed:35 / 255.0 green:158 / 255.0 blue:171 / 255.0 alpha:1.0];
+    self.view.tintColor = primaryColor;
+}
 
 @end
-
-NS_ASSUME_NONNULL_END

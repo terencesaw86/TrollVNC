@@ -19,11 +19,11 @@
 #import "TrollVNC-Swift.h"
 
 #import <Foundation/Foundation.h>
-#import <sys/socket.h>
-#import <netinet/in.h>
 #import <arpa/inet.h>
+#import <netinet/in.h>
+#import <sys/socket.h>
 
-#define SERVICE_PORT 46751
+#import "Control.h"
 
 NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceStatusDidChangeNotification";
 
@@ -104,16 +104,16 @@ NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceS
     if (sockfd < 0) {
         return NO;
     }
-    
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    addr.sin_port = htons(SERVICE_PORT);
-    
+    addr.sin_port = htons(kTvAlivePort);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
     int result = connect(sockfd, (struct sockaddr *)&addr, sizeof(addr));
     close(sockfd);
-    
+
     return result == 0;
 }
 

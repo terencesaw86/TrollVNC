@@ -10,9 +10,10 @@ TrollVNC is a VNC server for iOS devices, allowing remote access and control of 
 
 ## Usage
 
-1. Download “TrollVNC” from Releases and install it on your iOS device.
-2. Configure the VNC server settings from “Settings” → “TrollVNC” or the standalone “TrollVNC” app as needed.
-3. Or, run the following command on iOS device or simulator:
+1. Fork this repo and run GitHub workflow “Build TrollVNC”.
+2. Download “TrollVNC” from Releases and install it on your iOS device.
+3. Configure the VNC server settings from “Settings” → “TrollVNC” or the standalone “TrollVNC” app as needed.
+4. Or, run the following command on iOS device or simulator:
 
 ```sh
 trollvncserver -p 5901 -n "My iPhone" [options]
@@ -23,10 +24,10 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 **Basic**:
 
 - `-p port`   TCP port for VNC (default: `5901`)
+- `-c port`   TCP port for client management (listening on localhost only; `0` disables, default: `0`)
 - `-n name`   Desktop name shown to clients (default: `TrollVNC`)
 - `-v`        View-only (ignore input)
 - `-A sec`    Keep-alive interval to prevent device sleep by sending harmless dummy key events; only active while at least one client is connected (`15..86400`, `0` disables, default: `0`)
-- `-C on|off` Clipboard sync (default: `on`)
 
 **Display/Performance**:
 
@@ -50,15 +51,6 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 - `-M scheme` Modifier mapping: `std|altcmd` (default: `std`)
 - `-K`        Log keyboard events (keysym -> mapping) to stderr
 
-**Accessibility**:
-
-- `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
-
-**Cursor & Rotation**:
-
-- `-U on|off` Enable server-side cursor overlay (default: `off`)
-- `-O on|off` Sync UI orientation and rotate output (default: `off`)
-
 **HTTP/WebSockets**:
 
 - `-H port`   Enable built-in HTTP server on port (`0` disables; default `0`)
@@ -69,6 +61,22 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 **Discovery**:
 
 - `-B on|off` Enable Bonjour/mDNS advertisement for auto-discovery by viewers on the local network (default: `on`)
+
+**Accessibility**:
+
+- `-O on|off` Sync UI orientation and rotate output (default: `on`)
+- `-E on|off` Enable AssistiveTouch auto-activation (default: `off`)
+- `-U on|off` Enable server-side cursor overlay (default: `off`)
+
+**Notifications**:
+
+- `-i on|off` Enable a single user notification when the first client connects (default: `on`)
+- `-I on|off` Enable user notifications for client connect/disconnect (default: `on`)
+
+**Extensions**:
+
+- `-C on|off` Enable UltraVNC UTF-8 clipboard extension (default: `on`)
+- `-T on|off` Enable TightVNC 1.x file transfer extension (default: `off`)
 
 **Logging**:
 
@@ -108,7 +116,7 @@ trollvncserver -p 5901 -n "My iPhone" [options]
 
 > Touch, scroll, and button mappings respect the current rotation when `-O on` is used.
 
-**AssistiveTouch auto-activation (`-E on`)**:
+**AssistiveTouch Auto-Activation (`-E on`)**:
 
 - When the first client connects, TrollVNC enables AssistiveTouch if it’s currently off; when the last client disconnects,
   it restores the previous state (disables it only if TrollVNC enabled it).
@@ -456,9 +464,7 @@ TrollVNC is an open-source VNC solution, licensed under GPLv2. You are free to a
 - Priority support and troubleshooting assistance
 - Sustainable development through your contribution
 
-### Free and Open Source
-
-If you prefer, you can always build TrollVNC yourself directly from the source. Historical builds can be obtained from the latest GitHub Actions artifacts.
+If you prefer, you can always build TrollVNC yourself directly from the source.
 
 ### Your choice:
 

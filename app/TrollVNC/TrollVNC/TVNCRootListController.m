@@ -27,6 +27,7 @@
 #import <sys/sysctl.h>
 
 #import "StripedTextTableViewController.h"
+#import "TVNCClientListController.h"
 #import "TVNCRootListController.h"
 
 // Minimal process enumeration to restart VNC service
@@ -89,7 +90,12 @@ static inline void TVNCRestartVNCService(void) {
     // Try to terminate trollvncserver; launchd should respawn it if configured.
     TVNCEnumerateProcesses(^(pid_t pid, NSString *executablePath, BOOL *stop) {
         if ([executablePath.lastPathComponent isEqualToString:@"trollvncserver"]) {
-            kill(pid, SIGTERM);
+            int rc = kill(pid, SIGTERM);
+            if (rc == 0) {
+#if THEBOOTSTRAP
+                [UIApplication.sharedApplication setApplicationIconBadgeNumber:0];
+#endif
+            }
         }
     });
 }
@@ -159,11 +165,24 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 }
 #endif
 
+/* clangd behavior workarounds */
+#define STRINGIFY(x) #x
+#define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
+#define MYNSSTRINGIFY(x)                                                                                               \
+    ^{                                                                                                                 \
+        NSString *str = [NSString stringWithUTF8String:EXPAND_AND_STRINGIFY(x)];                                       \
+        if ([str hasPrefix:@"\""])                                                                                     \
+            str = [str substringFromIndex:1];                                                                          \
+        if ([str hasSuffix:@"\""])                                                                                     \
+            str = [str substringToIndex:str.length - 1];                                                               \
+        return str;                                                                                                    \
+    }()
+
 - (NSArray *)specifiers {
     if (!_specifiers) {
         NSMutableArray<PSSpecifier *> *specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
         PSSpecifier *firstGroup = [specifiers firstObject];
-        NSString *packageScheme = @THEOS_PACKAGE_SCHEME;
+        NSString *packageScheme = MYNSSTRINGIFY(THEOS_PACKAGE_SCHEME);
         if (!packageScheme.length) {
             packageScheme = @"legacy";
         }
@@ -188,6 +207,13 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     [[UISlider appearanceWhenContainedInInstancesOfClasses:@[
         [self class],
     ]] setMinimumTrackTintColor:_primaryColor];
+    [self.view setTintColor:_primaryColor];
+
+    self.navigationItem.backBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"TrollVNC"
+                                                                             style:UIBarButtonItemStylePlain
+                                                                            target:nil
+                                                                            action:nil];
+    self.navigationItem.backBarButtonItem.tintColor = _primaryColor;
 
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
         initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
@@ -195,7 +221,39 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                target:self
                action:@selector(applyChanges)];
     applyItem.tintColor = _primaryColor;
-    self.navigationItem.rightBarButtonItem = applyItem;
+
+    UIBarButtonItem *clientsItem = [[UIBarButtonItem alloc]
+        initWithTitle:NSLocalizedStringFromTableInBundle(@"Clients", @"Localizable", self.bundle, nil)
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(showClients)];
+    clientsItem.tintColor = _primaryColor;
+
+#if THEBOOTSTRAP
+    BOOL isApp = YES;
+#else
+    BOOL isApp = NO;
+#endif
+
+    BOOL isPad = ([UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad);
+    if (isApp || isPad) {
+        self.navigationItem.leftBarButtonItem = clientsItem;
+        self.navigationItem.rightBarButtonItem = applyItem;
+    } else {
+        self.navigationItem.rightBarButtonItems = @[
+            applyItem,
+            clientsItem,
+        ];
+    }
+}
+
+- (void)showClients {
+    TVNCClientListController *vc = [[TVNCClientListController alloc] init];
+    vc.bundle = self.bundle;
+    vc.primaryColor = self.primaryColor;
+    vc.notificationGenerator = self.notificationGenerator;
+    UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:vc];
+    [self.navigationController presentViewController:navController animated:YES completion:nil];
 }
 
 #pragma mark - Actions
@@ -239,6 +297,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     } else if ([httpPortVal isKindOfClass:[NSString class]]) {
         httpPort = [(NSString *)httpPortVal intValue];
     }
+
     BOOL portInvalid = (port < 1024 || port > 65535);
     BOOL httpInvalid = (httpPort != 0 && (httpPort < 1024 || httpPort > 65535));
     if (portInvalid || httpInvalid) {
@@ -247,10 +306,12 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
             @"TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults.",
             @"Localizable", self.bundle, nil);
         NSString *ok = NSLocalizedStringFromTableInBundle(@"OK", @"Localizable", self.bundle, nil);
+
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:t
                                                                        message:msg
                                                                 preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:ok style:UIAlertActionStyleDefault handler:nil]];
+
         [self presentViewController:alert animated:YES completion:nil];
         return; // do not restart now
     }
@@ -267,7 +328,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     NSString *ipLine;
     BOOL isRevModeOn = [revMode caseInsensitiveCompare:@"none"] != NSOrderedSame;
     if (isRevModeOn) {
-        NSString *modeFormat = NSLocalizedStringFromTableInBundle(@"Reverse Connection: %@", @"Localizable", self.bundle, nil);
+        NSString *modeFormat =
+            NSLocalizedStringFromTableInBundle(@"Reverse Connection: %@", @"Localizable", self.bundle, nil);
         if ([revMode caseInsensitiveCompare:@"repeater"] == NSOrderedSame) {
             revMode = NSLocalizedStringFromTableInBundle(@"Repeater", @"Localizable", self.bundle, nil);
         } else {
@@ -300,6 +362,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
                                                     notificationOccurred:UINotificationFeedbackTypeSuccess];
                                                 [weakSelf.view endEditing:YES];
                                             }]];
+
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -321,6 +384,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
     NSLog(@"XXLogs path: %@", logsPath);
 
     StripedTextTableViewController *logsVC = [[StripedTextTableViewController alloc] initWithPath:logsPath];
+    logsVC.primaryColor = self.primaryColor;
 
     [logsVC setAutoReload:YES];
     [logsVC setMaximumNumberOfRows:1000];
@@ -344,10 +408,8 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 
     [logsVC setRowPrefixRegularExpression:rowRegex];
     [logsVC setRowSeparator:@"\r\n"];
-    [logsVC setModalInPresentation:YES];
     [logsVC setTitle:NSLocalizedStringFromTableInBundle(@"View Logs", @"Localizable", self.bundle, nil)];
     [logsVC setLocalizationBundle:self.bundle];
-    [logsVC setLocalizationTableName:@"Localizable"];
 
     UINavigationController *navController = [[UINavigationController alloc] initWithRootViewController:logsVC];
     [self presentViewController:navController animated:YES completion:nil];

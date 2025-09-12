@@ -15,11 +15,15 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
+#import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface TVNCRootListController : PSListController
+@interface TVNCClientListController : UITableViewController
+
+@property(nonatomic, strong) NSBundle *bundle;
+@property(nonatomic, strong) UIColor *primaryColor;
+@property(nonatomic, strong) UINotificationFeedbackGenerator *notificationGenerator;
 
 @end
 

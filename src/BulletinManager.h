@@ -15,12 +15,28 @@
  along with this program. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#import <Preferences/PSListController.h>
+#ifndef BulletinManager_h
+#define BulletinManager_h
+
+#import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface TVNCRootListController : PSListController
+@interface BulletinManager : NSObject
+
++ (instancetype)sharedManager;
+- (instancetype)init NS_UNAVAILABLE;
+
+- (void)popBannerWithContent:(NSString *)messageContent userInfo:(NSDictionary *_Nullable)userInfo;
+- (void)updateSingleBannerWithContent:(NSString *)messageContent
+                           badgeCount:(NSInteger)badgeCount
+                             userInfo:(NSDictionary *_Nullable)userInfo;
+
+- (void)revokeSingleNotification;
+- (void)revokeAllNotifications;
 
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif /* BulletinManager_h */
