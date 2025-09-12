@@ -30,8 +30,12 @@
 #import "TVNCClientListController.h"
 #import "TVNCRootListController.h"
 
+#if THEBOOTSTRAP
+#import "GitHubReleaseUpdater.h"
+#endif
+
 // Minimal process enumeration to restart VNC service
-static inline void TVNCEnumerateProcesses(void (^enumerator)(pid_t pid, NSString *executablePath, BOOL *stop)) {
+NS_INLINE void TVNCEnumerateProcesses(void (^enumerator)(pid_t pid, NSString *executablePath, BOOL *stop)) {
     static int kMaximumArgumentSize = 0;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -86,7 +90,7 @@ static inline void TVNCEnumerateProcesses(void (^enumerator)(pid_t pid, NSString
     free(procInfo);
 }
 
-static inline void TVNCRestartVNCService(void) {
+NS_INLINE void TVNCRestartVNCService(void) {
     // Try to terminate trollvncserver; launchd should respawn it if configured.
     TVNCEnumerateProcesses(^(pid_t pid, NSString *executablePath, BOOL *stop) {
         if ([executablePath.lastPathComponent isEqualToString:@"trollvncserver"]) {
@@ -101,7 +105,7 @@ static inline void TVNCRestartVNCService(void) {
 }
 
 // Resolve current IPv4/IPv6 address of interface en0 (Wi‑Fi). Prefer IPv4 if available.
-static inline NSString *TVNCGetEn0IPAddress(void) {
+NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
     struct ifaddrs *ifaList = NULL;
     if (getifaddrs(&ifaList) != 0 || !ifaList)
         return nil;
@@ -154,7 +158,7 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
 
 @implementation TVNCRootListController
 
-#ifdef THEBOOTSTRAP
+#if THEBOOTSTRAP
 @synthesize bundle = _bundle;
 
 - (NSBundle *)bundle {
@@ -467,6 +471,31 @@ static inline NSString *TVNCGetEn0IPAddress(void) {
             [label sizeToFit];
         }
     }
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (section == 0) {
+#if THEBOOTSTRAP
+        do {
+            GitHubReleaseUpdater *updater = [GitHubReleaseUpdater shared];
+            // if (![updater hasNewerVersionInCache]) {
+            //     break;
+            // }
+
+            GHReleaseInfo *releaseInfo = [updater cachedLatestRelease];
+            if (!releaseInfo) {
+                break;
+            }
+
+            return [NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
+                                                  @"A new version %@ is available! You’re currently using v%@. "
+                                                  @"Download the latest version from Havoc Marketplace.",
+                                                  @"Localizable", self.bundle, nil),
+                                              releaseInfo.tagName, @PACKAGE_VERSION];
+        } while (0);
+#endif
+    }
+    return [super tableView:tableView titleForFooterInSection:section];
 }
 
 #pragma mark - Helper Methods

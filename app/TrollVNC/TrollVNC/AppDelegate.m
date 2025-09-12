@@ -9,6 +9,10 @@
 #import "TVNCHotspotManager.h"
 #import "TVNCServiceCoordinator.h"
 
+#if THEBOOTSTRAP
+#import "GitHubReleaseUpdater.h"
+#endif
+
 @interface AppDelegate ()
 
 @end
@@ -19,6 +23,17 @@
     // Override point for customization after application launch.
     [[TVNCServiceCoordinator sharedCoordinator] registerServiceMonitor];
     [[TVNCHotspotManager sharedManager] registerWithName:@"TrollVNC"];
+
+#if THEBOOTSTRAP
+    // Initialize Auto Updater
+    GHUpdateStrategy *updateStrategy = [[GHUpdateStrategy alloc] init];
+    [updateStrategy setRepoFullName:@"OwnGoalStudio/TrollVNC"];
+
+    GitHubReleaseUpdater *updater = [GitHubReleaseUpdater shared];
+    [updater configureWithStrategy:updateStrategy currentVersion:@PACKAGE_VERSION];
+    [updater start];
+#endif
+
     return YES;
 }
 

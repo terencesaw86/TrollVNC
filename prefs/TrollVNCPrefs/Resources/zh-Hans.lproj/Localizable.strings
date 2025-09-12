@@ -1,6 +1,9 @@
 /* No comment provided by engineer. */
 "%@ rows not loaded" = "%@ 行未加载";
 
+/* No comment provided by engineer. */
+"A new version %@ is available! You’re currently using v%@. Download the latest version from Havoc Marketplace." = "有新版本 %@ 可用！你当前使用的是 v%@。请从 Havoc Marketplace 下载最新版本。";
+
 /* trollvncserver */
 "A VNC client connected from %@." = "来自 %@ 的 VNC 客户端已连接。";
 
@@ -89,6 +92,12 @@
 "There is %d active VNC client." = "有 %d 个活动的 VNC 客户端。";
 
 /* No comment provided by engineer. */
+"TrollVNC" = "TrollVNC";
+
+/* No comment provided by engineer. */
+"TrollVNC (%@) v%@" = "TrollVNC (%@) v%@";
+
+/* No comment provided by engineer. */
 "unavailable" = "不可用";
 
 /* No comment provided by engineer. */
@@ -99,9 +108,3 @@
 
 /* No comment provided by engineer. */
 "Viewer" = "查看器";
-
-/* No comment provided by engineer. */
-"TrollVNC" = "";
-
-/* No comment provided by engineer. */
-"TrollVNC (%@) v%@" = "";

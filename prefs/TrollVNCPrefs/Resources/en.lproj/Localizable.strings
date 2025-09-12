@@ -1,6 +1,9 @@
 /* No comment provided by engineer. */
 "%@ rows not loaded" = "%@ rows not loaded";
 
+/* No comment provided by engineer. */
+"A new version %@ is available! You’re currently using v%@. Download the latest version from Havoc Marketplace." = "A new version %1$@ is available! You’re currently using v%2$@. Download the latest version from Havoc Marketplace.";
+
 /* trollvncserver */
 "A VNC client connected from %@." = "A VNC client connected from %@.";
 
