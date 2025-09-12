@@ -478,9 +478,9 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 #if THEBOOTSTRAP
         do {
             GitHubReleaseUpdater *updater = [GitHubReleaseUpdater shared];
-            // if (![updater hasNewerVersionInCache]) {
-            //     break;
-            // }
+             if (![updater hasNewerVersionInCache]) {
+                 break;
+             }
 
             GHReleaseInfo *releaseInfo = [updater cachedLatestRelease];
             if (!releaseInfo) {

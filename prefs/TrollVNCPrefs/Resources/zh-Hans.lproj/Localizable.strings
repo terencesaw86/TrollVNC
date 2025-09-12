@@ -2,7 +2,10 @@
 "%@ rows not loaded" = "%@ 行未加载";
 
 /* No comment provided by engineer. */
-"A new version %@ is available! You’re currently using v%@. Download the latest version from Havoc Marketplace." = "有新版本 %@ 可用！你当前使用的是 v%@。请从 Havoc Marketplace 下载最新版本。";
+"A new version %@ is available! You’re currently using v%@." = "有新版本 %@ 可用！你当前使用的是 v%@。";
+
+/* No comment provided by engineer. */
+"A new version %@ is available! You’re currently using v%@. Download the latest version from Havoc Marketplace." = "有新版本 %@ 可用！你当前使用的是 v%@。请从浩劫商店下载最新版本。";
 
 /* trollvncserver */
 "A VNC client connected from %@." = "来自 %@ 的 VNC 客户端已连接。";
@@ -62,13 +65,22 @@
 "Invalid Port" = "端口无效";
 
 /* No comment provided by engineer. */
+"Later" = "以后再说";
+
+/* No comment provided by engineer. */
 "Launching" = "启动中";
+
+/* No comment provided by engineer. */
+"New Version Available" = "新版本可用";
 
 /* No comment provided by engineer. */
 "No clients connected" = "没有客户端连接";
 
 /* No comment provided by engineer. */
 "OK" = "好的";
+
+/* No comment provided by engineer. */
+"Pause Auto Update" = "暂停自动更新";
 
 /* No comment provided by engineer. */
 "Repeater" = "中继器";
@@ -78,6 +90,9 @@
 
 /* No comment provided by engineer. */
 "Reverse Connection: %@" = "反向连接：%@";
+
+/* No comment provided by engineer. */
+"Skip This Version" = "跳过此版本";
 
 /* No comment provided by engineer. */
 "TCP/HTTP ports must be 1024..65535 (HTTP can be 0 to disable). The server will fallback to defaults." = "TCP/HTTP 端口必须在 1024..65535（HTTP 也可为 0 表示禁用）。服务器将回退到默认端口。";
@@ -99,6 +114,9 @@
 
 /* No comment provided by engineer. */
 "unavailable" = "不可用";
+
+/* No comment provided by engineer. */
+"Upgrade Now" = "立即升级";
 
 /* No comment provided by engineer. */
 "View Logs" = "查看日志";
