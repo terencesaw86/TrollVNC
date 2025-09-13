@@ -2,8 +2,191 @@ name: Build TrollVNC
 
 on:
   push:
-    branches: [ release ]
+    branches: [release]
   workflow_dispatch:
+    inputs:
+      is_managed:
+        type: boolean
+        description: Build with a bundled Managed.plist (managed configuration)
+        required: false
+        default: false
+      enabled:
+        type: boolean
+        description: Enabled (start the VNC service)
+        required: false
+        default: true
+      desktop_name:
+        type: string
+        description: Desktop name shown to clients
+        required: false
+        default: TrollVNC
+      port:
+        type: string
+        description: VNC TCP port (1024–65535; default 5901)
+        required: false
+        default: "5901"
+      full_password:
+        type: string
+        description: Full-access password (classic VNC uses first 8 characters)
+        required: false
+        default: ""
+      viewonly_password:
+        type: string
+        description: View-only password (first 8 characters)
+        required: false
+        default: ""
+      clipboard_enabled:
+        type: boolean
+        description: Clipboard sync
+        required: false
+        default: true
+      view_only:
+        type: boolean
+        description: Global view-only (ignore input)
+        required: false
+        default: false
+      single_notif_enabled:
+        type: boolean
+        description: Single notification when first client connects
+        required: false
+        default: true
+      client_notifs_enabled:
+        type: boolean
+        description: Connect/Disconnect notifications
+        required: false
+        default: true
+      keepalive_sec:
+        type: string
+        description: Keep-Alive seconds (0 or 15–300; 0 disables)
+        required: false
+        default: "0.0"
+      scale:
+        type: string
+        description: Output scale (0.1–1.0)
+        required: false
+        default: "1.0"
+      frame_rate_spec:
+        type: string
+        description: Frame rate spec (e.g. 60 | 30-60 | 30:60:120)
+        required: false
+        default: ""
+      orientation_sync:
+        type: boolean
+        description: Sync interface orientation
+        required: false
+        default: true
+      natural_scroll:
+        type: boolean
+        description: Natural scroll direction
+        required: false
+        default: false
+      modifier_map:
+        type: choice
+        description: Modifier mapping
+        required: false
+        default: std
+        options:
+          - std
+          - altcmd
+      auto_assist_enabled:
+        type: boolean
+        description: AssistiveTouch auto-activation
+        required: false
+        default: false
+      server_cursor:
+        type: boolean
+        description: Server-side cursor
+        required: false
+        default: false
+      defer_window_sec:
+        type: string
+        description: Defer window seconds (0–0.5)
+        required: false
+        default: "0.015"
+      max_inflight:
+        type: string
+        description: Max in-flight encodes (0–8)
+        required: false
+        default: "2"
+      tile_size:
+        type: string
+        description: Tile size (8–128)
+        required: false
+        default: "32"
+      fullscreen_threshold_percent:
+        type: string
+        description: Fullscreen threshold percent (0–100)
+        required: false
+        default: "0"
+      max_rects:
+        type: string
+        description: Max dirty rects (1–4096)
+        required: false
+        default: "256"
+      async_swap:
+        type: boolean
+        description: Non-blocking swap (may cause tearing)
+        required: false
+        default: false
+      wheel_step_px:
+        type: string
+        description: Wheel step in pixels (0 disables)
+        required: false
+        default: "48.0"
+      wheel_tuning:
+        type: string
+        description: Wheel tuning (e.g. step=48,coalesce=0.03,...)
+        required: false
+        default: ""
+      http_port:
+        type: string
+        description: HTTP port (0 disables)
+        required: false
+        default: "0"
+      http_dir:
+        type: string
+        description: HTTP document root (absolute path)
+        required: false
+        default: ""
+      ssl_cert_file:
+        type: string
+        description: SSL certificate file (absolute path)
+        required: false
+        default: ""
+      ssl_key_file:
+        type: string
+        description: SSL private key file (absolute path)
+        required: false
+        default: ""
+      reverse_mode:
+        type: choice
+        description: Reverse connection mode
+        required: false
+        default: none
+        options:
+          - none
+          - viewer
+          - repeater
+      reverse_socket:
+        type: string
+        description: Reverse host:port or [ipv6]:port
+        required: false
+        default: ""
+      reverse_repeater_id:
+        type: string
+        description: Repeater ID (numeric)
+        required: false
+        default: ""
+      bonjour_enabled:
+        type: boolean
+        description: Enable Auto-Discovery (Bonjour)
+        required: false
+        default: true
+      key_logging:
+        type: boolean
+        description: Log keyboard events (debug)
+        required: false
+        default: false
 
 env:
   FINALPACKAGE: 1
@@ -13,121 +196,161 @@ env:
 jobs:
   build:
     runs-on: macos-14
-    
+
     strategy:
       matrix:
-        scheme: ['default', 'rootless', 'roothide', 'bootstrap']
-    
+        scheme: ["default", "rootless", "roothide", "bootstrap"]
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Install dependencies
-      run: |
-        # Install xcbeautify for build output formatting
-        # Install ldid for iOS code signing
-        # Install 7zip for compression
-        brew install xcbeautify ldid-procursus p7zip make
-        
-    - name: Checkout roothide/theos
-      uses: actions/checkout@v4
-      with:
-        repository: roothide/theos
-        path: theos-roothide
-        submodules: recursive
-        
-    - name: Install iOS SDKs
-      run: |
-        export THEOS=$GITHUB_WORKSPACE/theos-roothide
-        cd theos-roothide
-        ./bin/install-sdk iPhoneOS16.5
-        ./bin/install-sdk iPhoneOS14.5
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '16.2'
-        
-    - name: Build package (${{ matrix.scheme }})
-      run: |
-        source devkit/${{ matrix.scheme }}.sh
-        FINALPACKAGE=1 gmake clean package
-        
-    - name: Prepare artifacts
-      run: |
-        # Create directories for artifacts
-        mkdir -p artifacts/dsym-${{ matrix.scheme }}
-        mkdir -p artifacts/packages-${{ matrix.scheme }}
-        
-        # Copy dSYM files
-        if [ -d ".theos/obj" ]; then
-          find .theos/obj -name "*.dSYM" -exec cp -r {} artifacts/dsym-${{ matrix.scheme }}/ \;
-        fi
-        
-        # Copy packages
-        if [ -d "packages" ]; then
-          if [ "${{ matrix.scheme }}" == "bootstrap" ]; then
-            cp -r packages/*.tipa artifacts/packages-${{ matrix.scheme }}/
-          else
-            cp -r packages/*.deb artifacts/packages-${{ matrix.scheme }}/
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          # Install xcbeautify for build output formatting
+          # Install ldid for iOS code signing
+          # Install 7zip for compression
+          brew install xcbeautify ldid-procursus p7zip make
+
+      - name: Checkout roothide/theos
+        uses: actions/checkout@v4
+        with:
+          repository: roothide/theos
+          path: theos-roothide
+          submodules: recursive
+
+      - name: Install iOS SDKs
+        run: |
+          export THEOS=$GITHUB_WORKSPACE/theos-roothide
+          cd theos-roothide
+          ./bin/install-sdk iPhoneOS16.5
+          ./bin/install-sdk iPhoneOS14.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.2"
+
+      - name: Generate Managed.plist (managed build)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.is_managed == true }}
+        env:
+          TVNC_ENABLED: ${{ inputs.enabled }}
+          TVNC_DESKTOP_NAME: ${{ inputs.desktop_name }}
+          TVNC_PORT: ${{ inputs.port }}
+          TVNC_FULL_PASSWORD: ${{ inputs.full_password }}
+          TVNC_VIEWONLY_PASSWORD: ${{ inputs.viewonly_password }}
+          TVNC_CLIPBOARD_ENABLED: ${{ inputs.clipboard_enabled }}
+          TVNC_VIEW_ONLY: ${{ inputs.view_only }}
+          TVNC_SINGLE_NOTIF_ENABLED: ${{ inputs.single_notif_enabled }}
+          TVNC_CLIENT_NOTIFS_ENABLED: ${{ inputs.client_notifs_enabled }}
+          TVNC_KEEPALIVE_SEC: ${{ inputs.keepalive_sec }}
+          TVNC_SCALE: ${{ inputs.scale }}
+          TVNC_FRAME_RATE_SPEC: ${{ inputs.frame_rate_spec }}
+          TVNC_ORIENTATION_SYNC: ${{ inputs.orientation_sync }}
+          TVNC_NATURAL_SCROLL: ${{ inputs.natural_scroll }}
+          TVNC_MODIFIER_MAP: ${{ inputs.modifier_map }}
+          TVNC_AUTO_ASSIST_ENABLED: ${{ inputs.auto_assist_enabled }}
+          TVNC_SERVER_CURSOR: ${{ inputs.server_cursor }}
+          TVNC_DEFER_WINDOW_SEC: ${{ inputs.defer_window_sec }}
+          TVNC_MAX_INFLIGHT: ${{ inputs.max_inflight }}
+          TVNC_TILE_SIZE: ${{ inputs.tile_size }}
+          TVNC_FULLSCREEN_THRESHOLD_PERCENT: ${{ inputs.fullscreen_threshold_percent }}
+          TVNC_MAX_RECTS: ${{ inputs.max_rects }}
+          TVNC_ASYNC_SWAP: ${{ inputs.async_swap }}
+          TVNC_WHEEL_STEP_PX: ${{ inputs.wheel_step_px }}
+          TVNC_WHEEL_TUNING: ${{ inputs.wheel_tuning }}
+          TVNC_HTTP_PORT: ${{ inputs.http_port }}
+          TVNC_HTTP_DIR: ${{ inputs.http_dir }}
+          TVNC_SSL_CERT_FILE: ${{ inputs.ssl_cert_file }}
+          TVNC_SSL_KEY_FILE: ${{ inputs.ssl_key_file }}
+          TVNC_REVERSE_MODE: ${{ inputs.reverse_mode }}
+          TVNC_REVERSE_SOCKET: ${{ inputs.reverse_socket }}
+          TVNC_REVERSE_REPEATER_ID: ${{ inputs.reverse_repeater_id }}
+          TVNC_BONJOUR_ENABLED: ${{ inputs.bonjour_enabled }}
+          TVNC_KEY_LOGGING: ${{ inputs.key_logging }}
+        run: |
+          bash devkit/gen-managed-plist.sh
+
+      - name: Build package (${{ matrix.scheme }})
+        run: |
+          source devkit/${{ matrix.scheme }}.sh
+          FINALPACKAGE=1 gmake clean package
+
+      - name: Prepare artifacts
+        run: |
+          # Create directories for artifacts
+          mkdir -p artifacts/dsym-${{ matrix.scheme }}
+          mkdir -p artifacts/packages-${{ matrix.scheme }}
+
+          # Copy dSYM files
+          if [ -d ".theos/obj" ]; then
+            find .theos/obj -name "*.dSYM" -exec cp -r {} artifacts/dsym-${{ matrix.scheme }}/ \;
           fi
-        fi
-        
-    - name: Upload dSYM artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: dsym-${{ matrix.scheme }}
-        path: artifacts/dsym-${{ matrix.scheme }}
-        if-no-files-found: warn
-        
-    - name: Upload package artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: packages-${{ matrix.scheme }}
-        path: artifacts/packages-${{ matrix.scheme }}
-        if-no-files-found: warn
+
+          # Copy packages
+          if [ -d "packages" ]; then
+            if [ "${{ matrix.scheme }}" == "bootstrap" ]; then
+              cp -r packages/*.tipa artifacts/packages-${{ matrix.scheme }}/
+            else
+              cp -r packages/*.deb artifacts/packages-${{ matrix.scheme }}/
+            fi
+          fi
+
+      - name: Upload dSYM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsym-${{ matrix.scheme }}
+          path: artifacts/dsym-${{ matrix.scheme }}
+          if-no-files-found: warn
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.scheme }}
+          path: artifacts/packages-${{ matrix.scheme }}
+          if-no-files-found: warn
 
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/release'
     needs: build
     runs-on: macos-14
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Download all package artifacts
-      uses: actions/download-artifact@v4
-      with:
-        pattern: packages-*
-        path: release-packages
-        merge-multiple: true
-        
-    - name: Create release tag
-      id: tag
-      run: |
-        # Read PACKAGE_VERSION from Makefile
-        PACKAGE_VERSION=$(grep 'PACKAGE_VERSION' Makefile | cut -d' ' -f4)
-        TAG_NAME="v$PACKAGE_VERSION"
-        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-        
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: ${{ steps.tag.outputs.tag_name }}
-        name: Release ${{ steps.tag.outputs.tag_name }}
-        body: |
-          Automated build from release branch
-          
-          This release contains packages built with:
-          - Default scheme
-          - Rootless scheme
-          - RootHide scheme
-          - Bootstrap (TrollStore)
-          
-          Built on: ${{ github.sha }}
-        files: release-packages/**/*
-        draft: false
-        prerelease: false
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: release-packages
+          merge-multiple: true
+
+      - name: Create release tag
+        id: tag
+        run: |
+          # Read PACKAGE_VERSION from Makefile
+          PACKAGE_VERSION=$(grep 'PACKAGE_VERSION' Makefile | cut -d' ' -f4)
+          TAG_NAME="v$PACKAGE_VERSION"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Release ${{ steps.tag.outputs.tag_name }}
+          body: |
+            Automated build from release branch
+
+            This release contains packages built with:
+            - Default scheme
+            - Rootless scheme
+            - RootHide scheme
+            - Bootstrap (TrollStore)
+
+            Built on: ${{ github.sha }}
+          files: release-packages/**/*
+          draft: false
+          prerelease: false
