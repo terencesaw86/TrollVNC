@@ -2829,6 +2829,15 @@ static void kbdAddEvent(rfbBool down, rfbKeySym keySym, rfbClientPtr cl) {
         [gen keyUp:keyStr];
 }
 
+static void kbdReleaseAllKeys(rfbClientPtr cl) {
+    (void)cl;
+    if (gViewOnly)
+        return;
+
+    STHIDEventGenerator *gen = [STHIDEventGenerator sharedGenerator];
+    [gen releaseEveryKeys];
+}
+
 NS_INLINE CGPoint vncPointToDevicePoint(int vx, int vy) {
     // Map from VNC framebuffer space (gWidth x gHeight, post-rotation & scaling)
     // back to device capture space (portrait, gSrcWidth x gSrcHeight), inverting rotation.
@@ -4397,6 +4406,7 @@ static void setupRfbScreen(int argc, const char *argv[]) {
 static void setupRfbEventHandlers(void) {
     gScreen->ptrAddEvent = ptrAddEvent;
     gScreen->kbdAddEvent = kbdAddEvent;
+    gScreen->kbdReleaseAllKeys = kbdReleaseAllKeys;
 }
 
 static rfbBool tvCheckPasswordByList(rfbClientPtr cl, const char *passwd, int len) {
