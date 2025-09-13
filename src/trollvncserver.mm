@@ -4529,8 +4529,6 @@ static void setupRfbCutTextHandlers(void) {
         gScreen->setXCutTextUTF8 = setXCutTextUTF8;
         TVLog(@"Clipboard: client->server handlers registered (enabled)");
     } else {
-        gScreen->setXCutText = NULL;
-        gScreen->setXCutTextUTF8 = NULL;
         TVLog(@"Clipboard: client->server handlers not registered (disabled)");
     }
 }
@@ -4541,7 +4539,6 @@ static void setupRfbServerSideCursor(void) {
         setupAlphaCursor(gScreen, 0);
         TVLog(@"Cursor: XCursor + alpha mode=2 enabled");
     } else {
-        gScreen->cursor = NULL;
         TVLog(@"Cursor: disabled (default; enable with -U on)");
     }
 }
