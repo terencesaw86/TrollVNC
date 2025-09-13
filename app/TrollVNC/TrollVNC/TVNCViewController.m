@@ -21,13 +21,23 @@
 
 @implementation TVNCViewController {
     BOOL _isAlertPresented;
+    BOOL _hasManagedConfiguration;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.localizationBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"TrollVNCPrefs"
-                                                                                       ofType:@"bundle"]];
+    NSBundle *resBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"TrollVNCPrefs"
+                                                                                   ofType:@"bundle"]];
+    self.localizationBundle = resBundle;
+
+    NSString *presetPath = [resBundle pathForResource:@"Managed" ofType:@"plist"];
+    if (presetPath) {
+        NSDictionary *presetDict = [NSDictionary dictionaryWithContentsOfFile:presetPath];
+        if (presetDict) {
+            _hasManagedConfiguration = YES;
+        }
+    }
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(serviceStatusDidChange:)
@@ -112,7 +122,7 @@
 }
 
 - (void)presentNewVersionAlertIfNeeded {
-    if (self.presentedViewController) {
+    if (self.presentedViewController || _hasManagedConfiguration) {
         return;
     }
 
