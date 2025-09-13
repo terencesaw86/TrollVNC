@@ -8,6 +8,20 @@ TrollVNC is a VNC server for iOS devices, allowing remote access and control of 
 
 <img width="763" alt="screenshot tiny" src="https://github.com/user-attachments/assets/2d2cd457-a3d2-475a-b391-e3232d747f48" />
 
+## Features
+
+- Low-latency capture with scaling, frame rate control, and back-pressure.
+- Optional dirty-region updates for bandwidth savings.
+- Tunable scroll wheel gestures and natural direction toggle.
+- UTF‑8 Clipboard sync (UltraVNC).
+- Orientation sync and rotation-aware input mapping.
+- Optional server-side cursor overlay.
+- Classic VNC authentication with full-access and view-only passwords.
+- Built-in HTTP/WebSockets for browser access (HTTPS/WSS supported).
+- Bonjour/mDNS auto-discovery on the local network.
+- [Reverse VNC](#reverse-vnc-reverse-connection)
+- [Pre-seeded configuration](#managed-configuration-preconfigured-deployment)
+
 ## Usage
 
 1. Fork this repo and run GitHub workflow “Build TrollVNC”.
