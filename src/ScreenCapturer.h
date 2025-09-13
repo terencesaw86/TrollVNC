@@ -96,6 +96,12 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (void)setInstantFpsSmoothingFactor:(double)alpha;
 
+/**
+ Force the next frame to be treated as dirty, causing it to be captured and sent
+ to the frame handler even if no screen changes are detected.
+ */
+- (void)forceNextFrameUpdate;
+
 @end
 
 NS_ASSUME_NONNULL_END

@@ -1802,6 +1802,16 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
     gInflight.fetch_sub(1, std::memory_order_relaxed);
 }
 
+static int setDesktopSizeHook(int width, int height, int numScreens, rfbExtDesktopScreen *extDesktopScreens, rfbClientPtr cl) {
+    (void)cl;
+    (void)numScreens;
+    (void)extDesktopScreens;
+    TVLog(@"Client requested desktop resize to %dx%d", width, height);
+    [[ScreenCapturer sharedCapturer] forceNextFrameUpdate];
+    // We do not support client-initiated resizing
+    return rfbExtDesktopSize_ResizeProhibited;
+}
+
 #pragma mark - Display Tiling Constants
 
 // Hashing performance controls
@@ -4401,6 +4411,7 @@ static void setupRfbScreen(int argc, const char *argv[]) {
     gScreen->newClientHook = newClientHook;
     gScreen->displayHook = displayHook;
     gScreen->displayFinishedHook = displayFinishedHook;
+    gScreen->setDesktopSizeHook = setDesktopSizeHook;
 }
 
 static void setupRfbEventHandlers(void) {

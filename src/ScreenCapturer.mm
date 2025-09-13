@@ -156,6 +156,8 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
 
 #pragma mark - Rendering
 
+static CFIndex sDirtyFrameCount = 0;
+
 - (BOOL)renderDisplayToScreenSurface:(IOSurfaceRef)dstSurface {
 #if TARGET_OS_SIMULATOR
     CARenderServerRenderDisplay(0, CFSTR("LCD"), dstSurface, 0, 0);
@@ -176,9 +178,8 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
         }
     });
 
-    static CFIndex previousDirtyFrameCount = 0;
     CFIndex dirtyFrameCount = CARenderServerGetDirtyFrameCount(NULL);
-    if (dirtyFrameCount == previousDirtyFrameCount) {
+    if (dirtyFrameCount == sDirtyFrameCount) {
         return NO; // No change
     }
 
@@ -186,7 +187,7 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     CARenderServerRenderDisplay(0 /* Main Display */, CFSTR("LCD"), srcSurface, 0, 0);
     IOSurfaceAcceleratorTransferSurface(accelerator, srcSurface, dstSurface, NULL, NULL, NULL, NULL);
 
-    previousDirtyFrameCount = dirtyFrameCount;
+    sDirtyFrameCount = dirtyFrameCount;
     return YES;
 #endif
 }
@@ -365,6 +366,10 @@ void CARenderServerRenderDisplay(kern_return_t a, CFStringRef b, IOSurfaceRef su
     if (alpha > 1.0)
         alpha = 1.0;
     mInstFpsAlpha = alpha;
+}
+
+- (void)forceNextFrameUpdate {
+    sDirtyFrameCount = 0; // Force next frame to be treated as dirty
 }
 
 #pragma mark - Private Methods
