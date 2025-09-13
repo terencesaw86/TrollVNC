@@ -10,11 +10,6 @@ on:
         description: Build with a bundled Managed.plist (managed configuration)
         required: false
         default: false
-      enabled:
-        type: boolean
-        description: Enabled (start the VNC service)
-        required: false
-        default: true
       desktop_name:
         type: string
         description: Desktop name shown to clients
@@ -25,41 +20,11 @@ on:
         description: VNC TCP port (1024–65535; default 5901)
         required: false
         default: "5901"
-      full_password:
-        type: string
-        description: Full-access password (classic VNC uses first 8 characters)
-        required: false
-        default: ""
-      viewonly_password:
-        type: string
-        description: View-only password (first 8 characters)
-        required: false
-        default: ""
-      clipboard_enabled:
-        type: boolean
-        description: Clipboard sync
-        required: false
-        default: true
       view_only:
         type: boolean
         description: Global view-only (ignore input)
         required: false
         default: false
-      single_notif_enabled:
-        type: boolean
-        description: Single notification when first client connects
-        required: false
-        default: true
-      client_notifs_enabled:
-        type: boolean
-        description: Connect/Disconnect notifications
-        required: false
-        default: true
-      keepalive_sec:
-        type: string
-        description: Keep-Alive seconds (0 or 15–300; 0 disables)
-        required: false
-        default: "0.0"
       scale:
         type: string
         description: Output scale (0.1–1.0)
@@ -70,16 +35,6 @@ on:
         description: Frame rate spec (e.g. 60 | 30-60 | 30:60:120)
         required: false
         default: ""
-      orientation_sync:
-        type: boolean
-        description: Sync interface orientation
-        required: false
-        default: true
-      natural_scroll:
-        type: boolean
-        description: Natural scroll direction
-        required: false
-        default: false
       modifier_map:
         type: choice
         description: Modifier mapping
@@ -88,76 +43,6 @@ on:
         options:
           - std
           - altcmd
-      auto_assist_enabled:
-        type: boolean
-        description: AssistiveTouch auto-activation
-        required: false
-        default: false
-      server_cursor:
-        type: boolean
-        description: Server-side cursor
-        required: false
-        default: false
-      defer_window_sec:
-        type: string
-        description: Defer window seconds (0–0.5)
-        required: false
-        default: "0.015"
-      max_inflight:
-        type: string
-        description: Max in-flight encodes (0–8)
-        required: false
-        default: "2"
-      tile_size:
-        type: string
-        description: Tile size (8–128)
-        required: false
-        default: "32"
-      fullscreen_threshold_percent:
-        type: string
-        description: Fullscreen threshold percent (0–100)
-        required: false
-        default: "0"
-      max_rects:
-        type: string
-        description: Max dirty rects (1–4096)
-        required: false
-        default: "256"
-      async_swap:
-        type: boolean
-        description: Non-blocking swap (may cause tearing)
-        required: false
-        default: false
-      wheel_step_px:
-        type: string
-        description: Wheel step in pixels (0 disables)
-        required: false
-        default: "48.0"
-      wheel_tuning:
-        type: string
-        description: Wheel tuning (e.g. step=48,coalesce=0.03,...)
-        required: false
-        default: ""
-      http_port:
-        type: string
-        description: HTTP port (0 disables)
-        required: false
-        default: "0"
-      http_dir:
-        type: string
-        description: HTTP document root (absolute path)
-        required: false
-        default: ""
-      ssl_cert_file:
-        type: string
-        description: SSL certificate file (absolute path)
-        required: false
-        default: ""
-      ssl_key_file:
-        type: string
-        description: SSL private key file (absolute path)
-        required: false
-        default: ""
       reverse_mode:
         type: choice
         description: Reverse connection mode
@@ -177,16 +62,6 @@ on:
         description: Repeater ID (numeric)
         required: false
         default: ""
-      bonjour_enabled:
-        type: boolean
-        description: Enable Auto-Discovery (Bonjour)
-        required: false
-        default: true
-      key_logging:
-        type: boolean
-        description: Log keyboard events (debug)
-        required: false
-        default: false
 
 env:
   FINALPACKAGE: 1
@@ -236,40 +111,31 @@ jobs:
       - name: Generate Managed.plist (managed build)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.is_managed == true }}
         env:
-          TVNC_ENABLED: ${{ inputs.enabled }}
+          # Inputs (kept up to 10)
           TVNC_DESKTOP_NAME: ${{ inputs.desktop_name }}
           TVNC_PORT: ${{ inputs.port }}
-          TVNC_FULL_PASSWORD: ${{ inputs.full_password }}
-          TVNC_VIEWONLY_PASSWORD: ${{ inputs.viewonly_password }}
-          TVNC_CLIPBOARD_ENABLED: ${{ inputs.clipboard_enabled }}
           TVNC_VIEW_ONLY: ${{ inputs.view_only }}
-          TVNC_SINGLE_NOTIF_ENABLED: ${{ inputs.single_notif_enabled }}
-          TVNC_CLIENT_NOTIFS_ENABLED: ${{ inputs.client_notifs_enabled }}
-          TVNC_KEEPALIVE_SEC: ${{ inputs.keepalive_sec }}
           TVNC_SCALE: ${{ inputs.scale }}
           TVNC_FRAME_RATE_SPEC: ${{ inputs.frame_rate_spec }}
-          TVNC_ORIENTATION_SYNC: ${{ inputs.orientation_sync }}
-          TVNC_NATURAL_SCROLL: ${{ inputs.natural_scroll }}
           TVNC_MODIFIER_MAP: ${{ inputs.modifier_map }}
-          TVNC_AUTO_ASSIST_ENABLED: ${{ inputs.auto_assist_enabled }}
-          TVNC_SERVER_CURSOR: ${{ inputs.server_cursor }}
-          TVNC_DEFER_WINDOW_SEC: ${{ inputs.defer_window_sec }}
-          TVNC_MAX_INFLIGHT: ${{ inputs.max_inflight }}
-          TVNC_TILE_SIZE: ${{ inputs.tile_size }}
-          TVNC_FULLSCREEN_THRESHOLD_PERCENT: ${{ inputs.fullscreen_threshold_percent }}
-          TVNC_MAX_RECTS: ${{ inputs.max_rects }}
-          TVNC_ASYNC_SWAP: ${{ inputs.async_swap }}
-          TVNC_WHEEL_STEP_PX: ${{ inputs.wheel_step_px }}
-          TVNC_WHEEL_TUNING: ${{ inputs.wheel_tuning }}
-          TVNC_HTTP_PORT: ${{ inputs.http_port }}
-          TVNC_HTTP_DIR: ${{ inputs.http_dir }}
-          TVNC_SSL_CERT_FILE: ${{ inputs.ssl_cert_file }}
-          TVNC_SSL_KEY_FILE: ${{ inputs.ssl_key_file }}
           TVNC_REVERSE_MODE: ${{ inputs.reverse_mode }}
           TVNC_REVERSE_SOCKET: ${{ inputs.reverse_socket }}
           TVNC_REVERSE_REPEATER_ID: ${{ inputs.reverse_repeater_id }}
-          TVNC_BONJOUR_ENABLED: ${{ inputs.bonjour_enabled }}
-          TVNC_KEY_LOGGING: ${{ inputs.key_logging }}
+          # Fixed values
+          TVNC_ENABLED: true
+          TVNC_CLIPBOARD_ENABLED: true
+          TVNC_SINGLE_NOTIF_ENABLED: true
+          TVNC_CLIENT_NOTIFS_ENABLED: true
+          TVNC_KEEPALIVE_SEC: 15
+          TVNC_ORIENTATION_SYNC: true
+          TVNC_NATURAL_SCROLL: false
+          TVNC_AUTO_ASSIST_ENABLED: false
+          TVNC_SERVER_CURSOR: false
+          TVNC_BONJOUR_ENABLED: false
+          TVNC_KEY_LOGGING: false
+          # Optional secrets (empty when not defined)
+          TVNC_FULL_PASSWORD: ${{ secrets.TVNC_FULL_PASSWORD }}
+          TVNC_VIEWONLY_PASSWORD: ${{ secrets.TVNC_VIEWONLY_PASSWORD }}
         run: |
           bash devkit/gen-managed-plist.sh
 
