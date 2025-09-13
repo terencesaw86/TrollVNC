@@ -440,6 +440,135 @@ Behavior when reverse is enabled: local VNC port is disabled, HTTP/WebSockets ar
 - Use the repeater’s server port for TrollVNC (`-repeater <id> host:server_port`) and the viewer port for UltraVNC Viewer.
 - UltraVNC “Mode SSL” repeaters require special viewer/server builds; TrollVNC connects to standard (non-SSL) Mode II repeaters.
 
+## Managed Configuration (Preconfigured Deployment)
+
+TrollVNC can be preconfigured via a bundled `Managed.plist` for supervised or fleet deployments where end users shouldn’t change settings.
+
+### How To Use
+
+1. Create `prefs/TrollVNCPrefs/Resources/Managed.plist` in the repo.
+2. Populate it with the keys you need (see “Supported keys” below).
+3. Build/package the project as usual; the file is embedded into `TrollVNCPrefs.bundle` automatically.
+4. Install the build on device. TrollVNC detects `Managed.plist` at startup and applies the configured values.
+
+5. Verify & expected behavior:
+
+- Settings → TrollVNC shows a banner: “This TrollVNC instance is managed by your organization”.
+- The preferences UI is effectively locked down (managed spec only shows the banner).
+- In‑app update prompts are suppressed while managed.
+- Configured values take effect at startup; you don’t need equivalent CLI flags for these options.
+
+### Supported Keys
+
+- Strings:
+  - `DesktopName`: Desktop name shown to clients
+  - `ModifierMap`: `std` | `altcmd`
+  - `FrameRateSpec`: e.g., `"60"`, `"30-60"`, or `"30:60:120"`
+  - `WheelTuning`: advanced wheel tuning string, e.g., `"amp=0.25,cap=1.0,max=256,clamp=3.0"`
+  - `HttpDir`: absolute path to HTTP doc root
+  - `SslCertFile`: absolute path to TLS cert (PEM)
+  - `SslKeyFile`: absolute path to TLS key (PEM)
+  - Reverse connection:
+    - `ReverseMode`: `viewer` | `repeater`
+    - `ReverseSocket`: `host:port` or `[ipv6]:port` (preferred)
+    - Backward-compat: `ReverseHost` + `ReversePort`
+  - Authentication:
+    - `FullPassword`: full-access password (first 8 chars used)
+    - `ViewOnlyPassword`: view-only password (first 8 chars used)
+
+- Numbers:
+  - `Port` (1024..65535; `0`/<1024 is treated as invalid and falls back to 5901)
+  - `KeepAliveSec` (0 or 15..300; values 0..15 are treated as 0)
+  - `Scale` (0.1..1.0)
+  - `DeferWindowSec` (0..0.5)
+  - `MaxInflight` (0..8)
+  - `TileSize` (8..128)
+  - `FullscreenThresholdPercent` (0..100)
+  - `MaxRects` (1..4096)
+  - `WheelStepPx` (0 disables wheel; else 5..1000)
+  - `HttpPort` (0 disables; else 1024..65535)
+  - `ReverseRepeaterID` (numeric ID for UltraVNC Repeater Mode II)
+
+- Booleans:
+  - `Enabled`, `ClipboardEnabled`, `ViewOnly`, `OrientationSync`, `NaturalScroll`, `ServerCursor`, `AsyncSwap`, `KeyLogging`, `AutoAssistEnabled`, `BonjourEnabled`, `FileTransferEnabled`, `SingleNotifEnabled`, `ClientNotifsEnabled`
+
+**Notes**:
+
+- When reverse connection is enabled via Managed.plist, behavior matches CLI reverse: local VNC port disabled, HTTP/WebSockets disabled, Bonjour disabled.
+- `HttpDir`, `SslCertFile`, and `SslKeyFile` must be absolute paths.
+
+### Example Configurations
+
+**Minimal preset**: reverse to a listening viewer with a custom desktop name:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Enabled</key>
+  <true/>
+  <key>DesktopName</key>
+  <string>My iPhone</string>
+  <key>ReverseMode</key>
+  <string>viewer</string>
+  <key>ReverseSocket</key>
+  <string>203.0.113.10:5500</string>
+  <key>ClipboardEnabled</key>
+  <true/>
+  <key>KeepAliveSec</key>
+  <integer>60</integer>
+</dict>
+</plist>
+```
+
+**LAN example**: enable built‑in HTTP client and TLS:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Enabled</key>
+  <true/>
+  <key>DesktopName</key>
+  <string>TrollVNC</string>
+  <key>Port</key>
+  <integer>5901</integer>
+  <key>Scale</key>
+  <real>0.75</real>
+  <key>FrameRateSpec</key>
+  <string>30:60:120</string>
+  <key>DeferWindowSec</key>
+  <real>0.012</real>
+  <key>MaxInflight</key>
+  <integer>2</integer>
+  <key>TileSize</key>
+  <integer>32</integer>
+  <key>FullscreenThresholdPercent</key>
+  <integer>35</integer>
+  <key>MaxRects</key>
+  <integer>512</integer>
+  <key>HttpPort</key>
+  <integer>5801</integer>
+  <key>HttpDir</key>
+  <string>/usr/share/trollvnc/webclients</string>
+  <key>SslCertFile</key>
+  <string>/usr/share/trollvnc/ssl/host/cert.pem</string>
+  <key>SslKeyFile</key>
+  <string>/usr/share/trollvnc/ssl/host/key.pem</string>
+  <key>ClipboardEnabled</key>
+  <true/>
+  <key>ViewOnly</key>
+  <false/>
+  <key>FullPassword</key>
+  <string>editpass</string>
+  <key>ViewOnlyPassword</key>
+  <string>viewpass</string>
+</dict>
+</plist>
+```
+
 ## Build Dependencies
 
 See: <https://github.com/Lessica/BuildVNCServer>
@@ -466,7 +595,7 @@ TrollVNC is an open-source VNC solution, licensed under GPLv2. You are free to a
 
 If you prefer, you can always build TrollVNC yourself directly from the source.
 
-### Your choice:
+### Your choice
 
 - Compile for free.
 - Pay for convenience, updates, and support.
