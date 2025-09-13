@@ -182,20 +182,49 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
         return str;                                                                                                    \
     }()
 
+- (BOOL)hasManagedConfiguration {
+    static BOOL sIsManaged = NO;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *presetPath = [self.bundle pathForResource:@"Managed" ofType:@"plist"];
+        if (presetPath) {
+            NSDictionary *presetDict = [NSDictionary dictionaryWithContentsOfFile:presetPath];
+            if (presetDict) {
+                sIsManaged = YES;
+            }
+        }
+    });
+    return sIsManaged;
+}
+
 - (NSArray *)specifiers {
     if (!_specifiers) {
-        NSMutableArray<PSSpecifier *> *specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        NSMutableArray<PSSpecifier *> *specifiers = nil;
+
+        if (!specifiers) {
+            if ([self hasManagedConfiguration]) {
+                specifiers = [self loadSpecifiersFromPlistName:@"ManagedRoot" target:self];
+            }
+        }
+
+        if (!specifiers) {
+            specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        }
+
         PSSpecifier *firstGroup = [specifiers firstObject];
         NSString *packageScheme = MYNSSTRINGIFY(THEOS_PACKAGE_SCHEME);
         if (!packageScheme.length) {
             packageScheme = @"legacy";
         }
+
         [firstGroup setProperty:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
                                                                @"TrollVNC (%@) v%@", @"Localizable", self.bundle, nil),
                                                            packageScheme, @PACKAGE_VERSION]
                          forKey:@"footerText"];
+
         _specifiers = specifiers;
     }
+
     return _specifiers;
 }
 
@@ -218,6 +247,10 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
                                                                             target:nil
                                                                             action:nil];
     self.navigationItem.backBarButtonItem.tintColor = _primaryColor;
+
+    if ([self hasManagedConfiguration]) {
+        return;
+    }
 
     UIBarButtonItem *applyItem = [[UIBarButtonItem alloc]
         initWithTitle:NSLocalizedStringFromTableInBundle(@"Apply", @"Localizable", self.bundle, nil)
@@ -436,6 +469,10 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 #pragma mark - UITableViewDataSource & UITableViewDelegate
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if ([self hasManagedConfiguration]) {
+        return [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    }
+
     // Color the last section (support) button blue
     NSArray *specs = [self specifiers];
     NSInteger groupCount = 0;
@@ -444,6 +481,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
             groupCount++;
         }
     }
+
     NSInteger lastSection = groupCount - 2; // support group
     if (indexPath.section >= lastSection) {
         PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
@@ -455,6 +493,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
             return cell;
         }
     }
+
     return [super tableView:tableView cellForRowAtIndexPath:indexPath];
 }
 
@@ -474,13 +513,13 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    if (section == 0) {
+    if (section == 0 && ![self hasManagedConfiguration]) {
 #if THEBOOTSTRAP
         do {
             GitHubReleaseUpdater *updater = [GitHubReleaseUpdater shared];
-             if (![updater hasNewerVersionInCache]) {
-                 break;
-             }
+            if (![updater hasNewerVersionInCache]) {
+                break;
+            }
 
             GHReleaseInfo *releaseInfo = [updater cachedLatestRelease];
             if (!releaseInfo) {

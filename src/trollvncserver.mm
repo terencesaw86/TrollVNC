@@ -131,6 +131,97 @@ NS_INLINE BOOL isRepeaterEnabled(void) {
     return gRepeaterMode > 0 && gRepeaterHost != NULL && gRepeaterHost[0] != '\0' && gRepeaterPort > 0;
 }
 
+#pragma mark - Bundle
+
+static NSString *tvExecutablePath(void) {
+    static NSString *sPath = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // Resolve executable path
+        uint32_t sz = 0;
+        _NSGetExecutablePath(NULL, &sz); // query size
+        char *exeBuf = (char *)malloc(sz > 0 ? sz : PATH_MAX);
+        if (!exeBuf)
+            return;
+        if (_NSGetExecutablePath(exeBuf, &sz) != 0) {
+            // Fallback: leave exeBuf as-is
+        }
+
+        // Canonicalize
+        char realBuf[PATH_MAX];
+        const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
+        NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
+        free(exeBuf);
+
+        sPath = exe ?: [[NSProcessInfo processInfo] arguments][0];
+    });
+    return sPath;
+}
+
+static NSBundle *tvResourceBundle(void) {
+    static NSBundle *sBundle = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+#if THEBOOTSTRAP
+        NSString *exe = tvExecutablePath();
+        NSString *dir = [exe stringByDeletingLastPathComponent];
+        NSBundle *mainBundle = [NSBundle bundleWithPath:dir];
+        if (!mainBundle)
+            return;
+
+        NSString *resPath = [mainBundle pathForResource:@"TrollVNCPrefs" ofType:@"bundle"];
+        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
+        if (!resBundle)
+            return;
+
+        sBundle = resBundle;
+#else
+        NSString *exe = tvExecutablePath();
+        NSString *exeDir = [exe stringByDeletingLastPathComponent];
+        NSString *resRel = @"../../Library/PreferenceBundles/TrollVNCPrefs.bundle";
+        NSString *resPath = [[exeDir stringByAppendingPathComponent:resRel] stringByStandardizingPath];
+        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
+        if (!resBundle)
+            return;
+
+        sBundle = resBundle;
+#endif
+    });
+    return sBundle;
+}
+
+static NSBundle *tvLocalizationBundle(void) {
+    static NSBundle *sBundle = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSBundle *resBundle = tvResourceBundle();
+
+        NSArray<NSString *> *languages =
+            [[NSUserDefaults standardUserDefaults] objectForKey:@"AppleLanguages"] ?: @"en";
+
+        NSString *localizablePath = nil;
+        for (NSString *localization in [NSBundle preferredLocalizationsFromArray:[resBundle localizations]
+                                                                  forPreferences:languages]) {
+            localizablePath = [resBundle pathForResource:@"Localizable"
+                                                  ofType:@"strings"
+                                             inDirectory:nil
+                                         forLocalization:localization];
+            if (localizablePath && localizablePath.length > 0)
+                break;
+        }
+
+        NSString *lprojPath = [localizablePath stringByDeletingLastPathComponent];
+        if (lprojPath && lprojPath.length > 0) {
+            resBundle = [NSBundle bundleWithPath:lprojPath];
+        }
+
+        sBundle = resBundle;
+    });
+    return sBundle;
+}
+
+#pragma mark - Command-Line Parsing
+
 /* clangd behavior workarounds */
 #define STRINGIFY(x) #x
 #define EXPAND_AND_STRINGIFY(x) STRINGIFY(x)
@@ -293,7 +384,20 @@ static void parseWheelOptions(const char *spec) {
 }
 
 static void parseDaemonOptions(void) {
-    NSDictionary *prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.82flex.trollvnc"];
+    NSDictionary *prefs = nil;
+
+    if (!prefs) {
+        NSBundle *resBundle = tvResourceBundle();
+        NSString *presetPath = [resBundle pathForResource:@"Managed" ofType:@"plist"];
+        if (presetPath) {
+            prefs = [NSDictionary dictionaryWithContentsOfFile:presetPath];
+        }
+    }
+
+    if (!prefs) {
+        prefs = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"com.82flex.trollvnc"];
+    }
+
     if (!prefs) {
         TVLog(@"-daemon: no preferences found for domain com.82flex.trollvnc");
         return;
@@ -1802,11 +1906,11 @@ static void displayFinishedHook(rfbClientPtr cl, int result) {
     gInflight.fetch_sub(1, std::memory_order_relaxed);
 }
 
-static int setDesktopSizeHook(int width, int height, int numScreens, rfbExtDesktopScreen *extDesktopScreens, rfbClientPtr cl) {
+static int setDesktopSizeHook(int width, int height, int numScreens, rfbExtDesktopScreen *extDesktopScreens,
+                              rfbClientPtr cl) {
     (void)cl;
     (void)numScreens;
     (void)extDesktopScreens;
-    TVLog(@"Client requested desktop resize to %dx%d", width, height);
     [[ScreenCapturer sharedCapturer] forceNextFrameUpdate];
     // We do not support client-initiated resizing
     return rfbExtDesktopSize_ResizeProhibited;
@@ -3720,82 +3824,6 @@ void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
 
 #pragma mark - User Notifications
 
-static NSString *tvExecutablePath(void) {
-    static NSString *sPath = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        // Resolve executable path
-        uint32_t sz = 0;
-        _NSGetExecutablePath(NULL, &sz); // query size
-        char *exeBuf = (char *)malloc(sz > 0 ? sz : PATH_MAX);
-        if (!exeBuf)
-            return;
-        if (_NSGetExecutablePath(exeBuf, &sz) != 0) {
-            // Fallback: leave exeBuf as-is
-        }
-
-        // Canonicalize
-        char realBuf[PATH_MAX];
-        const char *exePath = realpath(exeBuf, realBuf) ? realBuf : exeBuf;
-        NSString *exe = [NSString stringWithUTF8String:exePath ? exePath : ""];
-        free(exeBuf);
-
-        sPath = exe ?: [[NSProcessInfo processInfo] arguments][0];
-    });
-    return sPath;
-}
-
-static NSBundle *tvResourcesBundle(void) {
-    static NSBundle *sBundle = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-#if THEBOOTSTRAP
-        NSString *exe = tvExecutablePath();
-        NSString *dir = [exe stringByDeletingLastPathComponent];
-        NSBundle *mainBundle = [NSBundle bundleWithPath:dir];
-        if (!mainBundle)
-            return;
-
-        NSString *resPath = [mainBundle pathForResource:@"TrollVNCPrefs" ofType:@"bundle"];
-        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
-        if (!resBundle)
-            return;
-
-        sBundle = resBundle;
-#else
-        NSString *exe = tvExecutablePath();
-        NSString *exeDir = [exe stringByDeletingLastPathComponent];
-        NSString *resRel = @"../../Library/PreferenceBundles/TrollVNCPrefs.bundle";
-        NSString *resPath = [[exeDir stringByAppendingPathComponent:resRel] stringByStandardizingPath];
-        NSBundle *resBundle = resPath ? [NSBundle bundleWithPath:resPath] : nil;
-        if (!resBundle)
-            return;
-
-        sBundle = resBundle;
-#endif
-
-        NSArray<NSString *> *languages =
-            [[NSUserDefaults standardUserDefaults] objectForKey:@"AppleLanguages"] ?: @"en";
-
-        NSString *localizablePath = nil;
-        for (NSString *localization in [NSBundle preferredLocalizationsFromArray:[sBundle localizations]
-                                                                  forPreferences:languages]) {
-            localizablePath = [sBundle pathForResource:@"Localizable"
-                                                ofType:@"strings"
-                                           inDirectory:nil
-                                       forLocalization:localization];
-            if (localizablePath && localizablePath.length > 0)
-                break;
-        }
-
-        NSString *lprojPath = [localizablePath stringByDeletingLastPathComponent];
-        if (lprojPath && lprojPath.length > 0) {
-            sBundle = [NSBundle bundleWithPath:lprojPath];
-        }
-    });
-    return sBundle;
-}
-
 static void tvPublishUserSingleNotifs(void) {
     if (!gUserSingleNotifsEnabled)
         return;
@@ -3816,9 +3844,9 @@ static void tvPublishUserSingleNotifs(void) {
     NSString *localizedContentTmpl;
     localizedContentTmpl = (gClientCount == 1)
                                ? NSLocalizedStringFromTableInBundle(@"There is %d active VNC client.", @"Localizable",
-                                                                    tvResourcesBundle(), @"trollvncserver")
+                                                                    tvLocalizationBundle(), @"trollvncserver")
                                : NSLocalizedStringFromTableInBundle(@"There are %d active VNC clients.", @"Localizable",
-                                                                    tvResourcesBundle(), @"trollvncserver");
+                                                                    tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, gClientCount];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
@@ -3838,7 +3866,7 @@ static void tvPublishClientConnectedNotif(NSString *host) {
 
     NSString *localizedContentTmpl;
     localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client connected from %@.", @"Localizable",
-                                                              tvResourcesBundle(), @"trollvncserver");
+                                                              tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
@@ -3858,7 +3886,7 @@ static void tvPublishClientDisconnectedNotif(NSString *host) {
 
     NSString *localizedContentTmpl;
     localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client disconnected from %@.", @"Localizable",
-                                                              tvResourcesBundle(), @"trollvncserver");
+                                                              tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
