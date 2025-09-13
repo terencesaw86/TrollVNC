@@ -450,13 +450,11 @@ TrollVNC can be preconfigured via a bundled `Managed.plist` for supervised or fl
 2. Populate it with the keys you need (see “Supported keys” below).
 3. Build/package the project as usual; the file is embedded into `TrollVNCPrefs.bundle` automatically.
 4. Install the build on device. TrollVNC detects `Managed.plist` at startup and applies the configured values.
-
 5. Verify & expected behavior:
-
-- Settings → TrollVNC shows a banner: “This TrollVNC instance is managed by your organization”.
-- The preferences UI is effectively locked down (managed spec only shows the banner).
-- In‑app update prompts are suppressed while managed.
-- Configured values take effect at startup; you don’t need equivalent CLI flags for these options.
+   - “Settings” → “TrollVNC” shows a banner: “This TrollVNC instance is managed by your organization”.
+   - The preferences UI is effectively locked down.
+   - In‑app update prompts are suppressed while managed.
+   - Configured values take effect at startup; you don’t need equivalent CLI flags for these options.
 
 ### Supported Keys
 
