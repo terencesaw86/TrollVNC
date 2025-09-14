@@ -585,13 +585,11 @@ TrollVNC can be preconfigured via a bundled `Managed.plist` for supervised or fl
 
 You can build TrollVNC entirely in GitHub Actions using the built-in workflow.
 
-### Trigger a build
-
 - Fork this repository (or enable “Actions” in your own clone).
 - Go to the “Actions” tab → “Build TrollVNC” → “Run workflow”.
 - Choose the branch to run on (usually main) and fill the form inputs below.
 
-### Inputs (up to 10)
+### Inputs
 
 Due to a GitHub limit, the manual form exposes 10 commonly used options:
 
@@ -608,7 +606,7 @@ Due to a GitHub limit, the manual form exposes 10 commonly used options:
 
 When `is_managed` is true, the workflow generates a `Managed.plist` from these inputs and bundles it.
 
-### Optional passwords (secrets)
+### Optional Passwords (Secrets)
 
 You may set these repository secrets so the managed build embeds VNC passwords. If you don’t set them, the keys are omitted.
 
@@ -617,7 +615,7 @@ You may set these repository secrets so the managed build embeds VNC passwords. 
 
 Add them under: “Settings” → “Secrets and variables” → “Actions” → “New repository secret”.
 
-### Fixed defaults in CI (managed build)
+### Fixed Defaults in CI (Managed Builds)
 
 In the workflow-managed build, the following keys are fixed to safe defaults:
 
@@ -635,7 +633,7 @@ In the workflow-managed build, the following keys are fixed to safe defaults:
 
 For advanced tuning (HTTP/TLS, wheel tuning, dirty detection, etc.), commit your own `prefs/TrollVNCPrefs/Resources/Managed.plist` to the repo and leave `is_managed` unchecked, or extend the workflow locally.
 
-### Artifacts and releases
+### Artifacts and Releases
 
 - Each run uploads artifacts per scheme:
   - `packages-default`, `packages-rootless`, `packages-roothide`, `packages-bootstrap`
