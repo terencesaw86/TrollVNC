@@ -2237,10 +2237,11 @@ static void handleFramebuffer(CMSampleBufferRef sampleBuffer) {
         if (!sLoggedSizeInfoOnce) {
             sLoggedSizeInfoOnce = YES;
             if (gScale != 1.0) {
-                TVLog(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight, gScale);
+                TVLogVerbose(@"Scaling source %zux%zu -> output %dx%d (scale=%.3f)", width, height, gWidth, gHeight,
+                             gScale);
             } else {
-                TVLog(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.", width,
-                      height, gWidth, gHeight);
+                TVLogVerbose(@"Captured frame size %zux%zu differs from server %dx%d; cropping/copying minimum region.",
+                             width, height, gWidth, gHeight);
             }
         }
     }
@@ -4622,6 +4623,7 @@ static void *tvRfbEventThreadMain(void *arg) {
         if (!rfbIsActive(gScreen))
             break;
     }
+    CFRunLoopStop(CFRunLoopGetMain());
     gRfbEventThreadRunning.store(0, std::memory_order_relaxed);
     return NULL;
 }
