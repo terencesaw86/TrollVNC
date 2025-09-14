@@ -3826,7 +3826,7 @@ void tvCtlHandleConnection(int cfd, struct sockaddr_in caddr) {
 #pragma mark - User Notifications
 
 static void tvPublishUserSingleNotifs(void) {
-    if (!gUserSingleNotifsEnabled)
+    if (!gUserSingleNotifsEnabled || isRepeaterEnabled())
         return;
 
     BulletinManager *mgr = [BulletinManager sharedManager];
@@ -3856,7 +3856,7 @@ static void tvPublishUserSingleNotifs(void) {
 }
 
 static void tvPublishClientConnectedNotif(NSString *host) {
-    if (!gUserClientNotifsEnabled || !host || host.length == 0)
+    if (!gUserClientNotifsEnabled || isRepeaterEnabled() || !host || host.length == 0)
         return;
 
     BulletinManager *mgr = [BulletinManager sharedManager];
