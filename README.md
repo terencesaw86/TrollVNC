@@ -581,6 +581,68 @@ TrollVNC can be preconfigured via a bundled `Managed.plist` for supervised or fl
 </plist>
 ```
 
+## Build with GitHub Actions
+
+You can build TrollVNC entirely in GitHub Actions using the built-in workflow.
+
+### Trigger a build
+
+- Fork this repository (or enable “Actions” in your own clone).
+- Go to the “Actions” tab → “Build TrollVNC” → “Run workflow”.
+- Choose the branch to run on (usually main) and fill the form inputs below.
+
+### Inputs (up to 10)
+
+Due to a GitHub limit, the manual form exposes 10 commonly used options:
+
+- `is_managed`: whether to bundle a `Managed.plist` (managed deployment)
+- `desktop_name`: display name shown to VNC clients
+- `port`: VNC TCP port (default `5901`)
+- `view_only`: force view-only (ignore input)
+- `scale`: output scale (`0.1–1.0`)
+- `frame_rate_spec`: frame rate, e.g. `60` | `30-60` | `30:60:120`
+- `modifier_map`: std | altcmd
+- `reverse_mode`: none | viewer | repeater
+- `reverse_socket`: `host:port` or `[ipv6]:port` (for viewer or repeater server port)
+- `reverse_repeater_id`: numeric ID (UltraVNC Repeater Mode II)
+
+When `is_managed` is true, the workflow generates a `Managed.plist` from these inputs and bundles it.
+
+### Optional passwords (secrets)
+
+You may set these repository secrets so the managed build embeds VNC passwords. If you don’t set them, the keys are omitted.
+
+- `TVNC_FULL_PASSWORD`
+- `TVNC_VIEWONLY_PASSWORD`
+
+Add them under: “Settings” → “Secrets and variables” → “Actions” → “New repository secret”.
+
+### Fixed defaults in CI (managed build)
+
+In the workflow-managed build, the following keys are fixed to safe defaults:
+
+- `Enabled=true`
+- `ClipboardEnabled=true`
+- `SingleNotifEnabled=true`
+- `ClientNotifsEnabled=true`
+- `KeepAliveSec=15`
+- `OrientationSync=true`
+- `NaturalScroll=false`
+- `AutoAssistEnabled=false`
+- `ServerCursor=false`
+- `BonjourEnabled=false`
+- `KeyLogging=false`
+
+For advanced tuning (HTTP/TLS, wheel tuning, dirty detection, etc.), commit your own `prefs/TrollVNCPrefs/Resources/Managed.plist` to the repo and leave `is_managed` unchecked, or extend the workflow locally.
+
+### Artifacts and releases
+
+- Each run uploads artifacts per scheme:
+  - `packages-default`, `packages-rootless`, `packages-roothide`, `packages-bootstrap`
+  - `dsym-default`, `dsym-rootless`, `dsym-roothide`, `dsym-bootstrap`
+- Download them from the run page → `Artifacts`.
+- If you push to the `release` branch (and the workflow runs there), a GitHub Release is created automatically with packaged files attached.
+
 ## Build Dependencies
 
 See: <https://github.com/Lessica/BuildVNCServer>
