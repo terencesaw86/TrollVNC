@@ -51,6 +51,9 @@
 #import "STHIDEventGenerator.h"
 #import "ScreenCapturer.h"
 
+#define LocalizedString(key, comment, bundle, table)                                                                   \
+    (NSLocalizedStringFromTableInBundle((key), (table), (bundle), (comment)) ?: (key))
+
 #define TVPrintError(fmt, ...)                                                                                         \
     do {                                                                                                               \
         fprintf(stderr, fmt "\r\n", ##__VA_ARGS__);                                                                    \
@@ -3843,11 +3846,10 @@ static void tvPublishUserSingleNotifs(void) {
     };
 
     NSString *localizedContentTmpl;
-    localizedContentTmpl = (gClientCount == 1)
-                               ? NSLocalizedStringFromTableInBundle(@"There is %d active VNC client.", @"Localizable",
-                                                                    tvLocalizationBundle(), @"trollvncserver")
-                               : NSLocalizedStringFromTableInBundle(@"There are %d active VNC clients.", @"Localizable",
-                                                                    tvLocalizationBundle(), @"trollvncserver");
+    localizedContentTmpl = (gClientCount == 1) ? LocalizedString(@"There is %d active VNC client.", @"Localizable",
+                                                                 tvLocalizationBundle(), @"trollvncserver")
+                                               : LocalizedString(@"There are %d active VNC clients.", @"Localizable",
+                                                                 tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, gClientCount];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
@@ -3866,8 +3868,8 @@ static void tvPublishClientConnectedNotif(NSString *host) {
     };
 
     NSString *localizedContentTmpl;
-    localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client connected from %@.", @"Localizable",
-                                                              tvLocalizationBundle(), @"trollvncserver");
+    localizedContentTmpl =
+        LocalizedString(@"A VNC client connected from %@.", @"Localizable", tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
@@ -3886,8 +3888,8 @@ static void tvPublishClientDisconnectedNotif(NSString *host) {
     };
 
     NSString *localizedContentTmpl;
-    localizedContentTmpl = NSLocalizedStringFromTableInBundle(@"A VNC client disconnected from %@.", @"Localizable",
-                                                              tvLocalizationBundle(), @"trollvncserver");
+    localizedContentTmpl = LocalizedString(@"A VNC client disconnected from %@.", @"Localizable",
+                                           tvLocalizationBundle(), @"trollvncserver");
 
     NSString *localizedContent = [NSString stringWithFormat:localizedContentTmpl, host];
     dispatch_async(dispatch_get_main_queue(), ^(void) {
