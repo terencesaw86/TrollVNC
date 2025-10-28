@@ -217,9 +217,16 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
             packageScheme = @"legacy";
         }
 
+        NSString *versionString;
+#ifdef THEBOOTSTRAP
+        versionString = [[GitHubReleaseUpdater shared] currentVersion];
+#else
+        versionString = @PACKAGE_VERSION;
+#endif
+
         [firstGroup setProperty:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
                                                                @"TrollVNC (%@) v%@", @"Localizable", self.bundle, nil),
-                                                           packageScheme, [[GitHubReleaseUpdater shared] currentVersion]]
+                                                           packageScheme, versionString]
                          forKey:@"footerText"];
 
         _specifiers = specifiers;
