@@ -217,8 +217,8 @@
 			<string>Keeps device awake only while at least one client is connected. 0 disables. Range 15–300 sec; shorter intervals may increase battery usage.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -231,6 +231,8 @@
 			<real>300.0</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.0fs</string>
 		</dict>
 
 		<!-- 8) Output Scale -->
@@ -243,8 +245,8 @@
 			<string>0.1–1.0. Lower scale reduces bandwidth/CPU; 1.0 is pixel-perfect. Balance quality, latency and battery.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -257,6 +259,8 @@
 			<real>1.0</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.2f</string>
 		</dict>
 
 		<!-- 9) Frame Rate -->
@@ -422,8 +426,8 @@
 			<string>Coalesces updates to reduce overhead. Higher values add latency; typical range 0.005–0.030.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -436,6 +440,8 @@
 			<real>0.5</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.3fs</string>
 		</dict>
 
 		<!-- 16) Max In-flight -->
@@ -448,8 +454,8 @@
 			<string>Max concurrent client encodes before dropping new frames. 0 = never drop (may increase latency under load).</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -478,8 +484,8 @@
 			<string>Dirty-detection tile size in pixels. Smaller captures finer changes but increases CPU cost.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -492,6 +498,8 @@
 			<real>128</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.0fpx</string>
 		</dict>
 
 		<!-- 18) Fullscreen Threshold (%) -->
@@ -504,8 +512,8 @@
 			<string>If changed tiles exceed this percent, send a full-screen update. 0 disables dirty detection (always fullscreen).</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -518,6 +526,8 @@
 			<real>100</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.0f%%</string>
 		</dict>
 
 		<!-- 19) Max Rects -->
@@ -530,8 +540,8 @@
 			<string>When dirty rectangles exceed this count, collapse to a bounding box. Too high increases protocol overhead.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -578,8 +588,8 @@
 			<string>Pixels per wheel tick sent to clients. Higher = faster scroll.</string>
 		</dict>
 		<dict>
-			<key>cell</key>
-			<string>PSSliderCell</string>
+			<key>cellClass</key>
+			<string>TVNCSliderCell</string>
 			<key>defaults</key>
 			<string>com.82flex.trollvnc</string>
 			<key>key</key>
@@ -592,6 +602,8 @@
 			<real>1000.0</real>
 			<key>showValue</key>
 			<true/>
+			<key>format</key>
+			<string>%.0fpx</string>
 		</dict>
 
 		<!-- 21.2) Wheel Tuning (advanced) -->

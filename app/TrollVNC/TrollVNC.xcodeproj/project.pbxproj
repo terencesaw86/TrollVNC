@@ -27,6 +27,8 @@
 		615401C32EB1180C009FDD6F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 615360A92E65BEFD00643E64 /* Main.storyboard */; };
 		615401C42EB1180C009FDD6F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 61C756CD2E65BE6F00B2B371 /* LaunchScreen.storyboard */; };
 		615401C52EB1180C009FDD6F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 61C7569B2E65BDAC00B2B371 /* Assets.xcassets */; };
+		61B0DD082EB13BEF004CC42B /* TVNCSliderCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 61B0DD072EB13BEF004CC42B /* TVNCSliderCell.m */; };
+		61B0DD092EB13BEF004CC42B /* TVNCSliderCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 61B0DD072EB13BEF004CC42B /* TVNCSliderCell.m */; };
 		61C756672E65B72E00B2B371 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 61C756662E65B72E00B2B371 /* NetworkExtension.framework */; };
 		61C756B82E65BDAC00B2B371 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 61C7569B2E65BDAC00B2B371 /* Assets.xcassets */; };
 		61C756BE2E65BDAC00B2B371 /* Preferences.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 61C756A82E65BDAC00B2B371 /* Preferences.tbd */; };
@@ -54,6 +56,8 @@
 		615360AE2E65BF0000643E64 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
 		615401AC2EB117FC009FDD6F /* Preferences.Sim.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; path = Preferences.Sim.tbd; sourceTree = "<group>"; };
 		615401CA2EB1180C009FDD6F /* TrollVNC.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrollVNC.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		61B0DD062EB13BEF004CC42B /* TVNCSliderCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = TVNCSliderCell.h; sourceTree = "<group>"; };
+		61B0DD072EB13BEF004CC42B /* TVNCSliderCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TVNCSliderCell.m; sourceTree = "<group>"; };
 		61C756662E65B72E00B2B371 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
 		61C756992E65BDAC00B2B371 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		61C7569A2E65BDAC00B2B371 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
@@ -163,6 +167,8 @@
 		61C756B72E65BDAC00B2B371 /* TrollVNC */ = {
 			isa = PBXGroup;
 			children = (
+				615401CD2EB11954009FDD6F /* Libraries */,
+				615401CC2EB11943009FDD6F /* Resources */,
 				61C756992E65BDAC00B2B371 /* AppDelegate.h */,
 				61C7569A2E65BDAC00B2B371 /* AppDelegate.m */,
 				CC91EF942E6E03BD002F5B2A /* Control.h */,
@@ -188,10 +194,10 @@
 				61C756B22E65BDAC00B2B371 /* TVNCRootListController.m */,
 				61C756B32E65BDAC00B2B371 /* TVNCServiceCoordinator.h */,
 				61C756B42E65BDAC00B2B371 /* TVNCServiceCoordinator.m */,
+				61B0DD062EB13BEF004CC42B /* TVNCSliderCell.h */,
+				61B0DD072EB13BEF004CC42B /* TVNCSliderCell.m */,
 				61C756B52E65BDAC00B2B371 /* TVNCViewController.h */,
 				61C756B62E65BDAC00B2B371 /* TVNCViewController.m */,
-				615401CC2EB11943009FDD6F /* Resources */,
-				615401CD2EB11954009FDD6F /* Libraries */,
 			);
 			path = TrollVNC;
 			sourceTree = "<group>";
@@ -354,6 +360,7 @@
 				61C756C42E65BDAC00B2B371 /* TVNCHotspotManager.m in Sources */,
 				61C756C52E65BDAC00B2B371 /* TVNCRootListController.m in Sources */,
 				CC91EF902E6C2208002F5B2A /* TVNCClientListController.m in Sources */,
+				61B0DD092EB13BEF004CC42B /* TVNCSliderCell.m in Sources */,
 				CC91EF972E6EF165002F5B2A /* TVNCListItemsController.m in Sources */,
 				61C756C62E65BDAC00B2B371 /* TVNCServiceCoordinator.m in Sources */,
 				61C756C72E65BDAC00B2B371 /* TVNCViewController.m in Sources */,
@@ -375,6 +382,7 @@
 				615401B82EB1180C009FDD6F /* TVNCHotspotManager.m in Sources */,
 				615401B92EB1180C009FDD6F /* TVNCRootListController.m in Sources */,
 				615401BA2EB1180C009FDD6F /* TVNCClientListController.m in Sources */,
+				61B0DD082EB13BEF004CC42B /* TVNCSliderCell.m in Sources */,
 				615401BB2EB1180C009FDD6F /* TVNCListItemsController.m in Sources */,
 				615401BC2EB1180C009FDD6F /* TVNCServiceCoordinator.m in Sources */,
 				615401BD2EB1180C009FDD6F /* TVNCViewController.m in Sources */,
