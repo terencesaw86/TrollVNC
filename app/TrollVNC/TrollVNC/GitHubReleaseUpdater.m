@@ -200,6 +200,11 @@ NSString *const GitHubReleaseUpdaterErrorDomain = @"GitHubReleaseUpdater";
 
 #pragma mark - Public API
 
+- (void)configureWithStrategy:(GHUpdateStrategy *)strategy {
+    NSString *currentVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
+    [self configureWithStrategy:strategy currentVersion:currentVersion];
+}
+
 - (void)configureWithStrategy:(GHUpdateStrategy *)strategy currentVersion:(NSString *)currentVersion {
     if (strategy.repoFullName.length == 0) {
         GHRULog("Invalid repoFullName in strategy");

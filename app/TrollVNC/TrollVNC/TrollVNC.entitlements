@@ -499,8 +499,6 @@
 		<string>IOSurfaceRootUserClient</string>
 		<string>RootDomainUserClient</string>
 	</array>
-	<key>com.apple.security.network.client</key>
-	<true/>
 	<key>com.apple.springboard.launchapplications</key>
 	<true/>
 	<key>com.apple.springboard.launchapplicationswithoptions</key>

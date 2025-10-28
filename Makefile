@@ -107,7 +107,11 @@ trollvncmanager_CFLAGS += -fobjc-arc
 trollvncmanager_CFLAGS += -Iinclude-spi
 
 trollvncmanager_FRAMEWORKS += Foundation
+ifeq ($(THEOS_DEVICE_SIMULATOR),1)
+trollvncmanager_CODESIGN_FLAGS += -f -s - --entitlements src/trollvncmanager.entitlements
+else
 trollvncmanager_CODESIGN_FLAGS += -Ssrc/trollvncmanager.entitlements
+endif
 endif
 
 include $(THEOS_MAKE_PATH)/tool.mk

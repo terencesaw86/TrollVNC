@@ -30,7 +30,7 @@
 #import "TVNCClientListController.h"
 #import "TVNCRootListController.h"
 
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
 #import "GitHubReleaseUpdater.h"
 #endif
 
@@ -96,7 +96,7 @@ NS_INLINE void TVNCRestartVNCService(void) {
         if ([executablePath.lastPathComponent isEqualToString:@"trollvncserver"]) {
             int rc = kill(pid, SIGTERM);
             if (rc == 0) {
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
                 [UIApplication.sharedApplication setApplicationIconBadgeNumber:0];
 #endif
             }
@@ -158,7 +158,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 
 @implementation TVNCRootListController
 
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
 @synthesize bundle = _bundle;
 
 - (NSBundle *)bundle {
@@ -219,7 +219,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 
         [firstGroup setProperty:[NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
                                                                @"TrollVNC (%@) v%@", @"Localizable", self.bundle, nil),
-                                                           packageScheme, @PACKAGE_VERSION]
+                                                           packageScheme, [[GitHubReleaseUpdater shared] currentVersion]]
                          forKey:@"footerText"];
 
         _specifiers = specifiers;
@@ -266,7 +266,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
                action:@selector(showClients)];
     clientsItem.tintColor = _primaryColor;
 
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
     BOOL isApp = YES;
 #else
     BOOL isApp = NO;
@@ -514,7 +514,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == 0 && ![self hasManagedConfiguration]) {
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
         do {
             GitHubReleaseUpdater *updater = [GitHubReleaseUpdater shared];
             if (![updater hasNewerVersionInCache]) {
@@ -530,7 +530,7 @@ NS_INLINE NSString *TVNCGetEn0IPAddress(void) {
                                                   @"A new version %@ is available! You’re currently using v%@. "
                                                   @"Download the latest version from Havoc Marketplace.",
                                                   @"Localizable", self.bundle, nil),
-                                              releaseInfo.tagName, @PACKAGE_VERSION];
+                                              releaseInfo.tagName, [[GitHubReleaseUpdater shared] currentVersion]];
         } while (0);
 #endif
     }

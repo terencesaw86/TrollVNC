@@ -52,6 +52,9 @@ NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceS
         if (languageCode) {
             env[@"TVNC_LANGUAGE_CODE"] = languageCode;
         }
+#if TARGET_IPHONE_SIMULATOR
+        [env addEntriesFromDictionary:[[NSProcessInfo processInfo] environment]];
+#endif
         sharedEnvironment = [env copy];
     });
     return sharedEnvironment;
@@ -100,6 +103,9 @@ NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceS
 }
 
 - (BOOL)_isServiceRunning {
+#if TARGET_IPHONE_SIMULATOR
+    return YES;
+#else
     int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         return NO;
@@ -115,6 +121,7 @@ NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceS
     close(sockfd);
 
     return result == 0;
+#endif
 }
 
 - (void)spawnService {
@@ -122,10 +129,16 @@ NSNotificationName const TVNCServiceStatusDidChangeNotification = @"TVNCServiceS
     serviceTask = [[TRTask alloc] init];
 
     NSString *executablePath = [[NSBundle mainBundle] pathForResource:@"trollvncmanager" ofType:@""];
+    if (!executablePath) {
+        return;
+    }
+
     [serviceTask setExecutableURL:[NSURL fileURLWithPath:executablePath]];
 
+#if !TARGET_IPHONE_SIMULATOR
     [serviceTask setUserIdentifier:0];
     [serviceTask setGroupIdentifier:0];
+#endif
 
     [serviceTask setArguments:[NSArray array]];
     [serviceTask setEnvironment:[TVNCServiceCoordinator sharedTaskEnvironment]];

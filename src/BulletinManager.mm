@@ -45,7 +45,7 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
         mSectionIdentifier = @"com.82flex.TrollVNCApp";
 #else
         mSectionIdentifier = @"com.apple.Preferences";
@@ -77,7 +77,7 @@
     content.threadIdentifier = mSectionIdentifier;
     content.userInfo = userInfo;
 
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
     content.badge = @(badgeCount);
 #endif
 
@@ -141,7 +141,7 @@
 #pragma mark - Private Methods
 
 - (void)resetBadgeCount {
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
     if (@available(iOS 16, *)) {
         [mNotificationCenter setBadgeCount:0
                      withCompletionHandler:^(NSError *_Nullable error) {

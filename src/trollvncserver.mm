@@ -165,7 +165,7 @@ static NSBundle *tvResourceBundle(void) {
     static NSBundle *sBundle = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-#if THEBOOTSTRAP
+#ifdef THEBOOTSTRAP
         NSString *exe = tvExecutablePath();
         NSString *dir = [exe stringByDeletingLastPathComponent];
         NSBundle *mainBundle = [NSBundle bundleWithPath:dir];

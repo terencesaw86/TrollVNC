@@ -29,7 +29,7 @@
 
     NSBundle *resBundle = [NSBundle bundleWithPath:[[NSBundle mainBundle] pathForResource:@"TrollVNCPrefs"
                                                                                    ofType:@"bundle"]];
-    self.localizationBundle = resBundle;
+    self.localizationBundle = resBundle ?: [NSBundle mainBundle];
 
     NSString *presetPath = [resBundle pathForResource:@"Managed" ofType:@"plist"];
     if (presetPath) {
@@ -143,7 +143,7 @@
         [NSString stringWithFormat:NSLocalizedStringFromTableInBundle(
                                        @"A new version %@ is available! You’re currently using v%@.", @"Localizable",
                                        self.localizationBundle, nil),
-                                   releaseVersion, @PACKAGE_VERSION];
+                                   releaseVersion, [[GitHubReleaseUpdater shared] currentVersion]];
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:alertTitle
                                                                    message:alertMessage

@@ -50,10 +50,13 @@ typedef void (^GHUpdateCheckCompletion)(GHReleaseInfo *_Nullable latest, NSError
 /// A thread-safe singleton that checks GitHub Releases for updates and caches results.
 @interface GitHubReleaseUpdater : NSObject
 
+@property(nonatomic, copy, readonly) NSString *currentVersion;
+
 + (instancetype)shared;
 - (instancetype)init NS_UNAVAILABLE;
 
 // Configure and start background checking. Current version required for comparison.
+- (void)configureWithStrategy:(GHUpdateStrategy *)strategy;
 - (void)configureWithStrategy:(GHUpdateStrategy *)strategy currentVersion:(NSString *)currentVersion;
 
 // Starts periodic checks. Safe to call multiple times.
